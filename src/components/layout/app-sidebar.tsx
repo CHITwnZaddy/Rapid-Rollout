@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: "grid" },
   { label: "Proposals", href: "/proposals", icon: "file-text" },
+  { label: "Reports", href: "/reports", icon: "bar-chart" },
 ];
 
 const adminItems = [
@@ -18,6 +19,7 @@ const adminItems = [
   { label: "Customers", href: "/admin/customers" },
   { label: "Users", href: "/admin/users" },
   { label: "Change Log", href: "/admin/change-log" },
+  { label: "Theme", href: "/admin/theme" },
 ];
 
 export function AppSidebar() {
