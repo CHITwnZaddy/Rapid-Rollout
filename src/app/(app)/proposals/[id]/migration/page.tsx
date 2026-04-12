@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useParams } from "next/navigation";
+import { useAuth } from "@/lib/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -83,6 +84,7 @@ const NUM = (v: unknown) => Number(v) || 0;
 export default function MigrationPage() {
   const { id: proposalId } = useParams<{ id: string }>();
   const supabase = createClient();
+  const { isAdmin } = useAuth();
 
   const [config, setConfig] = useState<DbConfig | null>(null);
   const [lines, setLines] = useState<DbLine[]>([]);
@@ -128,10 +130,10 @@ export default function MigrationPage() {
         .single();
 
       if (!cfg) {
-        // Create default config
+        // Create default config (doc_avg_mb_per_project defaults to 0)
         const { data: newCfg } = await supabase
           .from("migration_config")
-          .insert({ proposal_id: proposalId })
+          .insert({ proposal_id: proposalId, doc_avg_mb_per_project: 0 })
           .select()
           .single();
         cfg = newCfg;
@@ -345,8 +347,9 @@ export default function MigrationPage() {
     allLines: DbLine[]
   ): MigrationTotals | null {
     if (!cfg) return null;
+    const numProjects = NUM(cfg.num_projects);
     const mc: MigrationConfig = {
-      num_projects: NUM(cfg.num_projects),
+      num_projects: numProjects,
       hrs_per_import: NUM(cfg.hrs_per_import),
       lines_per_import_file: NUM(cfg.lines_per_import_file),
       is_effort_included: cfg.is_effort_included,
@@ -365,9 +368,10 @@ export default function MigrationPage() {
       core_pm_oversight_hrs: NUM(cfg.core_pm_oversight_hrs),
     };
 
+    // For project lines, override quantity with num_projects from config
     const pLines = allLines
       .filter((l) => l.section === "project")
-      .map(toEngineLine);
+      .map((l) => toEngineLine({ ...l, quantity: numProjects }));
     const wLines = allLines
       .filter((l) => l.section === "workflow")
       .map(toEngineLine);
@@ -399,6 +403,7 @@ export default function MigrationPage() {
   }
 
   const totals = computeTotals(config, lines);
+  const numProjects = NUM(config?.num_projects);
 
   // Group lines by section
   const projectLines = lines.filter((l) => l.section === "project");
@@ -568,9 +573,10 @@ export default function MigrationPage() {
         section="project"
         lines={projectLines}
         config={config}
+        numProjectsOverride={numProjects}
         qtyLabel="# of Projects"
         itemsLabel="Line Items / Object"
-        totalEditable
+        totalEditable={false}
         onUpdateLine={updateLine}
         onAddLine={addLine}
         onRemoveLine={removeLine}
@@ -629,19 +635,30 @@ export default function MigrationPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">MB / Hour</Label>
-              <Input
-                type="number"
-                min={0}
-                className="h-8"
-                value={NUM(config?.doc_mb_per_hour)}
-                onChange={(e) =>
-                  updateConfig(
-                    "doc_mb_per_hour",
-                    parseFloat(e.target.value) || 0
-                  )
-                }
-              />
+              <Label className="text-xs">
+                MB / Hour
+                {!isAdmin && (
+                  <span className="ml-1 text-muted-foreground">(admin only)</span>
+                )}
+              </Label>
+              {isAdmin ? (
+                <Input
+                  type="number"
+                  min={0}
+                  className="h-8"
+                  value={NUM(config?.doc_mb_per_hour)}
+                  onChange={(e) =>
+                    updateConfig(
+                      "doc_mb_per_hour",
+                      parseFloat(e.target.value) || 0
+                    )
+                  }
+                />
+              ) : (
+                <div className="flex h-8 items-center rounded-md border bg-muted px-3 text-sm tabular-nums">
+                  {NUM(config?.doc_mb_per_hour).toLocaleString()}
+                </div>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Calculated Hours</Label>
@@ -885,6 +902,7 @@ interface DetailSectionProps {
   section: "project" | "workflow" | "cost";
   lines: DbLine[];
   config: DbConfig | null;
+  numProjectsOverride?: number;
   qtyLabel: string;
   itemsLabel: string;
   totalEditable: boolean;
@@ -899,6 +917,7 @@ function DetailSection({
   section,
   lines,
   config,
+  numProjectsOverride,
   qtyLabel,
   itemsLabel,
   totalEditable,
@@ -939,12 +958,20 @@ function DetailSection({
             </TableHeader>
             <TableBody>
               {lines.map((line) => {
-                const engineLine = {
-                  ...line,
+                // For project section, quantity is overridden by num_projects from config
+                const qty = numProjectsOverride !== undefined
+                  ? numProjectsOverride
+                  : NUM(line.quantity);
+                const itemsPer = NUM(line.items_per_object);
+
+                const engineLine: MigrationDetailLine = {
+                  id: line.id,
                   section: line.section as "project" | "workflow" | "cost",
-                  quantity: NUM(line.quantity),
-                  items_per_object: NUM(line.items_per_object),
+                  label: line.label,
+                  quantity: qty,
+                  items_per_object: itemsPer,
                   total_line_items: NUM(line.total_line_items),
+                  row_order: line.row_order,
                 };
                 const effTotal = effectiveTotalLineItems(engineLine);
                 const calc = calculateLineImports(
@@ -968,19 +995,25 @@ function DetailSection({
                       )}
                     </TableCell>
                     <TableCell>
-                      <Input
-                        className="h-7 text-right text-xs"
-                        type="number"
-                        min={0}
-                        value={NUM(line.quantity)}
-                        onChange={(e) =>
-                          onUpdateLine(
-                            line.id,
-                            "quantity",
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                      />
+                      {numProjectsOverride !== undefined ? (
+                        <div className="text-right text-sm tabular-nums">
+                          {numProjectsOverride}
+                        </div>
+                      ) : (
+                        <Input
+                          className="h-7 text-right text-xs"
+                          type="number"
+                          min={0}
+                          value={NUM(line.quantity)}
+                          onChange={(e) =>
+                            onUpdateLine(
+                              line.id,
+                              "quantity",
+                              parseFloat(e.target.value) || 0
+                            )
+                          }
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
                       <Input
@@ -1056,12 +1089,17 @@ function DetailSection({
                 <TableCell className="text-right tabular-nums">
                   {lines
                     .reduce((sum, line) => {
-                      const el = {
-                        ...line,
+                      const qty = numProjectsOverride !== undefined
+                        ? numProjectsOverride
+                        : NUM(line.quantity);
+                      const el: MigrationDetailLine = {
+                        id: line.id,
                         section: line.section as "project" | "workflow" | "cost",
-                        quantity: NUM(line.quantity),
+                        label: line.label,
+                        quantity: qty,
                         items_per_object: NUM(line.items_per_object),
                         total_line_items: NUM(line.total_line_items),
+                        row_order: line.row_order,
                       };
                       const t = effectiveTotalLineItems(el);
                       const c = calculateLineImports(t, linesPerFile, hrsPerImport);

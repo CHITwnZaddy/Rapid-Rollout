@@ -138,9 +138,10 @@ export default function NewProposalPage() {
       customer_id: customerId || null,
     });
 
-    // Create migration config with defaults
+    // Create migration config with defaults (doc_avg_mb_per_project starts at 0)
     await supabase.from("migration_config").insert({
       proposal_id: proposal.id,
+      doc_avg_mb_per_project: 0,
     });
 
     // Create default migration detail lines
