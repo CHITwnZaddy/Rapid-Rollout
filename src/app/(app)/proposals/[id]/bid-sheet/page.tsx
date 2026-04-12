@@ -85,9 +85,10 @@ export default function BidSheetPage() {
             .select("*")
             .order("company_name"),
           supabase
-            .from("migration_services")
-            .select("sales_price")
-            .eq("proposal_id", proposalId),
+            .from("migration_config")
+            .select("computed_total_cost")
+            .eq("proposal_id", proposalId)
+            .single(),
           supabase
             .from("scoped_services")
             .select("cost")
@@ -97,7 +98,7 @@ export default function BidSheetPage() {
       const bidData = bidRes.data as BidSheetData | null;
       const scenarioData = scenarioRes.data as ScenarioData[] | null;
       const customerData = customerRes.data as Customer[] | null;
-      const migrationData = migrationRes.data as { sales_price: number }[] | null;
+      const migrationData = migrationRes.data as { computed_total_cost: number } | null;
       const scopedData = scopedRes.data as { cost: number }[] | null;
 
       if (bidData) setBidSheet(bidData);
@@ -111,12 +112,7 @@ export default function BidSheetPage() {
         }
       }
       if (migrationData) {
-        setMigrationTotal(
-          migrationData.reduce(
-            (sum, m) => sum + Number(m.sales_price),
-            0
-          )
-        );
+        setMigrationTotal(Number(migrationData.computed_total_cost) || 0);
       }
       if (scopedData) {
         setScopedTotal(

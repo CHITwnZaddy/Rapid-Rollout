@@ -439,6 +439,133 @@ export interface Database {
           },
         ];
       };
+      migration_config: {
+        Row: {
+          id: string;
+          proposal_id: string;
+          num_projects: number;
+          hrs_per_import: number;
+          lines_per_import_file: number;
+          is_effort_included: boolean;
+          is_workshop_included: boolean;
+          pm_contingency_pct: number;
+          ba_complexity_factor: number;
+          pm_complexity_factor: number;
+          ba_trips: number;
+          pm_trips: number;
+          doc_avg_mb_per_project: number;
+          doc_mb_per_hour: number;
+          core_requirements_hrs: number;
+          core_migration_plan_hrs: number;
+          core_validation_hrs: number;
+          core_final_qa_hrs: number;
+          core_pm_oversight_hrs: number;
+          computed_total_cost: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          proposal_id: string;
+          num_projects?: number;
+          hrs_per_import?: number;
+          lines_per_import_file?: number;
+          is_effort_included?: boolean;
+          is_workshop_included?: boolean;
+          pm_contingency_pct?: number;
+          ba_complexity_factor?: number;
+          pm_complexity_factor?: number;
+          ba_trips?: number;
+          pm_trips?: number;
+          doc_avg_mb_per_project?: number;
+          doc_mb_per_hour?: number;
+          core_requirements_hrs?: number;
+          core_migration_plan_hrs?: number;
+          core_validation_hrs?: number;
+          core_final_qa_hrs?: number;
+          core_pm_oversight_hrs?: number;
+          computed_total_cost?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          proposal_id?: string;
+          num_projects?: number;
+          hrs_per_import?: number;
+          lines_per_import_file?: number;
+          is_effort_included?: boolean;
+          is_workshop_included?: boolean;
+          pm_contingency_pct?: number;
+          ba_complexity_factor?: number;
+          pm_complexity_factor?: number;
+          ba_trips?: number;
+          pm_trips?: number;
+          doc_avg_mb_per_project?: number;
+          doc_mb_per_hour?: number;
+          core_requirements_hrs?: number;
+          core_migration_plan_hrs?: number;
+          core_validation_hrs?: number;
+          core_final_qa_hrs?: number;
+          core_pm_oversight_hrs?: number;
+          computed_total_cost?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "migration_config_proposal_id_fkey";
+            columns: ["proposal_id"];
+            isOneToOne: true;
+            referencedRelation: "proposals";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      migration_detail_lines: {
+        Row: {
+          id: string;
+          proposal_id: string;
+          section: string;
+          label: string;
+          quantity: number;
+          items_per_object: number;
+          total_line_items: number;
+          row_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          proposal_id: string;
+          section: string;
+          label: string;
+          quantity?: number;
+          items_per_object?: number;
+          total_line_items?: number;
+          row_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          proposal_id?: string;
+          section?: string;
+          label?: string;
+          quantity?: number;
+          items_per_object?: number;
+          total_line_items?: number;
+          row_order?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "migration_detail_lines_proposal_id_fkey";
+            columns: ["proposal_id"];
+            isOneToOne: false;
+            referencedRelation: "proposals";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       change_log: {
         Row: {
           id: string;

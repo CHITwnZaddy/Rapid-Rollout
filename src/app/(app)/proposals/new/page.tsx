@@ -138,6 +138,33 @@ export default function NewProposalPage() {
       customer_id: customerId || null,
     });
 
+    // Create migration config with defaults
+    await supabase.from("migration_config").insert({
+      proposal_id: proposal.id,
+    });
+
+    // Create default migration detail lines
+    const migrationDefaults = [
+      // Project lines
+      { proposal_id: proposal.id, section: "project", label: "Project Info/Detail", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 0 },
+      { proposal_id: proposal.id, section: "project", label: "Schedules", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 1 },
+      // Workflow lines (11 default rows)
+      ...Array.from({ length: 11 }, (_, i) => ({
+        proposal_id: proposal.id, section: "workflow", label: "WF Object Name", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: i,
+      })),
+      // Cost lines
+      { proposal_id: proposal.id, section: "cost", label: "Budgets", quantity: 1, items_per_object: 0, total_line_items: 0, row_order: 0 },
+      { proposal_id: proposal.id, section: "cost", label: "Commitments", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 1 },
+      { proposal_id: proposal.id, section: "cost", label: "Commitment Changes", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 2 },
+      { proposal_id: proposal.id, section: "cost", label: "Commitment Invoices", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 3 },
+      { proposal_id: proposal.id, section: "cost", label: "General Invoices", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 4 },
+      { proposal_id: proposal.id, section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 5 },
+      { proposal_id: proposal.id, section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 6 },
+      { proposal_id: proposal.id, section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 7 },
+      { proposal_id: proposal.id, section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 8 },
+    ];
+    await supabase.from("migration_detail_lines").insert(migrationDefaults);
+
     router.push(`/proposals/${proposal.id}`);
   };
 
