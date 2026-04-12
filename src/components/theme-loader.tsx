@@ -51,21 +51,56 @@ const VARS: [string, string][] = [
   ["--sidebar-accent-foreground", "accentForeground"],
 ];
 
+const FONT_OPTIONS: Record<string, string> = {
+  Inter: "Inter:wght@300;400;500;600;700",
+  Roboto: "Roboto:wght@300;400;500;700",
+  "Open Sans": "Open+Sans:wght@300;400;500;600;700",
+  Lato: "Lato:wght@300;400;700",
+  Poppins: "Poppins:wght@300;400;500;600;700",
+  Montserrat: "Montserrat:wght@300;400;500;600;700",
+  "Source Sans 3": "Source+Sans+3:wght@300;400;500;600;700",
+  Nunito: "Nunito:wght@300;400;500;600;700",
+  Raleway: "Raleway:wght@300;400;500;600;700",
+  "DM Sans": "DM+Sans:wght@300;400;500;600;700",
+  "Plus Jakarta Sans": "Plus+Jakarta+Sans:wght@300;400;500;600;700",
+  Cabin: "Cabin:wght@400;500;600;700",
+  "Work Sans": "Work+Sans:wght@300;400;500;600;700",
+  Outfit: "Outfit:wght@300;400;500;600;700",
+};
+
 export function ThemeLoader() {
   useEffect(() => {
+    // Load colors
     const saved = localStorage.getItem("rapid-rollout-theme");
-    if (!saved) return;
-    try {
-      const { colors } = JSON.parse(saved);
-      if (!colors) return;
-      const root = document.documentElement;
-      for (const [cssVar, key] of VARS) {
-        if (colors[key]) {
-          root.style.setProperty(cssVar, hexToOklch(colors[key]));
+    if (saved) {
+      try {
+        const { colors } = JSON.parse(saved);
+        if (colors) {
+          const root = document.documentElement;
+          for (const [cssVar, key] of VARS) {
+            if (colors[key]) {
+              root.style.setProperty(cssVar, hexToOklch(colors[key]));
+            }
+          }
         }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+    }
+
+    // Load font
+    const savedFont = localStorage.getItem("rapid-rollout-font");
+    if (savedFont && savedFont !== "default") {
+      const googleParam = FONT_OPTIONS[savedFont];
+      if (googleParam) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = `https://fonts.googleapis.com/css2?family=${googleParam}&display=swap`;
+        document.head.appendChild(link);
+      }
+      const family = `"${savedFont}", system-ui, sans-serif`;
+      document.documentElement.style.setProperty("--font-sans", family);
+      document.body.style.fontFamily = family;
     }
   }, []);
 

@@ -151,13 +151,58 @@ function hexToOklch(hex: string): string {
   return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${h.toFixed(1)})`;
 }
 
+// ─── Font options ────────────────────────────────────────────────────
+
+const FONT_OPTIONS = [
+  { name: "Geist (Default)", value: "default", google: "" },
+  { name: "Inter", value: "Inter", google: "Inter:wght@300;400;500;600;700" },
+  { name: "Roboto", value: "Roboto", google: "Roboto:wght@300;400;500;700" },
+  { name: "Open Sans", value: "Open Sans", google: "Open+Sans:wght@300;400;500;600;700" },
+  { name: "Lato", value: "Lato", google: "Lato:wght@300;400;700" },
+  { name: "Poppins", value: "Poppins", google: "Poppins:wght@300;400;500;600;700" },
+  { name: "Montserrat", value: "Montserrat", google: "Montserrat:wght@300;400;500;600;700" },
+  { name: "Source Sans 3", value: "Source Sans 3", google: "Source+Sans+3:wght@300;400;500;600;700" },
+  { name: "Nunito", value: "Nunito", google: "Nunito:wght@300;400;500;600;700" },
+  { name: "Raleway", value: "Raleway", google: "Raleway:wght@300;400;500;600;700" },
+  { name: "DM Sans", value: "DM Sans", google: "DM+Sans:wght@300;400;500;600;700" },
+  { name: "Plus Jakarta Sans", value: "Plus Jakarta Sans", google: "Plus+Jakarta+Sans:wght@300;400;500;600;700" },
+  { name: "Cabin", value: "Cabin", google: "Cabin:wght@400;500;600;700" },
+  { name: "Work Sans", value: "Work Sans", google: "Work+Sans:wght@300;400;500;600;700" },
+  { name: "Outfit", value: "Outfit", google: "Outfit:wght@300;400;500;600;700" },
+];
+
+function loadGoogleFont(googleParam: string) {
+  if (!googleParam) return;
+  const id = `google-font-${googleParam.replace(/[^a-z0-9]/gi, "")}`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = `https://fonts.googleapis.com/css2?family=${googleParam}&display=swap`;
+  document.head.appendChild(link);
+}
+
+function applyFont(fontValue: string) {
+  const root = document.documentElement;
+  if (fontValue === "default") {
+    root.style.removeProperty("--font-sans");
+    document.body.style.fontFamily = "";
+  } else {
+    const family = `"${fontValue}", system-ui, sans-serif`;
+    root.style.setProperty("--font-sans", family);
+    document.body.style.fontFamily = family;
+  }
+}
+
 const STORAGE_KEY = "rapid-rollout-theme";
+const FONT_STORAGE_KEY = "rapid-rollout-font";
 
 export default function ThemePage() {
   const [theme, setTheme] = useState<ThemeColors>(DEFAULT_THEME);
   const [activePreset, setActivePreset] = useState("Default");
+  const [selectedFont, setSelectedFont] = useState("default");
 
-  // Load saved theme
+  // Load saved theme + font
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -169,6 +214,13 @@ export default function ThemePage() {
       } catch {
         // ignore
       }
+    }
+    const savedFont = localStorage.getItem(FONT_STORAGE_KEY);
+    if (savedFont) {
+      setSelectedFont(savedFont);
+      const opt = FONT_OPTIONS.find((f) => f.value === savedFont);
+      if (opt?.google) loadGoogleFont(opt.google);
+      applyFont(savedFont);
     }
   }, []);
 
@@ -219,9 +271,18 @@ export default function ThemePage() {
     [theme]
   );
 
+  const handleFontChange = useCallback((fontValue: string) => {
+    setSelectedFont(fontValue);
+    const opt = FONT_OPTIONS.find((f) => f.value === fontValue);
+    if (opt?.google) loadGoogleFont(opt.google);
+    applyFont(fontValue);
+    localStorage.setItem(FONT_STORAGE_KEY, fontValue);
+  }, []);
+
   const handleReset = useCallback(() => {
     handlePreset("Default");
-  }, [handlePreset]);
+    handleFontChange("default");
+  }, [handlePreset, handleFontChange]);
 
   const colorFields: { key: keyof ThemeColors; label: string }[] = [
     { key: "primary", label: "Primary (buttons, links)" },
@@ -270,6 +331,52 @@ export default function ThemePage() {
                 {name}
               </Button>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Font */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Font</CardTitle>
+          <CardDescription>
+            Choose a font for the entire site. Changes apply instantly.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            {FONT_OPTIONS.map((f) => (
+              <Button
+                key={f.value}
+                variant={selectedFont === f.value ? "default" : "outline"}
+                size="sm"
+                className="h-auto py-2 text-left"
+                onClick={() => handleFontChange(f.value)}
+              >
+                <span
+                  className="block text-sm"
+                  style={{
+                    fontFamily:
+                      f.value === "default"
+                        ? "inherit"
+                        : `"${f.value}", sans-serif`,
+                  }}
+                >
+                  {f.name}
+                </span>
+              </Button>
+            ))}
+          </div>
+          <div className="mt-4 rounded-md border p-4">
+            <p className="text-lg font-semibold">
+              The quick brown fox jumps over the lazy dog
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              $1,234,567.89 &mdash; 100.0 hrs &mdash; Migration Services Total
+            </p>
           </div>
         </CardContent>
       </Card>
