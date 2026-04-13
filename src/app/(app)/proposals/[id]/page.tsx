@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -101,9 +102,14 @@ export default async function ProposalSummaryPage({
                   comparison.lowestHours?.scenarioType === s.scenarioType;
 
                 return (
-                  <TableRow key={s.scenarioType}>
+                  <TableRow key={s.scenarioType} className="hover:bg-muted/50">
                     <TableCell className="font-medium">
-                      {s.scenarioType}
+                      <Link
+                        href={`/proposals/${id}/scenarios/${s.scenarioType}`}
+                        className="text-primary hover:underline"
+                      >
+                        {s.scenarioType}
+                      </Link>
                       {s.isActive && (
                         <Badge variant="secondary" className="ml-2">
                           Active
@@ -138,8 +144,15 @@ export default async function ProposalSummaryPage({
               })}
 
               {/* Scoped Services */}
-              <TableRow>
-                <TableCell className="font-medium">Scoped Services</TableCell>
+              <TableRow className="hover:bg-muted/50">
+                <TableCell className="font-medium">
+                  <Link
+                    href={`/proposals/${id}/scoped-services`}
+                    className="text-primary hover:underline"
+                  >
+                    Scoped Services
+                  </Link>
+                </TableCell>
                 <TableCell className="text-right text-muted-foreground">
                   —
                 </TableCell>
@@ -156,8 +169,15 @@ export default async function ProposalSummaryPage({
               </TableRow>
 
               {/* Migration Services */}
-              <TableRow>
-                <TableCell className="font-medium">Migration Services</TableCell>
+              <TableRow className="hover:bg-muted/50">
+                <TableCell className="font-medium">
+                  <Link
+                    href={`/proposals/${id}/migration`}
+                    className="text-primary hover:underline"
+                  >
+                    Migration Services
+                  </Link>
+                </TableCell>
                 <TableCell className="text-right text-muted-foreground">
                   —
                 </TableCell>

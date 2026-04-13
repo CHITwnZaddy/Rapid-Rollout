@@ -6,13 +6,13 @@ import { cn } from "@/lib/utils";
 
 const tabs = [
   { label: "Summary", href: "" },
+  { label: "Bid Sheet", href: "/bid-sheet" },
   { label: "P1", href: "/scenarios/P1" },
   { label: "P2", href: "/scenarios/P2" },
   { label: "Opt1", href: "/scenarios/Opt1" },
   { label: "Opt2", href: "/scenarios/Opt2" },
   { label: "Scoped Services", href: "/scoped-services" },
-  { label: "Migration", href: "/migration" },
-  { label: "Bid Sheet", href: "/bid-sheet" },
+  { label: "Migration Services", href: "/migration" },
 ];
 
 export function ProposalNav({ proposalId }: { proposalId: string }) {
