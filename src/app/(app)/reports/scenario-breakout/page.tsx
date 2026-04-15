@@ -32,6 +32,7 @@ import {
   calculateDocumentHours,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
+import * as XLSX from "xlsx";
 
 interface Proposal {
   id: string;
@@ -250,46 +251,63 @@ export default function ScenarioBreakoutReport() {
     return hours * NUM(migrationConfig?.ba_complexity_factor) * baRate;
   }
 
-  const exportCSV = useCallback(() => {
-    const csvLines: string[] = [];
-    csvLines.push("Section,Item,Detail,Subtotal");
+  const exportXLSX = useCallback(() => {
+    const rows: Array<Record<string, string | number>> = [];
 
     for (const g of scenarioGroups) {
       for (const l of g.lines) {
-        csvLines.push(
-          `"${g.scenarioType}","${l.module}","${l.scope_selection ?? ""}",${l.total_cost}`
-        );
+        rows.push({
+          Section: g.scenarioType,
+          Item: l.module,
+          Detail: l.scope_selection ?? "",
+          Subtotal: l.total_cost,
+        });
       }
-      csvLines.push(`"${g.scenarioType} Total","","",${g.totalCost}`);
+      rows.push({
+        Section: `${g.scenarioType} Total`,
+        Item: "",
+        Detail: "",
+        Subtotal: g.totalCost,
+      });
     }
 
     if (scopedLines.length > 0) {
       for (const s of scopedLines) {
-        csvLines.push(
-          `"Scoped Services","${s.service_type}","${s.description ?? ""}",${s.cost}`
-        );
+        rows.push({
+          Section: "Scoped Services",
+          Item: s.service_type,
+          Detail: s.description ?? "",
+          Subtotal: s.cost,
+        });
       }
-      csvLines.push(
-        `"Scoped Services Total","","",${scopedLines.reduce((s, l) => s + l.cost, 0)}`
-      );
+      rows.push({
+        Section: "Scoped Services Total",
+        Item: "",
+        Detail: "",
+        Subtotal: scopedLines.reduce((sum, l) => sum + l.cost, 0),
+      });
     }
 
     if (migrationConfig) {
-      csvLines.push(
-        `"Migration Services","Total","",${NUM(migrationConfig.computed_total_cost)}`
-      );
+      rows.push({
+        Section: "Migration Services",
+        Item: "Total",
+        Detail: "",
+        Subtotal: Number(migrationConfig.computed_total_cost) || 0,
+      });
     }
 
-    const csv = csvLines.join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Scenario Breakout");
+
     const proposalName =
       proposals.find((p) => p.id === selectedProposal)?.name ?? "report";
-    a.download = `scenario-breakout-${proposalName}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+
+    XLSX.writeFile(
+      wb,
+      `scenario-breakout-${proposalName}-${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
   }, [scenarioGroups, scopedLines, migrationConfig, proposals, selectedProposal]);
 
   // Migration detail helpers
@@ -377,8 +395,8 @@ export default function ScenarioBreakoutReport() {
               {loading ? "Running..." : "Run Report"}
             </Button>
             {hasRun && scenarioGroups.length > 0 && (
-              <Button size="sm" variant="outline" onClick={exportCSV}>
-                Export CSV
+              <Button size="sm" variant="outline" onClick={exportXLSX}>
+                Export XLSX
               </Button>
             )}
           </div>

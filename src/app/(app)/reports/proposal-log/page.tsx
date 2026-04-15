@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/calculations/engine";
+import * as XLSX from "xlsx";
 
 interface Customer {
   id: string;
@@ -168,42 +169,29 @@ export default function ProposalLogReport() {
     setLoading(false);
   }, [supabase, selectedCustomer, selectedStatus, customers]);
 
-  const exportCSV = useCallback(() => {
+  const exportXLSX = useCallback(() => {
     if (rows.length === 0) return;
-    const headers = [
-      "Customer",
-      "Proposal",
-      "Status",
-      "P1",
-      "P2",
-      "Opt1",
-      "Opt2",
-      "Scoped Services",
-      "Migration Services",
-      "Grand Total",
-    ];
-    const csvRows = rows.map((r) =>
-      [
-        `"${r.customerName}"`,
-        `"${r.proposalName}"`,
-        r.status,
-        r.p1Cost,
-        r.p2Cost,
-        r.opt1Cost,
-        r.opt2Cost,
-        r.scopedCost,
-        r.migrationCost,
-        r.grandTotal,
-      ].join(",")
+
+    const exportRows = rows.map((r) => ({
+      Customer: r.customerName,
+      Proposal: r.proposalName,
+      Status: r.status,
+      P1: r.p1Cost,
+      P2: r.p2Cost,
+      Opt1: r.opt1Cost,
+      Opt2: r.opt2Cost,
+      "Scoped Services": r.scopedCost,
+      "Migration Services": r.migrationCost,
+      "Grand Total": r.grandTotal,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Proposal Log");
+    XLSX.writeFile(
+      wb,
+      `proposal-log-${new Date().toISOString().slice(0, 10)}.xlsx`
     );
-    const csv = [headers.join(","), ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `proposal-log-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   }, [rows]);
 
   return (
@@ -263,8 +251,8 @@ export default function ProposalLogReport() {
               {loading ? "Running..." : "Run Report"}
             </Button>
             {rows.length > 0 && (
-              <Button size="sm" variant="outline" onClick={exportCSV}>
-                Export CSV
+              <Button size="sm" variant="outline" onClick={exportXLSX}>
+                Export XLSX
               </Button>
             )}
           </div>
