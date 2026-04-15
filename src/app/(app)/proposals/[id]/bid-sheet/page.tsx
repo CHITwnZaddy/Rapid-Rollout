@@ -168,12 +168,22 @@ export default function BidSheetPage() {
 
   const discountPercent = bidSheet?.discount_percent ?? 0;
   const discountDollars = bidSheet?.discount_dollars ?? 0;
-  const grandTotal =
-    scenarios.reduce((s, sc) => s + Number(sc.summary_total_cost), 0) +
-    migrationTotal +
-    scopedTotal;
-  const subtotalAfterDollarDiscount = Math.max(grandTotal - discountDollars, 0);
-  const discountedTotal = subtotalAfterDollarDiscount * (1 - discountPercent / 100);
+
+  const scenarioSubtotal = scenarios.reduce(
+    (sum, sc) => sum + Number(sc.summary_total_cost),
+    0
+  );
+  const totalHours = scenarios.reduce(
+    (sum, sc) => sum + Number(sc.summary_total_hours),
+    0
+  );
+
+  const afterDollar = Math.max(0, scenarioSubtotal - discountDollars);
+  const discountedScenarioTotal = afterDollar * (1 - discountPercent / 100);
+  const finalTotal = discountedScenarioTotal + migrationTotal + scopedTotal;
+
+  const blendedRate = totalHours > 0 ? finalTotal / totalHours : 0;
+  const blendedRateMeetsTarget = blendedRate >= 225;
 
   return (
     <div className="space-y-6">
@@ -302,8 +312,14 @@ export default function BidSheetPage() {
               }
             />
             <span className="text-lg font-bold">
-              Total: {formatCurrency(discountedTotal)}
+              Total: {formatCurrency(finalTotal)}
             </span>
+            <Badge
+              variant={blendedRateMeetsTarget ? "secondary" : "destructive"}
+              className={blendedRateMeetsTarget ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}
+            >
+              Blended Rate: {formatCurrency(blendedRate)}
+            </Badge>
           </div>
         </CardContent>
       </Card>
