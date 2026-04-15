@@ -82,6 +82,13 @@ export function AdminDataTable({
 
   const addRow = useCallback(async () => {
     const newRow: Record<string, unknown> = { ...createDefaults };
+
+    for (const [key, value] of Object.entries(newRow)) {
+      if (typeof value === "string" && value.includes("__AUTO__")) {
+        newRow[key] = value.replaceAll("__AUTO__", String(Date.now()));
+      }
+    }
+
     for (const col of columns) {
       if (!(col.key in newRow)) {
         newRow[col.key] = col.type === "number" ? 0 : "";

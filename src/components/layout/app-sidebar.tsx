@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: "grid" },
   { label: "Proposals", href: "/proposals", icon: "file-text" },
+  { label: "Customers", href: "/customers", icon: "users" },
   { label: "Reports", href: "/reports", icon: "bar-chart" },
 ];
 

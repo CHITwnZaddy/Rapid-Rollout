@@ -32,7 +32,7 @@ export default async function RateCardsPage() {
           rate: 0,
           role_category: "Professional Services",
           status: "Active",
-          lookup_key: `Master|NewRole_${Date.now()}`,
+          lookup_key: "Master|NewRole__AUTO__",
         }}
       />
     </div>
