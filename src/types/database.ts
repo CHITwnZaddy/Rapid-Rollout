@@ -377,6 +377,7 @@ export interface Database {
           migration_cost: number;
           scoped_services_cost: number;
           discount_percent: number;
+          discount_dollars: number;
           recommended_scenario: string | null;
           notes: string | null;
           created_at: string;
@@ -397,6 +398,7 @@ export interface Database {
           migration_cost?: number;
           scoped_services_cost?: number;
           discount_percent?: number;
+          discount_dollars?: number;
           recommended_scenario?: string | null;
           notes?: string | null;
           created_at?: string;
@@ -417,6 +419,7 @@ export interface Database {
           migration_cost?: number;
           scoped_services_cost?: number;
           discount_percent?: number;
+          discount_dollars?: number;
           recommended_scenario?: string | null;
           notes?: string | null;
           created_at?: string;
