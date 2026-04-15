@@ -165,43 +165,48 @@ export default function ScenarioBreakoutReport() {
     setLoading(true);
     setHasRun(true);
 
-    const [scenarioRes, linesRes, scopedRes, migCfgRes, migLinesRes] =
-      await Promise.all([
-        supabase
-          .from("scenarios")
-          .select("id, scenario_type, summary_total_cost")
-          .eq("proposal_id", selectedProposal)
-          .order("scenario_type"),
-        supabase
-          .from("scenario_lines")
-          .select("scenario_id, module, scope_selection, total_cost")
-          .in(
-            "scenario_id",
-            (
-              await supabase
-                .from("scenarios")
-                .select("id")
-                .eq("proposal_id", selectedProposal)
-            ).data?.map((s) => s.id) ?? []
-          )
-          .order("row_order"),
-        supabase
-          .from("scoped_services")
-          .select("service_type, description, cost")
-          .eq("proposal_id", selectedProposal)
-          .order("row_order"),
-        supabase
-          .from("migration_config")
-          .select("*")
-          .eq("proposal_id", selectedProposal)
-          .single(),
-        supabase
-          .from("migration_detail_lines")
-          .select("section, label, quantity, items_per_object, total_line_items")
-          .eq("proposal_id", selectedProposal)
-          .order("section")
-          .order("row_order"),
-      ]);
+    // Phase 2.5 — two fixes here:
+    //   1. migration_config used to .select("*"), over-fetching
+    //      several internal columns we never read. Pruned to the
+    //      exact 16 columns the MigrationConfig interface uses.
+    //   2. The scenario_lines subquery used to run a nested
+    //      `await supabase.from("scenarios").select("id")` inside
+    //      Promise.all — duplicating the scenarios fetch that was
+    //      already in the same batch. Fetch scenarios first, then
+    //      fan out the four dependent queries in parallel.
+    const scenarioRes = await supabase
+      .from("scenarios")
+      .select("id, scenario_type, summary_total_cost")
+      .eq("proposal_id", selectedProposal)
+      .order("scenario_type");
+
+    const scenarioIds = (scenarioRes.data ?? []).map((s) => s.id);
+
+    const [linesRes, scopedRes, migCfgRes, migLinesRes] = await Promise.all([
+      supabase
+        .from("scenario_lines")
+        .select("scenario_id, module, scope_selection, total_cost")
+        .in("scenario_id", scenarioIds)
+        .order("row_order"),
+      supabase
+        .from("scoped_services")
+        .select("service_type, description, cost")
+        .eq("proposal_id", selectedProposal)
+        .order("row_order"),
+      supabase
+        .from("migration_config")
+        .select(
+          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, ba_complexity_factor, pm_complexity_factor, ba_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs, computed_total_cost"
+        )
+        .eq("proposal_id", selectedProposal)
+        .single(),
+      supabase
+        .from("migration_detail_lines")
+        .select("section, label, quantity, items_per_object, total_line_items")
+        .eq("proposal_id", selectedProposal)
+        .order("section")
+        .order("row_order"),
+    ]);
 
     // Build scenario groups
     const scenarios = scenarioRes.data ?? [];

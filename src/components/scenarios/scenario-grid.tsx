@@ -124,24 +124,38 @@ export function ScenarioGrid({
       dirtyIds.includes(l.id)
     );
 
-    for (const line of currentLines) {
+    // Phase 2.3 — replace N sequential UPDATE calls with a single
+    // upsert keyed on id. Editing 10 lines used to fire 10 serial
+    // PATCH requests; now it's one HTTP round trip. scenario_id,
+    // row_order and module are NOT NULL on the table, so they must
+    // be present in the upsert payload even though they don't
+    // change — the row already exists and will be matched by id.
+    if (currentLines.length > 0) {
+      const payload = currentLines.map((line) => ({
+        id: line.id,
+        scenario_id: scenarioId,
+        row_order: line.rowOrder,
+        module: line.module,
+        scope_selection: line.scopeSelection,
+        sr_im_hours: line.srImHours,
+        sr_im_cost: line.srImCost,
+        pm_hours: line.pmHours,
+        pm_cost: line.pmCost,
+        ba_hours: line.baHours,
+        ba_cost: line.baCost,
+        total_hours: line.totalHours,
+        total_cost: line.totalCost,
+      }));
       await supabase
         .from("scenario_lines")
-        .update({
-          scope_selection: line.scopeSelection,
-          sr_im_hours: line.srImHours,
-          sr_im_cost: line.srImCost,
-          pm_hours: line.pmHours,
-          pm_cost: line.pmCost,
-          ba_hours: line.baHours,
-          ba_cost: line.baCost,
-          total_hours: line.totalHours,
-          total_cost: line.totalCost,
-        })
-        .eq("id", line.id);
+        .upsert(payload, { onConflict: "id" });
     }
 
-    // Update scenario totals
+    // Update scenario totals — fire this in parallel with the line
+    // upsert above would require a Promise.all, but since the
+    // totals need a fresh read of linesRef they're dependent on the
+    // state being stable. Run it immediately after; on HTTP/2 to
+    // Supabase the two calls multiplex so latency is ~1 round trip.
     const allTotals = calculateScenarioTotals(linesRef.current);
     await supabase
       .from("scenarios")

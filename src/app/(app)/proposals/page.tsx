@@ -1,4 +1,8 @@
-export const dynamic = "force-dynamic";
+// Phase 2.7 — proposals list is globally readable per RLS
+// (SE backup workflow), so the same HTML is safe to serve to
+// every user. 60s revalidation keeps new proposals visible
+// quickly without hitting Supabase on every request.
+export const revalidate = 60;
 
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";

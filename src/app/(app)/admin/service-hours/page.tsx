@@ -1,4 +1,6 @@
-export const dynamic = "force-dynamic";
+// Phase 2.7 — service hours change rarely; 5 minute revalidation
+// matches the recommended stale time for lookup tables.
+export const revalidate = 300;
 
 import { createClient } from "@/lib/supabase/server";
 import { AdminDataTable, type ColumnDef } from "@/components/admin/data-table";

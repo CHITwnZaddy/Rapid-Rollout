@@ -1,4 +1,6 @@
-export const dynamic = "force-dynamic";
+// Phase 2.7 — was `force-dynamic`, switched to 60s revalidation.
+// Customer data is shared across all users; middleware gates auth.
+export const revalidate = 60;
 
 import { createClient } from "@/lib/supabase/server";
 import { AdminDataTable, type ColumnDef } from "@/components/admin/data-table";

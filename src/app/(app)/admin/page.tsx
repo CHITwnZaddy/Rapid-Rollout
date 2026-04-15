@@ -1,4 +1,6 @@
-export const dynamic = "force-dynamic";
+// Phase 2.7 — admin landing is just a card grid of links. Almost
+// pure static; revalidate every 5 minutes is plenty.
+export const revalidate = 300;
 
 import Link from "next/link";
 import {

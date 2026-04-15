@@ -334,6 +334,12 @@ export default function ThemePage() {
     if (opt?.google) loadGoogleFont(opt.google);
     applyFont(fontValue);
     localStorage.setItem(FONT_STORAGE_KEY, fontValue);
+    // Phase 2.8 — also write a cookie so the root layout can
+    // server-render the Google Font <link> on the next navigation,
+    // eliminating the FOUT that happened when ThemeLoader used to
+    // append the link post-hydration. Path=/ so every route sees
+    // it; 1-year expiry since this is a stable personalization.
+    document.cookie = `${FONT_STORAGE_KEY}=${encodeURIComponent(fontValue)}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
   }, []);
 
   const handleReset = useCallback(() => {

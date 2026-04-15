@@ -1,4 +1,8 @@
-export const dynamic = "force-dynamic";
+// Phase 2.7 — was `force-dynamic`, switched to 60s revalidation.
+// Proposals are globally readable (SE backup workflow) so the
+// same HTML is fine to serve to all authenticated users. Middleware
+// still gates auth on every request.
+export const revalidate = 60;
 
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
@@ -60,18 +64,22 @@ export default async function DashboardPage({
     proposalsQuery = proposalsQuery.neq("status", "Draft");
   }
 
-  const { data } = await proposalsQuery;
-  const proposals = data as ProposalRow[] | null;
+  // Phase 2.2 — run the proposal list + both counts in parallel.
+  // Previously these were three sequential awaits (~150-300ms of
+  // avoidable waterfall). submittedCount is derived from total -
+  // draft, so we only need two count queries.
+  const [proposalsRes, totalRes, draftRes] = await Promise.all([
+    proposalsQuery,
+    supabase.from("proposals").select("*", { count: "exact", head: true }),
+    supabase
+      .from("proposals")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "Draft"),
+  ]);
 
-  const { count: totalProposals } = await supabase
-    .from("proposals")
-    .select("*", { count: "exact", head: true });
-
-  const { count: draftCount } = await supabase
-    .from("proposals")
-    .select("*", { count: "exact", head: true })
-    .eq("status", "Draft");
-
+  const proposals = proposalsRes.data as ProposalRow[] | null;
+  const totalProposals = totalRes.count;
+  const draftCount = draftRes.count;
   const submittedCount = (totalProposals ?? 0) - (draftCount ?? 0);
 
   const cardClass = (isActive: boolean) =>

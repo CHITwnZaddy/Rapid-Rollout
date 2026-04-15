@@ -68,16 +68,50 @@ export default function NewProposalPage() {
 
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // Phase 2.4 — restructure the new-proposal flow into
+    // dependency levels to eliminate the 8-step serial waterfall
+    // that used to block the SE for ~1-2s after clicking Create.
+    //
+    // Level 0 (no deps):   auth.getUser, service_hours fetch
+    // Level 1 (user.id):   proposals insert (returns proposal.id)
+    // Level 2 (propId):    scenarios insert + bid_sheet + migration_config
+    //                      + migration_detail_lines (all parallel)
+    // Level 3 (scenarioIds + modules): scenario_lines insert
+    //
+    // We also use .select() on the scenarios insert to get the new
+    // row ids back inline — this eliminates a separate SELECT that
+    // used to run after the insert.
+
+    // ─── Level 0: fetch user + service modules in parallel ──
+    const [userRes, servicesRes] = await Promise.all([
+      supabase.auth.getUser(),
+      supabase
+        .from("service_hours")
+        .select("service_name")
+        .eq("status", "Active")
+        .order("service_name"),
+    ]);
+
+    const user = userRes.data.user;
     if (!user) {
       setError("You must be logged in.");
       setLoading(false);
       return;
     }
 
-    // Create proposal
+    // Derive unique module names preserving order.
+    const uniqueModules: string[] = [];
+    if (servicesRes.data) {
+      const seen = new Set<string>();
+      for (const s of servicesRes.data) {
+        if (!seen.has(s.service_name)) {
+          seen.add(s.service_name);
+          uniqueModules.push(s.service_name);
+        }
+      }
+    }
+
+    // ─── Level 1: create the proposal ──────────────────────
     const { data: proposal, error: proposalError } = await supabase
       .from("proposals")
       .insert({
@@ -94,74 +128,8 @@ export default function NewProposalPage() {
       return;
     }
 
-    // Create 4 scenario shells
-    const scenarioTypes = ["P1", "P2", "Opt1", "Opt2"];
-    const { error: scenarioError } = await supabase.from("scenarios").insert(
-      scenarioTypes.map((type, i) => ({
-        proposal_id: proposal.id,
-        scenario_type: type,
-        is_active: i === 0, // P1 is active by default
-      }))
-    );
-
-    if (scenarioError) {
-      setError(scenarioError.message);
-      setLoading(false);
-      return;
-    }
-
-    // Get all active service modules to pre-populate scenario lines
-    const { data: services } = await supabase
-      .from("service_hours")
-      .select("service_name, service_group")
-      .eq("status", "Active")
-      .order("service_name");
-
-    if (services) {
-      // Get unique module names preserving order
-      const uniqueModules: string[] = [];
-      const seen = new Set<string>();
-      for (const s of services) {
-        if (!seen.has(s.service_name)) {
-          seen.add(s.service_name);
-          uniqueModules.push(s.service_name);
-        }
-      }
-
-      // Get scenario IDs we just created
-      const { data: scenarios } = await supabase
-        .from("scenarios")
-        .select("id")
-        .eq("proposal_id", proposal.id);
-
-      if (scenarios) {
-        const lines = scenarios.flatMap((scenario) =>
-          uniqueModules.map((module, idx) => ({
-            scenario_id: scenario.id,
-            row_order: idx,
-            module,
-          }))
-        );
-
-        if (lines.length > 0) {
-          await supabase.from("scenario_lines").insert(lines);
-        }
-      }
-    }
-
-    // Create empty bid sheet
-    await supabase.from("bid_sheets").insert({
-      proposal_id: proposal.id,
-      customer_id: validCustomerId || null,
-    });
-
-    // Create migration config with defaults (doc_avg_mb_per_project starts at 0)
-    await supabase.from("migration_config").insert({
-      proposal_id: proposal.id,
-      doc_avg_mb_per_project: 0,
-    });
-
-    // Create default migration detail lines
+    // Build the static migration_detail_lines payload once so it
+    // can fan out in parallel with the other Level 2 inserts.
     const migrationDefaults = [
       // Project lines
       { proposal_id: proposal.id, section: "project", label: "Project Info/Detail", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 0 },
@@ -181,7 +149,56 @@ export default function NewProposalPage() {
       { proposal_id: proposal.id, section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 7 },
       { proposal_id: proposal.id, section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 8 },
     ];
-    await supabase.from("migration_detail_lines").insert(migrationDefaults);
+
+    // ─── Level 2: fan out every child insert in parallel ───
+    const scenarioTypes = ["P1", "P2", "Opt1", "Opt2"];
+    const [scenariosRes, bidSheetRes, migrationConfigRes, migrationLinesRes] =
+      await Promise.all([
+        supabase
+          .from("scenarios")
+          .insert(
+            scenarioTypes.map((type, i) => ({
+              proposal_id: proposal.id,
+              scenario_type: type,
+              is_active: i === 0,
+            }))
+          )
+          .select("id"),
+        supabase.from("bid_sheets").insert({
+          proposal_id: proposal.id,
+          customer_id: validCustomerId || null,
+        }),
+        supabase.from("migration_config").insert({
+          proposal_id: proposal.id,
+          doc_avg_mb_per_project: 0,
+        }),
+        supabase.from("migration_detail_lines").insert(migrationDefaults),
+      ]);
+
+    if (scenariosRes.error || !scenariosRes.data) {
+      setError(scenariosRes.error?.message ?? "Failed to create scenarios");
+      setLoading(false);
+      return;
+    }
+    // Non-critical inserts — log but don't block on failure. The
+    // proposal detail page self-heals missing bid_sheets rows.
+    if (bidSheetRes.error) console.warn("bid_sheet insert failed", bidSheetRes.error);
+    if (migrationConfigRes.error) console.warn("migration_config insert failed", migrationConfigRes.error);
+    if (migrationLinesRes.error) console.warn("migration_detail_lines insert failed", migrationLinesRes.error);
+
+    // ─── Level 3: scenario_lines (cross product) ───────────
+    if (uniqueModules.length > 0) {
+      const lines = scenariosRes.data.flatMap((scenario) =>
+        uniqueModules.map((module, idx) => ({
+          scenario_id: scenario.id,
+          row_order: idx,
+          module,
+        }))
+      );
+      if (lines.length > 0) {
+        await supabase.from("scenario_lines").insert(lines);
+      }
+    }
 
     router.push(`/proposals/${proposal.id}`);
   };

@@ -1,4 +1,7 @@
-export const dynamic = "force-dynamic";
+// Phase 2.7 — admin page, middleware + layout double-check the
+// admin role on every request. Content is shared lookup data;
+// 60s revalidation is safe.
+export const revalidate = 60;
 
 import { createClient } from "@/lib/supabase/server";
 import { AdminDataTable, type ColumnDef } from "@/components/admin/data-table";

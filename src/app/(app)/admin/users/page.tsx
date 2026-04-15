@@ -1,4 +1,5 @@
-export const dynamic = "force-dynamic";
+// Phase 2.7 — user list changes on admin action; 60s is fine.
+export const revalidate = 60;
 
 import {
   Card,
