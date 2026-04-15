@@ -77,16 +77,15 @@ export function calculateLineImports(
 }
 
 /**
- * For cost and project sections, total_line_items = quantity × items_per_object.
- * For workflow, total_line_items is entered directly.
+ * Total line items = quantity × items_per_object for every section.
+ * Originally workflow rows let the user type the total directly, but
+ * the SE workflow on the floor matches the project/cost rule, so all
+ * three sections now compute it from the two inputs.
  */
 export function effectiveTotalLineItems(
   line: MigrationDetailLine
 ): number {
-  if (line.section === "cost" || line.section === "project") {
-    return line.quantity * line.items_per_object;
-  }
-  return line.total_line_items;
+  return line.quantity * line.items_per_object;
 }
 
 /**

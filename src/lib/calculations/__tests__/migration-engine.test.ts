@@ -92,17 +92,17 @@ describe("effectiveTotalLineItems", () => {
     ).toBe(150);
   });
 
-  it("workflow: uses total_line_items directly", () => {
+  it("workflow: also computes quantity × items_per_object (total_line_items field is ignored)", () => {
     expect(
       effectiveTotalLineItems(
         line({
           section: "workflow",
-          quantity: 99,
-          items_per_object: 99,
-          total_line_items: 42,
+          quantity: 4,
+          items_per_object: 25,
+          total_line_items: 999, // ignored
         })
       )
-    ).toBe(42);
+    ).toBe(100);
   });
 });
 

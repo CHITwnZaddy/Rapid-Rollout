@@ -30,9 +30,11 @@ import {
   calculateLineImports,
   effectiveTotalLineItems,
   calculateDocumentHours,
+  calculateMigrationTotals,
+  type MigrationConfig as EngineMigrationConfig,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
-import * as XLSX from "xlsx";
+import { exportScenarioBreakoutXLSX } from "@/lib/exports/scenario-breakout";
 
 interface Proposal {
   id: string;
@@ -287,65 +289,6 @@ export default function ScenarioBreakoutReport() {
     return hours * NUM(migrationConfig?.ba_complexity_factor) * baRate;
   }
 
-  const exportXLSX = useCallback(() => {
-    const rows: Array<Record<string, string | number>> = [];
-
-    for (const g of scenarioGroups) {
-      for (const l of g.lines) {
-        rows.push({
-          Section: g.scenarioType,
-          Item: l.module,
-          Detail: l.scope_selection ?? "",
-          Subtotal: l.total_cost,
-        });
-      }
-      rows.push({
-        Section: `${g.scenarioType} Total`,
-        Item: "",
-        Detail: "",
-        Subtotal: g.totalCost,
-      });
-    }
-
-    if (scopedLines.length > 0) {
-      for (const s of scopedLines) {
-        rows.push({
-          Section: "Scoped Services",
-          Item: s.service_type,
-          Detail: s.description ?? "",
-          Subtotal: s.cost,
-        });
-      }
-      rows.push({
-        Section: "Scoped Services Total",
-        Item: "",
-        Detail: "",
-        Subtotal: scopedLines.reduce((sum, l) => sum + l.cost, 0),
-      });
-    }
-
-    if (migrationConfig) {
-      rows.push({
-        Section: "Migration Services",
-        Item: "Total",
-        Detail: "",
-        Subtotal: Number(migrationConfig.computed_total_cost) || 0,
-      });
-    }
-
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Scenario Breakout");
-
-    const proposalName =
-      proposals.find((p) => p.id === selectedProposal)?.name ?? "report";
-
-    XLSX.writeFile(
-      wb,
-      `scenario-breakout-${proposalName}-${new Date().toISOString().slice(0, 10)}.xlsx`
-    );
-  }, [scenarioGroups, scopedLines, migrationConfig, proposals, selectedProposal]);
-
   // Migration detail helpers
   const projectLines = migrationLines.filter((l) => l.section === "project");
   const workflowLines = migrationLines
@@ -382,6 +325,77 @@ export default function ScenarioBreakoutReport() {
 
   const hasTravelData =
     NUM(migrationConfig?.ba_trips) > 0 || NUM(migrationConfig?.pm_trips) > 0;
+
+  // Compute the migration grand total live from the same data the
+  // per-section rows display, instead of trusting the stored
+  // `computed_total_cost` snapshot (which can drift from the live
+  // section breakdowns shown above).
+  const migrationLiveTotal =
+    migrationConfig && baRate != null && pmRate != null && travelRate != null
+      ? (() => {
+          const numP = NUM(migrationConfig.num_projects);
+          const engineCfg: EngineMigrationConfig = {
+            num_projects: numP,
+            hrs_per_import: NUM(migrationConfig.hrs_per_import),
+            lines_per_import_file: NUM(migrationConfig.lines_per_import_file),
+            is_effort_included: migrationConfig.is_effort_included,
+            is_workshop_included: migrationConfig.is_workshop_included,
+            pm_contingency_pct: 0,
+            ba_complexity_factor: NUM(migrationConfig.ba_complexity_factor),
+            pm_complexity_factor: NUM(migrationConfig.pm_complexity_factor),
+            ba_trips: NUM(migrationConfig.ba_trips),
+            pm_trips: NUM(migrationConfig.pm_trips),
+            doc_avg_mb_per_project: NUM(migrationConfig.doc_avg_mb_per_project),
+            doc_mb_per_hour: NUM(migrationConfig.doc_mb_per_hour),
+            core_requirements_hrs: NUM(migrationConfig.core_requirements_hrs),
+            core_migration_plan_hrs: NUM(migrationConfig.core_migration_plan_hrs),
+            core_validation_hrs: NUM(migrationConfig.core_validation_hrs),
+            core_final_qa_hrs: NUM(migrationConfig.core_final_qa_hrs),
+            core_pm_oversight_hrs: NUM(migrationConfig.core_pm_oversight_hrs),
+          };
+          const toEngine = (l: MigrationLine, qtyOverride?: number): MigrationDetailLine => ({
+            id: "",
+            section: l.section as "project" | "workflow" | "cost",
+            label: l.label,
+            quantity: qtyOverride ?? NUM(l.quantity),
+            items_per_object: NUM(l.items_per_object),
+            total_line_items: NUM(l.total_line_items),
+            row_order: 0,
+          });
+          const engineProject = projectLines.map((l) => toEngine(l, numP));
+          const engineWorkflow = workflowLines.map((l) => toEngine(l));
+          const engineCost = costDataLines.map((l) => toEngine(l));
+          return calculateMigrationTotals(
+            engineCfg,
+            engineProject,
+            engineWorkflow,
+            engineCost,
+            baRate,
+            pmRate,
+            travelRate
+          ).salesPrice;
+        })()
+      : 0;
+
+  const exportXLSX = useCallback(() => {
+    const proposalName =
+      proposals.find((p) => p.id === selectedProposal)?.name ?? "report";
+    exportScenarioBreakoutXLSX({
+      proposalName,
+      scenarioGroups,
+      scopedLines,
+      migrationSummary: migrationConfig
+        ? { total: migrationLiveTotal }
+        : null,
+    });
+  }, [
+    scenarioGroups,
+    scopedLines,
+    migrationConfig,
+    migrationLiveTotal,
+    proposals,
+    selectedProposal,
+  ]);
 
   // Core effort hours
   const coreEffortHours = migrationConfig?.is_effort_included
@@ -863,12 +877,13 @@ export default function ScenarioBreakoutReport() {
                   </div>
                 )}
 
-                {/* Migration Grand Total */}
+                {/* Migration Grand Total — computed live from the same
+                    section data shown above so it always cascades. */}
                 <div className="rounded-md border bg-muted/30 p-3">
                   <div className="flex justify-between text-base font-bold">
                     <span>Migration Services Total</span>
                     <span className="tabular-nums">
-                      {formatCurrency(NUM(migrationConfig.computed_total_cost))}
+                      {formatCurrency(migrationLiveTotal)}
                     </span>
                   </div>
                 </div>

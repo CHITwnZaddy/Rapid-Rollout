@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useParams } from "next/navigation";
-import { useRequireAdmin } from "@/lib/hooks/use-require-admin";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -30,9 +29,7 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/calculations/engine";
 import {
-  calculateLineImports,
   calculateMigrationTotals,
-  effectiveTotalLineItems,
   DEFAULT_PROJECT_LINES,
   DEFAULT_WORKFLOW_LINES,
   DEFAULT_COST_LINES,
@@ -40,6 +37,7 @@ import {
   type MigrationDetailLine,
   type MigrationTotals,
 } from "@/lib/calculations/migration-engine";
+import { MigrationDetailSection } from "@/components/migration/migration-detail-section";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -84,13 +82,6 @@ const NUM = (v: unknown) => Number(v) || 0;
 export default function MigrationPage() {
   const { id: proposalId } = useParams<{ id: string }>();
   const supabase = createClient();
-  // Admin status is loading-aware: while the auth check is in
-  // flight, `adminStatus.status === "loading"` and the MB/Hour
-  // editor renders a neutral disabled placeholder instead of
-  // flashing the read-only "(admin only)" label to real admins.
-  const adminStatus = useRequireAdmin();
-  const isAdmin = adminStatus.status === "admin";
-  const isAdminLoading = adminStatus.status === "loading";
 
   const [config, setConfig] = useState<DbConfig | null>(null);
   const [lines, setLines] = useState<DbLine[]>([]);
@@ -624,7 +615,7 @@ export default function MigrationPage() {
       )}
 
       {/* ── Project & Schedule Data ───────────────────────────────── */}
-      <DetailSection
+      <MigrationDetailSection
         title="Project & Schedule Data Migration"
         section="project"
         lines={projectLines}
@@ -633,20 +624,23 @@ export default function MigrationPage() {
         qtyLabel="# of Projects"
         itemsLabel="Line Items / Object"
         totalEditable={false}
+        labelEditable={(row) =>
+          row.label !== "Project Info/Detail" && row.label !== "Schedules"
+        }
         onUpdateLine={updateLine}
         onAddLine={addLine}
         onRemoveLine={removeLine}
       />
 
       {/* ── Workflow Data ─────────────────────────────────────────── */}
-      <DetailSection
+      <MigrationDetailSection
         title="Workflow Data Migration"
         section="workflow"
         lines={workflowLines}
         config={config}
         qtyLabel="# of Instances"
         itemsLabel="Line Items / Object"
-        totalEditable
+        totalEditable={false}
         labelEditable
         onUpdateLine={updateLine}
         onAddLine={addLine}
@@ -654,7 +648,7 @@ export default function MigrationPage() {
       />
 
       {/* ── Cost Data ─────────────────────────────────────────────── */}
-      <DetailSection
+      <MigrationDetailSection
         title="Cost Data Migration"
         section="cost"
         lines={costLines}
@@ -691,37 +685,10 @@ export default function MigrationPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">
-                MB / Hour
-                {!isAdmin && !isAdminLoading && (
-                  <span className="ml-1 text-muted-foreground">(admin only)</span>
-                )}
-              </Label>
-              {isAdminLoading ? (
-                <div
-                  className="flex h-8 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground tabular-nums"
-                  aria-busy="true"
-                >
-                  …
-                </div>
-              ) : isAdmin ? (
-                <Input
-                  type="number"
-                  min={0}
-                  className="h-8"
-                  value={NUM(config?.doc_mb_per_hour)}
-                  onChange={(e) =>
-                    updateConfig(
-                      "doc_mb_per_hour",
-                      parseFloat(e.target.value) || 0
-                    )
-                  }
-                />
-              ) : (
-                <div className="flex h-8 items-center rounded-md border bg-muted px-3 text-sm tabular-nums">
-                  {NUM(config?.doc_mb_per_hour).toLocaleString()}
-                </div>
-              )}
+              <Label className="text-xs">MB / Hour</Label>
+              <div className="flex h-8 items-center rounded-md border bg-muted px-3 text-sm tabular-nums">
+                {NUM(config?.doc_mb_per_hour).toLocaleString()}
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Calculated Hours</Label>
@@ -955,227 +922,5 @@ export default function MigrationPage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-// ─── Detail Section Sub-component ────────────────────────────────────
-
-interface DetailSectionProps {
-  title: string;
-  section: "project" | "workflow" | "cost";
-  lines: DbLine[];
-  config: DbConfig | null;
-  numProjectsOverride?: number;
-  qtyLabel: string;
-  itemsLabel: string;
-  totalEditable: boolean;
-  labelEditable?: boolean;
-  onUpdateLine: (id: string, field: keyof DbLine, value: string | number) => void;
-  onAddLine: (section: "project" | "workflow" | "cost") => void;
-  onRemoveLine: (id: string) => void;
-}
-
-function DetailSection({
-  title,
-  section,
-  lines,
-  config,
-  numProjectsOverride,
-  qtyLabel,
-  itemsLabel,
-  totalEditable,
-  labelEditable,
-  onUpdateLine,
-  onAddLine,
-  onRemoveLine,
-}: DetailSectionProps) {
-  const hrsPerImport = NUM(config?.hrs_per_import);
-  const linesPerFile = NUM(config?.lines_per_import_file);
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">{title}</CardTitle>
-        <Button size="sm" variant="outline" onClick={() => onAddLine(section)}>
-          + Add Row
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-[140px]">Label</TableHead>
-                <TableHead className="w-[90px] text-right">{qtyLabel}</TableHead>
-                <TableHead className="w-[90px] text-right">{itemsLabel}</TableHead>
-                <TableHead className="w-[100px] text-right">
-                  Total # Items
-                </TableHead>
-                <TableHead className="w-[80px] text-right"># Imports</TableHead>
-                <TableHead className="w-[70px] text-right">Hrs/Imp</TableHead>
-                <TableHead className="w-[80px] text-right">
-                  Total Hours
-                </TableHead>
-                <TableHead className="w-[50px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lines.map((line) => {
-                // For project section, quantity is overridden by num_projects from config
-                const qty = numProjectsOverride !== undefined
-                  ? numProjectsOverride
-                  : NUM(line.quantity);
-                const itemsPer = NUM(line.items_per_object);
-
-                const engineLine: MigrationDetailLine = {
-                  id: line.id,
-                  section: line.section as "project" | "workflow" | "cost",
-                  label: line.label,
-                  quantity: qty,
-                  items_per_object: itemsPer,
-                  total_line_items: NUM(line.total_line_items),
-                  row_order: line.row_order,
-                };
-                const effTotal = effectiveTotalLineItems(engineLine);
-                const calc = calculateLineImports(
-                  effTotal,
-                  linesPerFile,
-                  hrsPerImport
-                );
-                return (
-                  <TableRow key={line.id}>
-                    <TableCell>
-                      {labelEditable ? (
-                        <Input
-                          className="h-7 text-xs"
-                          value={line.label}
-                          onChange={(e) =>
-                            onUpdateLine(line.id, "label", e.target.value)
-                          }
-                        />
-                      ) : (
-                        <span className="text-sm">{line.label}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {numProjectsOverride !== undefined ? (
-                        <div className="text-right text-sm tabular-nums">
-                          {numProjectsOverride}
-                        </div>
-                      ) : (
-                        <Input
-                          className="h-7 text-right text-xs"
-                          type="number"
-                          min={0}
-                          value={NUM(line.quantity)}
-                          onChange={(e) =>
-                            onUpdateLine(
-                              line.id,
-                              "quantity",
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        className="h-7 text-right text-xs"
-                        type="number"
-                        min={0}
-                        value={NUM(line.items_per_object)}
-                        onChange={(e) =>
-                          onUpdateLine(
-                            line.id,
-                            "items_per_object",
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {totalEditable ? (
-                        <Input
-                          className="h-7 text-right text-xs"
-                          type="number"
-                          min={0}
-                          value={NUM(line.total_line_items)}
-                          onChange={(e) =>
-                            onUpdateLine(
-                              line.id,
-                              "total_line_items",
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                        />
-                      ) : (
-                        <div className="text-right text-sm tabular-nums">
-                          {effTotal.toLocaleString()}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">
-                      {calc.numImports}
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">
-                      {hrsPerImport}
-                    </TableCell>
-                    <TableCell className="text-right text-sm font-medium tabular-nums">
-                      {calc.totalHours.toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs text-destructive"
-                        onClick={() => onRemoveLine(line.id)}
-                      >
-                        ×
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {lines.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={8}
-                    className="py-6 text-center text-muted-foreground"
-                  >
-                    No rows. Click &quot;+ Add Row&quot; to start.
-                  </TableCell>
-                </TableRow>
-              )}
-              {/* Section total */}
-              <TableRow className="bg-muted/50 font-semibold">
-                <TableCell colSpan={6}>Section Total</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {lines
-                    .reduce((sum, line) => {
-                      const qty = numProjectsOverride !== undefined
-                        ? numProjectsOverride
-                        : NUM(line.quantity);
-                      const el: MigrationDetailLine = {
-                        id: line.id,
-                        section: line.section as "project" | "workflow" | "cost",
-                        label: line.label,
-                        quantity: qty,
-                        items_per_object: NUM(line.items_per_object),
-                        total_line_items: NUM(line.total_line_items),
-                        row_order: line.row_order,
-                      };
-                      const t = effectiveTotalLineItems(el);
-                      const c = calculateLineImports(t, linesPerFile, hrsPerImport);
-                      return sum + c.totalHours;
-                    }, 0)
-                    .toFixed(2)}
-                </TableCell>
-                <TableCell />
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
