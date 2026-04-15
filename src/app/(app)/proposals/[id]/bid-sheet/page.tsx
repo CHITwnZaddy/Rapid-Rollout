@@ -29,6 +29,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
+import {
+  discountPercentSchema,
+  discountDollarsSchema,
+} from "@/lib/validation/bid-sheet";
+import { toast } from "sonner";
 
 interface Customer {
   id: string;
@@ -71,11 +76,14 @@ export default function BidSheetPage() {
     const load = async () => {
       const [bidRes, scenarioRes, customerRes, migrationRes, scopedRes] =
         await Promise.all([
+          // maybeSingle() instead of single() so a missing row comes
+          // back as data=null instead of an error — lets us heal the
+          // proposal by creating the row on the fly.
           supabase
             .from("bid_sheets")
             .select("id, customer_id, discount_percent, discount_dollars, notes")
             .eq("proposal_id", proposalId)
-            .single(),
+            .maybeSingle(),
           supabase
             .from("scenarios")
             .select("scenario_type, summary_total_hours, summary_total_cost")
@@ -96,13 +104,37 @@ export default function BidSheetPage() {
             .eq("proposal_id", proposalId),
         ]);
 
-      const bidData = bidRes.data as BidSheetData | null;
+      let bidData = bidRes.data as BidSheetData | null;
       const scenarioData = scenarioRes.data as ScenarioData[] | null;
       const customerData = customerRes.data as Customer[] | null;
       const migrationData = migrationRes.data as { computed_total_cost: number } | null;
       const scopedData = scopedRes.data as { cost: number }[] | null;
 
-      if (bidData) setBidSheet(bidData);
+      if (bidRes.error) {
+        toast.error(`Failed to load bid sheet: ${bidRes.error.message}`);
+        return;
+      }
+
+      // Self-heal: if no bid_sheets row exists for this proposal
+      // (e.g. because the new-proposal flow failed silently on
+      // insert), create one now so the form becomes editable
+      // instead of silently refusing every keystroke.
+      if (!bidData) {
+        const { data: created, error: insertError } = await supabase
+          .from("bid_sheets")
+          .insert({ proposal_id: proposalId })
+          .select("id, customer_id, discount_percent, discount_dollars, notes")
+          .single();
+        if (insertError || !created) {
+          toast.error(
+            `Unable to initialize bid sheet: ${insertError?.message ?? "unknown error"}`
+          );
+          return;
+        }
+        bidData = created as BidSheetData;
+      }
+
+      setBidSheet(bidData);
       if (scenarioData) setScenarios(scenarioData);
       if (customerData) {
         setCustomers(customerData);
@@ -137,23 +169,33 @@ export default function BidSheetPage() {
   };
 
   const handleDiscountPercentChange = async (discountPercent: number) => {
-    if (bidSheet) {
-      setBidSheet({ ...bidSheet, discount_percent: discountPercent });
-      await supabase
-        .from("bid_sheets")
-        .update({ discount_percent: discountPercent })
-        .eq("id", bidSheet.id);
+    if (!bidSheet) return;
+    const parsed = discountPercentSchema.safeParse(discountPercent);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Invalid discount %");
+      return;
     }
+    setBidSheet({ ...bidSheet, discount_percent: parsed.data });
+    const { error } = await supabase
+      .from("bid_sheets")
+      .update({ discount_percent: parsed.data })
+      .eq("id", bidSheet.id);
+    if (error) toast.error(`Failed to save discount %: ${error.message}`);
   };
 
   const handleDiscountDollarsChange = async (discountDollars: number) => {
-    if (bidSheet) {
-      setBidSheet({ ...bidSheet, discount_dollars: discountDollars });
-      await supabase
-        .from("bid_sheets")
-        .update({ discount_dollars: discountDollars })
-        .eq("id", bidSheet.id);
+    if (!bidSheet) return;
+    const parsed = discountDollarsSchema.safeParse(discountDollars);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Invalid discount $");
+      return;
     }
+    setBidSheet({ ...bidSheet, discount_dollars: parsed.data });
+    const { error } = await supabase
+      .from("bid_sheets")
+      .update({ discount_dollars: parsed.data })
+      .eq("id", bidSheet.id);
+    if (error) toast.error(`Failed to save discount $: ${error.message}`);
   };
 
   const handleNotesChange = async (notes: string) => {
@@ -288,30 +330,37 @@ export default function BidSheetPage() {
             </TableBody>
           </Table>
 
-          <div className="mt-4 flex items-center gap-4">
-            <Label>Discount $</Label>
-            <Input
-              className="w-28"
-              type="number"
-              min={0}
-              step={1}
-              value={discountDollars}
-              onChange={(e) =>
-                handleDiscountDollarsChange(parseFloat(e.target.value) || 0)
-              }
-            />
-            <Label>Discount %</Label>
-            <Input
-              className="w-24"
-              type="number"
-              min={0}
-              max={100}
-              step={1}
-              value={discountPercent}
-              onChange={(e) =>
-                handleDiscountPercentChange(parseFloat(e.target.value) || 0)
-              }
-            />
+          <div className="mt-4 flex flex-wrap items-end gap-4">
+            <div className="space-y-1">
+              <Label>Credit</Label>
+              <Input
+                className="w-32"
+                type="number"
+                min={0}
+                step={1}
+                value={discountDollars}
+                onChange={(e) =>
+                  handleDiscountDollarsChange(parseFloat(e.target.value) || 0)
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Deducts from total. Use for negotiated credits or from the LoE.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label>Discount %</Label>
+              <Input
+                className="w-24"
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={discountPercent}
+                onChange={(e) =>
+                  handleDiscountPercentChange(parseFloat(e.target.value) || 0)
+                }
+              />
+            </div>
             <span className="text-lg font-bold">
               Total: {formatCurrency(finalTotal)}
             </span>

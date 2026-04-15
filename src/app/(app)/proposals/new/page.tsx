@@ -21,6 +21,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { newProposalSchema } from "@/lib/validation/proposal";
+import { toast } from "sonner";
 
 interface Customer {
   id: string;
@@ -49,6 +51,21 @@ export default function NewProposalPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Validate at the form boundary before touching Supabase.
+    // Trim/bounds-check `name` and enforce that customerId is
+    // either empty or a real UUID — prevents whitespace-only
+    // proposals from polluting the dashboard.
+    const parsed = newProposalSchema.safeParse({ name, customerId });
+    if (!parsed.success) {
+      const msg =
+        parsed.error.issues[0]?.message ?? "Invalid proposal input";
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+    const { name: validName, customerId: validCustomerId } = parsed.data;
+
     setLoading(true);
 
     const {
@@ -64,8 +81,8 @@ export default function NewProposalPage() {
     const { data: proposal, error: proposalError } = await supabase
       .from("proposals")
       .insert({
-        name,
-        customer_id: customerId || null,
+        name: validName,
+        customer_id: validCustomerId || null,
         created_by: user.id,
       })
       .select()
@@ -135,7 +152,7 @@ export default function NewProposalPage() {
     // Create empty bid sheet
     await supabase.from("bid_sheets").insert({
       proposal_id: proposal.id,
-      customer_id: customerId || null,
+      customer_id: validCustomerId || null,
     });
 
     // Create migration config with defaults (doc_avg_mb_per_project starts at 0)

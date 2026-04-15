@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { savedThemeSchema } from "@/lib/validation/theme";
 
 function hexToOklch(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -70,21 +71,36 @@ const FONT_OPTIONS: Record<string, string> = {
 
 export function ThemeLoader() {
   useEffect(() => {
-    // Load colors
+    // Load colors — validate the saved blob before applying.
+    // A corrupted or tampered localStorage entry used to crash
+    // every page that mounts <ThemeLoader />; now we drop the
+    // bad value and fall through to the default theme.
     const saved = localStorage.getItem("rapid-rollout-theme");
     if (saved) {
+      let parsedRaw: unknown = null;
       try {
-        const { colors } = JSON.parse(saved);
-        if (colors) {
+        parsedRaw = JSON.parse(saved);
+      } catch {
+        localStorage.removeItem("rapid-rollout-theme");
+      }
+      if (parsedRaw) {
+        const result = savedThemeSchema.safeParse(parsedRaw);
+        if (result.success) {
+          const colors = result.data.colors as Record<string, string>;
           const root = document.documentElement;
           for (const [cssVar, key] of VARS) {
             if (colors[key]) {
               root.style.setProperty(cssVar, hexToOklch(colors[key]));
             }
           }
+        } else {
+          // Invalid saved theme — nuke it so we don't keep failing.
+          localStorage.removeItem("rapid-rollout-theme");
+          console.warn(
+            "[ThemeLoader] Dropped invalid saved theme:",
+            result.error.issues[0]?.message
+          );
         }
-      } catch {
-        // ignore
       }
     }
 

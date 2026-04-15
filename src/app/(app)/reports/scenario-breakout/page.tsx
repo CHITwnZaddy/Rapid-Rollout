@@ -95,11 +95,16 @@ export default function ScenarioBreakoutReport() {
   const [scopedLines, setScopedLines] = useState<ScopedLine[]>([]);
   const [migrationConfig, setMigrationConfig] = useState<MigrationConfig | null>(null);
   const [migrationLines, setMigrationLines] = useState<MigrationLine[]>([]);
-  const [baRate, setBaRate] = useState(225);
-  const [pmRate, setPmRate] = useState(225);
-  const [travelRate, setTravelRate] = useState(2250);
+  // Rates are fail-closed: start as null, require successful fetch
+  // before the report can be run. See Phase 1.3 in the remediation
+  // plan for rationale.
+  const [baRate, setBaRate] = useState<number | null>(null);
+  const [pmRate, setPmRate] = useState<number | null>(null);
+  const [travelRate, setTravelRate] = useState<number | null>(null);
+  const [rateError, setRateError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
+  const [rateReloadToken, setRateReloadToken] = useState(0);
 
   useEffect(() => {
     supabase
@@ -109,8 +114,13 @@ export default function ScenarioBreakoutReport() {
       .then(({ data }) => {
         if (data) setProposals(data);
       });
+  }, [supabase]);
 
-    // Load rate cards
+  // Rate-card loader: fail closed on error or missing rows. The
+  // report refuses to run until this resolves successfully.
+  useEffect(() => {
+    let cancelled = false;
+    setRateError(null);
     supabase
       .from("rate_cards")
       .select("lookup_key, rate")
@@ -119,16 +129,36 @@ export default function ScenarioBreakoutReport() {
         "Master|Program Manager",
         "Master|Travel Cost/Trip",
       ])
-      .then(({ data }) => {
-        if (data) {
-          for (const r of data) {
-            if (r.lookup_key === "Master|Business Analyst") setBaRate(NUM(r.rate));
-            if (r.lookup_key === "Master|Program Manager") setPmRate(NUM(r.rate));
-            if (r.lookup_key === "Master|Travel Cost/Trip") setTravelRate(NUM(r.rate));
-          }
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data) {
+          setRateError(
+            error?.message ??
+              "Unable to reach the rate card table. Check your connection and retry."
+          );
+          return;
         }
+        const map = new Map(data.map((r) => [r.lookup_key, NUM(r.rate)]));
+        const ba = map.get("Master|Business Analyst");
+        const pm = map.get("Master|Program Manager");
+        const travel = map.get("Master|Travel Cost/Trip");
+        if (ba == null || pm == null || travel == null) {
+          setRateError(
+            "One or more required rate card rows are missing (Business Analyst, Program Manager, Travel Cost/Trip)."
+          );
+          return;
+        }
+        setBaRate(ba);
+        setPmRate(pm);
+        setTravelRate(travel);
       });
-  }, [supabase]);
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, rateReloadToken]);
+
+  const ratesReady =
+    baRate != null && pmRate != null && travelRate != null && !rateError;
 
   const runReport = useCallback(async () => {
     if (!selectedProposal) return;
@@ -248,6 +278,7 @@ export default function ScenarioBreakoutReport() {
   }
 
   function migSectionCost(hours: number): number {
+    if (baRate == null) return 0;
     return hours * NUM(migrationConfig?.ba_complexity_factor) * baRate;
   }
 
@@ -359,6 +390,22 @@ export default function ScenarioBreakoutReport() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Scenario Breakout Report</h1>
 
+      {rateError && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Unable to load pricing data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              This report depends on the rate card table. To prevent stale
+              defaults from mis-pricing a deal, the report has been blocked
+              until rates load successfully.
+            </p>
+            <p className="font-mono text-xs text-destructive">{rateError}</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Filters */}
       <Card>
         <CardHeader>
@@ -390,10 +437,19 @@ export default function ScenarioBreakoutReport() {
             <Button
               size="sm"
               onClick={runReport}
-              disabled={loading || !selectedProposal}
+              disabled={loading || !selectedProposal || !ratesReady}
             >
               {loading ? "Running..." : "Run Report"}
             </Button>
+            {rateError && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setRateReloadToken((n) => n + 1)}
+              >
+                Retry loading rates
+              </Button>
+            )}
             {hasRun && scenarioGroups.length > 0 && (
               <Button size="sm" variant="outline" onClick={exportXLSX}>
                 Export XLSX
@@ -530,7 +586,7 @@ export default function ScenarioBreakoutReport() {
                               {formatCurrency(
                                 coreEffortHours *
                                   NUM(migrationConfig.ba_complexity_factor) *
-                                  baRate
+                                  (baRate ?? 0)
                               )}
                             </TableCell>
                           </TableRow>
@@ -580,7 +636,7 @@ export default function ScenarioBreakoutReport() {
                                   {formatCurrency(
                                     c.totalHours *
                                       NUM(migrationConfig.ba_complexity_factor) *
-                                      baRate
+                                      (baRate ?? 0)
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -637,7 +693,7 @@ export default function ScenarioBreakoutReport() {
                                   {formatCurrency(
                                     c.totalHours *
                                       NUM(migrationConfig.ba_complexity_factor) *
-                                      baRate
+                                      (baRate ?? 0)
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -694,7 +750,7 @@ export default function ScenarioBreakoutReport() {
                                   {formatCurrency(
                                     c.totalHours *
                                       NUM(migrationConfig.ba_complexity_factor) *
-                                      baRate
+                                      (baRate ?? 0)
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -738,7 +794,7 @@ export default function ScenarioBreakoutReport() {
                               {formatCurrency(
                                 docHours *
                                   NUM(migrationConfig.ba_complexity_factor) *
-                                  baRate
+                                  (baRate ?? 0)
                               )}
                             </TableCell>
                           </TableRow>
@@ -775,7 +831,7 @@ export default function ScenarioBreakoutReport() {
                                   NUM(migrationConfig.ba_trips) *
                                     40 *
                                     NUM(migrationConfig.ba_complexity_factor) *
-                                    baRate
+                                    (baRate ?? 0)
                                 )}
                               </TableCell>
                             </TableRow>
@@ -791,7 +847,7 @@ export default function ScenarioBreakoutReport() {
                                   NUM(migrationConfig.pm_trips) *
                                     40 *
                                     NUM(migrationConfig.pm_complexity_factor) *
-                                    pmRate
+                                    (pmRate ?? 0)
                                 )}
                               </TableCell>
                             </TableRow>

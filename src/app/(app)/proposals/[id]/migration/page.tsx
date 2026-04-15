@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useParams } from "next/navigation";
-import { useAuth } from "@/lib/hooks/use-auth";
+import { useRequireAdmin } from "@/lib/hooks/use-require-admin";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -84,14 +84,27 @@ const NUM = (v: unknown) => Number(v) || 0;
 export default function MigrationPage() {
   const { id: proposalId } = useParams<{ id: string }>();
   const supabase = createClient();
-  const { isAdmin } = useAuth();
+  // Admin status is loading-aware: while the auth check is in
+  // flight, `adminStatus.status === "loading"` and the MB/Hour
+  // editor renders a neutral disabled placeholder instead of
+  // flashing the read-only "(admin only)" label to real admins.
+  const adminStatus = useRequireAdmin();
+  const isAdmin = adminStatus.status === "admin";
+  const isAdminLoading = adminStatus.status === "loading";
 
   const [config, setConfig] = useState<DbConfig | null>(null);
   const [lines, setLines] = useState<DbLine[]>([]);
-  const [baRate, setBaRate] = useState(225);
-  const [pmRate, setPmRate] = useState(225);
-  const [travelRate, setTravelRate] = useState(2250);
+  // Rates start as null and MUST be hydrated from rate_cards before
+  // any render/save. Fail-closed: if the fetch errors or a row is
+  // missing, we show an error card instead of using a stale default
+  // that could silently under-price a deal (see Phase 1.3 in the
+  // remediation plan).
+  const [baRate, setBaRate] = useState<number | null>(null);
+  const [pmRate, setPmRate] = useState<number | null>(null);
+  const [travelRate, setTravelRate] = useState<number | null>(null);
+  const [rateError, setRateError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
 
   // Refs for debounced save
   const configRef = useRef(config);
@@ -104,8 +117,13 @@ export default function MigrationPage() {
 
   useEffect(() => {
     const load = async () => {
-      // Load rate cards for BA, PM, Travel
-      const { data: rates } = await supabase
+      setLoading(true);
+      setRateError(null);
+
+      // Load rate cards for BA, PM, Travel. Fail closed if any
+      // required row is missing — these drive pricing, and a stale
+      // hardcoded default would silently under-price deals.
+      const { data: rates, error: ratesError } = await supabase
         .from("rate_cards")
         .select("lookup_key, rate")
         .in("lookup_key", [
@@ -114,13 +132,31 @@ export default function MigrationPage() {
           "Master|Travel Cost/Trip",
         ]);
 
-      if (rates) {
-        for (const r of rates) {
-          if (r.lookup_key === "Master|Business Analyst") setBaRate(NUM(r.rate));
-          if (r.lookup_key === "Master|Program Manager") setPmRate(NUM(r.rate));
-          if (r.lookup_key === "Master|Travel Cost/Trip") setTravelRate(NUM(r.rate));
-        }
+      if (ratesError || !rates) {
+        setRateError(
+          ratesError?.message ??
+            "Unable to reach the rate card table. Check your connection and retry."
+        );
+        setLoading(false);
+        return;
       }
+
+      const rateMap = new Map(rates.map((r) => [r.lookup_key, NUM(r.rate)]));
+      const ba = rateMap.get("Master|Business Analyst");
+      const pm = rateMap.get("Master|Program Manager");
+      const travel = rateMap.get("Master|Travel Cost/Trip");
+
+      if (ba == null || pm == null || travel == null) {
+        setRateError(
+          "One or more required rate card rows are missing (Business Analyst, Program Manager, Travel Cost/Trip). An admin must seed these before migration services can be priced."
+        );
+        setLoading(false);
+        return;
+      }
+
+      setBaRate(ba);
+      setPmRate(pm);
+      setTravelRate(travel);
 
       // Load or create migration config
       let { data: cfg } = await supabase
@@ -169,7 +205,7 @@ export default function MigrationPage() {
       setLoading(false);
     };
     load();
-  }, [proposalId, supabase]);
+  }, [proposalId, supabase, reloadToken]);
 
   // ─── Save helpers ────────────────────────────────────────────────
 
@@ -347,6 +383,7 @@ export default function MigrationPage() {
     allLines: DbLine[]
   ): MigrationTotals | null {
     if (!cfg) return null;
+    if (baRate == null || pmRate == null || travelRate == null) return null;
     const numProjects = NUM(cfg.num_projects);
     const mc: MigrationConfig = {
       num_projects: numProjects,
@@ -412,6 +449,25 @@ export default function MigrationPage() {
 
   if (loading) {
     return <div className="py-12 text-center text-muted-foreground">Loading migration services...</div>;
+  }
+
+  if (rateError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Unable to load pricing data</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            Migration services cannot be priced until the rate card loads.
+            To prevent a stale default from silently mis-pricing a deal,
+            this page has been blocked from saving or rendering totals.
+          </p>
+          <p className="font-mono text-xs text-destructive">{rateError}</p>
+          <Button onClick={() => setReloadToken((n) => n + 1)}>Retry</Button>
+        </CardContent>
+      </Card>
+    );
   }
 
   // ─── Render ──────────────────────────────────────────────────────
@@ -637,11 +693,18 @@ export default function MigrationPage() {
             <div className="space-y-1">
               <Label className="text-xs">
                 MB / Hour
-                {!isAdmin && (
+                {!isAdmin && !isAdminLoading && (
                   <span className="ml-1 text-muted-foreground">(admin only)</span>
                 )}
               </Label>
-              {isAdmin ? (
+              {isAdminLoading ? (
+                <div
+                  className="flex h-8 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground tabular-nums"
+                  aria-busy="true"
+                >
+                  …
+                </div>
+              ) : isAdmin ? (
                 <Input
                   type="number"
                   min={0}
@@ -849,7 +912,7 @@ export default function MigrationPage() {
               <div className="flex justify-between">
                 <span>
                   BA Cost: {(totals?.totalBaHours ?? 0).toFixed(1)} hrs ×{" "}
-                  {formatCurrency(baRate)}/hr
+                  {formatCurrency(baRate ?? 0)}/hr
                 </span>
                 <span className="font-medium tabular-nums">
                   {formatCurrency(totals?.baCost ?? 0)}
@@ -858,7 +921,7 @@ export default function MigrationPage() {
               <div className="flex justify-between">
                 <span>
                   PM Cost: {(totals?.totalPmHours ?? 0).toFixed(1)} hrs ×{" "}
-                  {formatCurrency(pmRate)}/hr
+                  {formatCurrency(pmRate ?? 0)}/hr
                 </span>
                 <span className="font-medium tabular-nums">
                   {formatCurrency(totals?.pmCost ?? 0)}

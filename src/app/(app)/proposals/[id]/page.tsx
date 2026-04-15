@@ -20,8 +20,6 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
 
-const BURDEN_RATE = 150;
-
 function getMarginBadgeClass(marginPercent: number | null) {
   if (marginPercent === null) return "bg-muted text-muted-foreground";
   if (marginPercent <= 30) return "bg-red-100 text-red-800";
@@ -31,12 +29,13 @@ function getMarginBadgeClass(marginPercent: number | null) {
 
 function calcMarginPercent(
   discountedCost: number,
-  totalHours: number
+  totalHours: number,
+  burdenRate: number
 ): number | null {
   if (totalHours <= 0 || discountedCost <= 0) return null;
   const effectiveSellRate = discountedCost / totalHours;
   if (effectiveSellRate <= 0) return null;
-  return ((effectiveSellRate - BURDEN_RATE) / effectiveSellRate) * 100;
+  return ((effectiveSellRate - burdenRate) / effectiveSellRate) * 100;
 }
 
 export default async function ProposalSummaryPage({
@@ -47,27 +46,60 @@ export default async function ProposalSummaryPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [scenarioRes, scopedRes, migrationRes, bidSheetRes] = await Promise.all([
-    supabase
-      .from("scenarios")
-      .select("scenario_type, summary_total_hours, summary_total_cost, is_active")
-      .eq("proposal_id", id)
-      .order("scenario_type"),
-    supabase
-      .from("scoped_services")
-      .select("cost")
-      .eq("proposal_id", id),
-    supabase
-      .from("migration_config")
-      .select("computed_total_cost")
-      .eq("proposal_id", id)
-      .single(),
-    supabase
-      .from("bid_sheets")
-      .select("discount_percent, discount_dollars")
-      .eq("proposal_id", id)
-      .single(),
-  ]);
+  const [scenarioRes, scopedRes, migrationRes, bidSheetRes, burdenRes] =
+    await Promise.all([
+      supabase
+        .from("scenarios")
+        .select("scenario_type, summary_total_hours, summary_total_cost, is_active")
+        .eq("proposal_id", id)
+        .order("scenario_type"),
+      supabase
+        .from("scoped_services")
+        .select("cost")
+        .eq("proposal_id", id),
+      supabase
+        .from("migration_config")
+        .select("computed_total_cost")
+        .eq("proposal_id", id)
+        .single(),
+      supabase
+        .from("bid_sheets")
+        .select("discount_percent, discount_dollars")
+        .eq("proposal_id", id)
+        .single(),
+      supabase
+        .from("rate_cards")
+        .select("rate")
+        .eq("lookup_key", "Master|Burden Rate")
+        .single(),
+    ]);
+
+  // Fail closed: margins are pricing-critical. If we can't read the
+  // burden rate, refuse to render margins rather than silently use a
+  // stale default. See migration 007 for the seed row.
+  if (burdenRes.error || burdenRes.data?.rate == null) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Unable to load pricing data</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            The burden rate (<code>Master|Burden Rate</code>) could not be read
+            from <code>rate_cards</code>. Margin calculations depend on this
+            value, so the proposal summary has been blocked to prevent
+            incorrect pricing being shown.
+          </p>
+          <p>
+            Refresh the page to retry. If the problem persists, an admin should
+            verify the <code>Master|Burden Rate</code> row exists in the rate
+            card table.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+  const burdenRate = Number(burdenRes.data.rate);
 
   const scenarios = scenarioRes.data;
   if (!scenarios) notFound();
@@ -99,7 +131,7 @@ export default async function ProposalSummaryPage({
     const totalHours = Number(s!.summary_total_hours);
     const share = scenarioSubtotal > 0 ? totalCost / scenarioSubtotal : 0;
     const discountedCost = discountedScenarioTotal * share;
-    const marginPercent = calcMarginPercent(discountedCost, totalHours);
+    const marginPercent = calcMarginPercent(discountedCost, totalHours, burdenRate);
 
     return {
       scenarioType: s!.scenario_type,
@@ -112,8 +144,8 @@ export default async function ProposalSummaryPage({
     };
   });
 
-  const scopedMargin = calcMarginPercent(scopedTotal, 0);
-  const migrationMargin = calcMarginPercent(migrationTotal, 0);
+  const scopedMargin = calcMarginPercent(scopedTotal, 0, burdenRate);
+  const migrationMargin = calcMarginPercent(migrationTotal, 0, burdenRate);
 
   return (
     <div className="space-y-6">

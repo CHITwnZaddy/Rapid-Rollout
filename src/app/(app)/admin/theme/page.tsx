@@ -1,8 +1,6 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +12,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { savedThemeSchema } from "@/lib/validation/theme";
+import { toast } from "sonner";
 
 interface ThemeColors {
   primary: string;
@@ -200,7 +200,12 @@ const STORAGE_KEY = "rapid-rollout-theme";
 const FONT_STORAGE_KEY = "rapid-rollout-font";
 
 export default function ThemePage() {
+  // Draft (live, previewed) vs saved (committed to localStorage)
+  // state. `theme` is what the user is currently editing and what
+  // the CSS vars reflect; `savedTheme` is the last state that was
+  // explicitly saved. `isDirty` is derived from the difference.
   const [theme, setTheme] = useState<ThemeColors>(DEFAULT_THEME);
+  const [savedTheme, setSavedTheme] = useState<ThemeColors>(DEFAULT_THEME);
   const [activePreset, setActivePreset] = useState("Default");
   const [selectedFont, setSelectedFont] = useState("default");
 
@@ -208,13 +213,27 @@ export default function ThemePage() {
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
+      let parsedRaw: unknown = null;
       try {
-        const parsed = JSON.parse(saved);
-        setTheme(parsed.colors);
-        setActivePreset(parsed.preset ?? "Custom");
-        applyTheme(parsed.colors);
+        parsedRaw = JSON.parse(saved);
       } catch {
-        // ignore
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      if (parsedRaw) {
+        const result = savedThemeSchema.safeParse(parsedRaw);
+        if (result.success) {
+          const colors = result.data.colors as ThemeColors;
+          setTheme(colors);
+          setSavedTheme(colors);
+          setActivePreset(result.data.preset ?? "Custom");
+          applyTheme(colors);
+        } else {
+          // Corrupted / tampered blob — drop it and start from default.
+          localStorage.removeItem(STORAGE_KEY);
+          toast.error(
+            "Saved theme was invalid and has been reset to default."
+          );
+        }
       }
     }
     const savedFont = localStorage.getItem(FONT_STORAGE_KEY);
@@ -225,6 +244,12 @@ export default function ThemePage() {
       applyFont(savedFont);
     }
   }, []);
+
+  // Dirty flag — cheap JSON.stringify compare is fine for 17 keys.
+  const isDirty = useMemo(
+    () => JSON.stringify(theme) !== JSON.stringify(savedTheme),
+    [theme, savedTheme]
+  );
 
   function applyTheme(colors: ThemeColors) {
     const root = document.documentElement;
@@ -250,28 +275,58 @@ export default function ThemePage() {
     root.style.setProperty("--sidebar-accent-foreground", hexToOklch(colors.accentForeground));
   }
 
+  // Presets auto-save on click — that's the point of a preset
+  // ("known good, apply instantly"), and matches the plan.
   const handlePreset = useCallback((name: string) => {
     const colors = PRESETS[name];
     if (!colors) return;
     setTheme(colors);
+    setSavedTheme(colors);
     setActivePreset(name);
     applyTheme(colors);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ preset: name, colors }));
   }, []);
 
+  // Custom color edits are draft-only — they preview live via
+  // applyTheme() but do NOT touch localStorage. The user must
+  // click "Save Custom Theme" to commit.
   const handleColorChange = useCallback(
     (key: keyof ThemeColors, value: string) => {
-      const updated = { ...theme, [key]: value };
-      setTheme(updated);
+      setTheme((prev) => {
+        const updated = { ...prev, [key]: value };
+        applyTheme(updated);
+        return updated;
+      });
       setActivePreset("Custom");
-      applyTheme(updated);
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ preset: "Custom", colors: updated })
-      );
     },
-    [theme]
+    []
   );
+
+  const handleSaveCustom = useCallback(() => {
+    // Re-validate against the schema before writing. Belt-and-
+    // suspenders — the color picker should only emit valid
+    // hex, but a pasted hex string into the text input could
+    // be anything.
+    const result = savedThemeSchema.safeParse({
+      preset: "Custom",
+      colors: theme,
+    });
+    if (!result.success) {
+      toast.error(
+        result.error.issues[0]?.message ?? "Invalid theme colors"
+      );
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(result.data));
+    setSavedTheme(theme);
+    setActivePreset("Custom");
+    toast.success("Custom theme saved");
+  }, [theme]);
+
+  const handleDiscard = useCallback(() => {
+    setTheme(savedTheme);
+    applyTheme(savedTheme);
+  }, [savedTheme]);
 
   const handleFontChange = useCallback((fontValue: string) => {
     setSelectedFont(fontValue);
@@ -306,7 +361,14 @@ export default function ThemePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Theme & Branding</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-bold">Theme & Branding</h1>
+        {isDirty && (
+          <Badge variant="secondary" className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+            Unsaved changes
+          </Badge>
+        )}
+      </div>
 
       {/* Presets */}
       <Card>
@@ -388,7 +450,8 @@ export default function ThemePage() {
         <CardHeader>
           <CardTitle>Custom Colors</CardTitle>
           <CardDescription>
-            Click any color swatch to pick a custom color. Changes apply instantly and persist across sessions.
+            Click any color swatch to preview. Changes apply live but are not
+            saved until you click <strong>Save Custom Theme</strong>.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -412,7 +475,22 @@ export default function ThemePage() {
               </div>
             ))}
           </div>
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              onClick={handleSaveCustom}
+              disabled={!isDirty}
+            >
+              Save Custom Theme
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDiscard}
+              disabled={!isDirty}
+            >
+              Discard Changes
+            </Button>
             <Button variant="outline" size="sm" onClick={handleReset}>
               Reset to Default
             </Button>
