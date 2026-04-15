@@ -11,6 +11,7 @@ const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: "grid" },
   { label: "Proposals", href: "/proposals", icon: "file-text" },
   { label: "Reports", href: "/reports", icon: "bar-chart" },
+  { label: "Customers", href: "/customers", icon: "users" },
 ];
 
 const adminItems = [

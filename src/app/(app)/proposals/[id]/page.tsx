@@ -18,11 +18,26 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  formatCurrency,
-  formatHours,
-  compareScenarios,
-} from "@/lib/calculations/engine";
+import { formatCurrency, formatHours } from "@/lib/calculations/engine";
+
+const BURDEN_RATE = 150;
+
+function getMarginBadgeClass(marginPercent: number | null) {
+  if (marginPercent === null) return "bg-muted text-muted-foreground";
+  if (marginPercent <= 30) return "bg-red-100 text-red-800";
+  if (marginPercent < 40) return "bg-yellow-100 text-yellow-800";
+  return "bg-green-100 text-green-800";
+}
+
+function calcMarginPercent(
+  discountedCost: number,
+  totalHours: number
+): number | null {
+  if (totalHours <= 0 || discountedCost <= 0) return null;
+  const effectiveSellRate = discountedCost / totalHours;
+  if (effectiveSellRate <= 0) return null;
+  return ((effectiveSellRate - BURDEN_RATE) / effectiveSellRate) * 100;
+}
 
 export default async function ProposalSummaryPage({
   params,
@@ -32,7 +47,7 @@ export default async function ProposalSummaryPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [scenarioRes, scopedRes, migrationRes] = await Promise.all([
+  const [scenarioRes, scopedRes, migrationRes, bidSheetRes] = await Promise.all([
     supabase
       .from("scenarios")
       .select("scenario_type, summary_total_hours, summary_total_cost, is_active")
@@ -47,36 +62,58 @@ export default async function ProposalSummaryPage({
       .select("computed_total_cost")
       .eq("proposal_id", id)
       .single(),
+    supabase
+      .from("bid_sheets")
+      .select("discount_percent, discount_dollars")
+      .eq("proposal_id", id)
+      .single(),
   ]);
 
   const scenarios = scenarioRes.data;
   if (!scenarios) notFound();
 
-  // Scoped services total
   const scopedTotal = (scopedRes.data ?? []).reduce(
     (sum, s) => sum + Number(s.cost),
     0
   );
-
-  // Migration total
   const migrationTotal = Number(migrationRes.data?.computed_total_cost) || 0;
 
-  // Build scenario summaries for comparison (only P1/P2/Opt1/Opt2)
-  const scenarioSummaries = scenarios.map((s) => ({
-    scenarioType: s.scenario_type,
-    totalHours: Number(s.summary_total_hours),
-    totalCost: Number(s.summary_total_cost),
-    isActive: s.is_active,
-  }));
+  const discountPercent = Number(bidSheetRes.data?.discount_percent) || 0;
+  const discountDollars = Number(bidSheetRes.data?.discount_dollars) || 0;
 
-  // compareScenarios only considers the 4 scenarios (not scoped/migration)
-  const comparison = compareScenarios(scenarioSummaries);
-
-  // Ordered display rows: P1, P2, Opt1, Opt2, Scoped Services, Migration Services
   const scenarioOrder = ["P1", "P2", "Opt1", "Opt2"];
-  const orderedScenarios = scenarioOrder
-    .map((type) => scenarioSummaries.find((s) => s.scenarioType === type))
-    .filter(Boolean) as typeof scenarioSummaries;
+  const scenarioRows = scenarioOrder
+    .map((type) => scenarios.find((s) => s.scenario_type === type))
+    .filter(Boolean);
+
+  const scenarioSubtotal = scenarioRows.reduce(
+    (sum, s) => sum + Number(s!.summary_total_cost),
+    0
+  );
+
+  const afterDollar = Math.max(0, scenarioSubtotal - discountDollars);
+  const discountedScenarioTotal = afterDollar * (1 - discountPercent / 100);
+
+  const allocated = scenarioRows.map((s) => {
+    const totalCost = Number(s!.summary_total_cost);
+    const totalHours = Number(s!.summary_total_hours);
+    const share = scenarioSubtotal > 0 ? totalCost / scenarioSubtotal : 0;
+    const discountedCost = discountedScenarioTotal * share;
+    const marginPercent = calcMarginPercent(discountedCost, totalHours);
+
+    return {
+      scenarioType: s!.scenario_type,
+      isActive: s!.is_active,
+      totalHours,
+      totalCost,
+      discountedCost,
+      marginPercent,
+      status: totalCost > 0 ? "Configured" : "Empty",
+    };
+  });
+
+  const scopedMargin = calcMarginPercent(scopedTotal, 0);
+  const migrationMargin = calcMarginPercent(migrationTotal, 0);
 
   return (
     <div className="space-y-6">
@@ -90,60 +127,54 @@ export default async function ProposalSummaryPage({
               <TableRow>
                 <TableHead>Line Item</TableHead>
                 <TableHead className="text-right">Total Hours</TableHead>
+                <TableHead className="text-right">Discounted Cost</TableHead>
                 <TableHead className="text-right">Total Cost</TableHead>
+                <TableHead className="text-right">Margin</TableHead>
                 <TableHead className="text-center">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orderedScenarios.map((s) => {
-                const isLowestCost =
-                  comparison.lowestCost?.scenarioType === s.scenarioType;
-                const isLowestHours =
-                  comparison.lowestHours?.scenarioType === s.scenarioType;
+              {allocated.map((s) => (
+                <TableRow key={s.scenarioType} className="hover:bg-muted/50">
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/proposals/${id}/scenarios/${s.scenarioType}`}
+                      className="text-primary hover:underline"
+                    >
+                      {s.scenarioType}
+                    </Link>
+                    {s.isActive && (
+                      <Badge variant="secondary" className="ml-2">
+                        Active
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatHours(s.totalHours)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(s.discountedCost)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(s.totalCost)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge className={getMarginBadgeClass(s.marginPercent)}>
+                      {s.marginPercent === null
+                        ? "—"
+                        : `${s.marginPercent.toFixed(2)}%`}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {s.status === "Configured" ? (
+                      <Badge variant="default">Configured</Badge>
+                    ) : (
+                      <Badge variant="secondary">Empty</Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
 
-                return (
-                  <TableRow key={s.scenarioType} className="hover:bg-muted/50">
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/proposals/${id}/scenarios/${s.scenarioType}`}
-                        className="text-primary hover:underline"
-                      >
-                        {s.scenarioType}
-                      </Link>
-                      {s.isActive && (
-                        <Badge variant="secondary" className="ml-2">
-                          Active
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatHours(s.totalHours)}
-                      {isLowestHours && s.totalHours > 0 && (
-                        <Badge className="ml-2 bg-green-600">
-                          Lowest
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(s.totalCost)}
-                      {isLowestCost && s.totalCost > 0 && (
-                        <Badge className="ml-2 bg-green-600">
-                          Lowest
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {s.totalCost > 0 ? (
-                        <Badge variant="default">Configured</Badge>
-                      ) : (
-                        <Badge variant="secondary">Empty</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-
-              {/* Scoped Services */}
               <TableRow className="hover:bg-muted/50">
                 <TableCell className="font-medium">
                   <Link
@@ -153,11 +184,17 @@ export default async function ProposalSummaryPage({
                     Scoped Services
                   </Link>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  —
+                <TableCell className="text-right text-muted-foreground">—</TableCell>
+                <TableCell className="text-right">
+                  {formatCurrency(scopedTotal)}
                 </TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(scopedTotal)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Badge className={getMarginBadgeClass(scopedMargin)}>
+                    {scopedMargin === null ? "—" : `${scopedMargin.toFixed(2)}%`}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-center">
                   {scopedTotal > 0 ? (
@@ -168,7 +205,6 @@ export default async function ProposalSummaryPage({
                 </TableCell>
               </TableRow>
 
-              {/* Migration Services */}
               <TableRow className="hover:bg-muted/50">
                 <TableCell className="font-medium">
                   <Link
@@ -178,11 +214,19 @@ export default async function ProposalSummaryPage({
                     Migration Services
                   </Link>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground">
-                  —
+                <TableCell className="text-right text-muted-foreground">—</TableCell>
+                <TableCell className="text-right">
+                  {formatCurrency(migrationTotal)}
                 </TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(migrationTotal)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Badge className={getMarginBadgeClass(migrationMargin)}>
+                    {migrationMargin === null
+                      ? "—"
+                      : `${migrationMargin.toFixed(2)}%`}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-center">
                   {migrationTotal > 0 ? (

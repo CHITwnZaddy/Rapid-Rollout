@@ -38,7 +38,7 @@ export default async function ServiceHoursPage() {
           ba_hours: 0,
           service_group: "Core",
           status: "Active",
-          lookup_key: `NewService|Included_${Date.now()}`,
+          lookup_key: "NewService|Included__AUTO__",
         }}
       />
     </div>
