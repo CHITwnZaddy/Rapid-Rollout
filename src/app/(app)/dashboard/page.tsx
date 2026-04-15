@@ -19,13 +19,27 @@ interface ProposalRow {
   status: string;
   created_at: string;
   customers: { company_name: string } | { company_name: string }[] | null;
-  scenarios: { scenario_type: string; summary_total_cost: number; summary_total_hours: number }[];
+  scenarios: {
+    scenario_type: string;
+    summary_total_cost: number;
+    summary_total_hours: number;
+  }[];
 }
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
+type FilterValue = "all" | "draft" | "submitted";
 
-  const { data } = await supabase
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ filter?: string }>;
+}) {
+  const supabase = await createClient();
+  const sp = await searchParams;
+  const filter: FilterValue =
+    sp.filter === "draft" ? "draft" : sp.filter === "submitted" ? "submitted" : "all";
+
+  // Base proposals query for Recent Proposals list
+  let proposalsQuery = supabase
     .from("proposals")
     .select(
       `
@@ -39,6 +53,14 @@ export default async function DashboardPage() {
     )
     .order("updated_at", { ascending: false })
     .limit(10);
+
+  if (filter === "draft") {
+    proposalsQuery = proposalsQuery.eq("status", "Draft");
+  } else if (filter === "submitted") {
+    proposalsQuery = proposalsQuery.neq("status", "Draft");
+  }
+
+  const { data } = await proposalsQuery;
   const proposals = data as ProposalRow[] | null;
 
   const { count: totalProposals } = await supabase
@@ -49,6 +71,11 @@ export default async function DashboardPage() {
     .from("proposals")
     .select("*", { count: "exact", head: true })
     .eq("status", "Draft");
+
+  const submittedCount = (totalProposals ?? 0) - (draftCount ?? 0);
+
+  const cardClass = (isActive: boolean) =>
+    `transition-colors ${isActive ? "ring-2 ring-primary bg-primary/5" : "hover:bg-muted/30"}`;
 
   return (
     <div>
@@ -65,33 +92,47 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Proposals</CardDescription>
-            <CardTitle className="text-3xl">{totalProposals ?? 0}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Drafts</CardDescription>
-            <CardTitle className="text-3xl">{draftCount ?? 0}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Submitted</CardDescription>
-            <CardTitle className="text-3xl">
-              {(totalProposals ?? 0) - (draftCount ?? 0)}
-            </CardTitle>
-          </CardHeader>
-        </Card>
+        <Link href="/dashboard?filter=all">
+          <Card className={cardClass(filter === "all")}>
+            <CardHeader className="pb-2">
+              <CardDescription>Total Proposals</CardDescription>
+              <CardTitle className="text-3xl">{totalProposals ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/dashboard?filter=draft">
+          <Card className={cardClass(filter === "draft")}>
+            <CardHeader className="pb-2">
+              <CardDescription>Drafts</CardDescription>
+              <CardTitle className="text-3xl">{draftCount ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/dashboard?filter=submitted">
+          <Card className={cardClass(filter === "submitted")}>
+            <CardHeader className="pb-2">
+              <CardDescription>Submitted</CardDescription>
+              <CardTitle className="text-3xl">{submittedCount}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
 
-      <h2 className="mb-4 text-lg font-semibold">Recent Proposals</h2>
+      <h2 className="mb-4 text-lg font-semibold">
+        Recent Proposals
+        {filter !== "all" && (
+          <span className="ml-2 text-sm font-normal text-muted-foreground">
+            ({filter === "draft" ? "Draft only" : "Submitted only"})
+          </span>
+        )}
+      </h2>
+
       {!proposals?.length ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            No proposals yet. Create your first one to get started.
+            No proposals found for this filter.
           </CardContent>
         </Card>
       ) : (
@@ -114,9 +155,7 @@ export default async function DashboardPage() {
                 <Card className="transition-colors hover:bg-muted/30">
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div>
-                      <CardTitle className="text-base">
-                        {proposal.name}
-                      </CardTitle>
+                      <CardTitle className="text-base">{proposal.name}</CardTitle>
                       <CardDescription>
                         {customer?.company_name ?? "No customer"}
                       </CardDescription>
@@ -128,9 +167,7 @@ export default async function DashboardPage() {
                         </span>
                       )}
                       <Badge
-                        variant={
-                          proposal.status === "Draft" ? "secondary" : "default"
-                        }
+                        variant={proposal.status === "Draft" ? "secondary" : "default"}
                       >
                         {proposal.status}
                       </Badge>
