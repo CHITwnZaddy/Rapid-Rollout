@@ -50,6 +50,7 @@ interface BidSheetData {
   id: string;
   customer_id: string | null;
   discount_percent: number;
+  discount_dollars: number;
   notes: string | null;
 }
 
@@ -72,7 +73,7 @@ export default function BidSheetPage() {
         await Promise.all([
           supabase
             .from("bid_sheets")
-            .select("id, customer_id, discount_percent, notes")
+            .select("id, customer_id, discount_percent, discount_dollars, notes")
             .eq("proposal_id", proposalId)
             .single(),
           supabase
@@ -135,12 +136,22 @@ export default function BidSheetPage() {
     }
   };
 
-  const handleDiscountChange = async (discount: number) => {
+  const handleDiscountPercentChange = async (discountPercent: number) => {
     if (bidSheet) {
-      setBidSheet({ ...bidSheet, discount_percent: discount });
+      setBidSheet({ ...bidSheet, discount_percent: discountPercent });
       await supabase
         .from("bid_sheets")
-        .update({ discount_percent: discount })
+        .update({ discount_percent: discountPercent })
+        .eq("id", bidSheet.id);
+    }
+  };
+
+  const handleDiscountDollarsChange = async (discountDollars: number) => {
+    if (bidSheet) {
+      setBidSheet({ ...bidSheet, discount_dollars: discountDollars });
+      await supabase
+        .from("bid_sheets")
+        .update({ discount_dollars: discountDollars })
         .eq("id", bidSheet.id);
     }
   };
@@ -155,12 +166,14 @@ export default function BidSheetPage() {
     }
   };
 
-  const discount = bidSheet?.discount_percent ?? 0;
+  const discountPercent = bidSheet?.discount_percent ?? 0;
+  const discountDollars = bidSheet?.discount_dollars ?? 0;
   const grandTotal =
     scenarios.reduce((s, sc) => s + Number(sc.summary_total_cost), 0) +
     migrationTotal +
     scopedTotal;
-  const discountedTotal = grandTotal * (1 - discount / 100);
+  const subtotalAfterDollarDiscount = Math.max(grandTotal - discountDollars, 0);
+  const discountedTotal = subtotalAfterDollarDiscount * (1 - discountPercent / 100);
 
   return (
     <div className="space-y-6">
@@ -265,6 +278,17 @@ export default function BidSheetPage() {
           </Table>
 
           <div className="mt-4 flex items-center gap-4">
+            <Label>Discount $</Label>
+            <Input
+              className="w-28"
+              type="number"
+              min={0}
+              step={1}
+              value={discountDollars}
+              onChange={(e) =>
+                handleDiscountDollarsChange(parseFloat(e.target.value) || 0)
+              }
+            />
             <Label>Discount %</Label>
             <Input
               className="w-24"
@@ -272,9 +296,9 @@ export default function BidSheetPage() {
               min={0}
               max={100}
               step={1}
-              value={discount}
+              value={discountPercent}
               onChange={(e) =>
-                handleDiscountChange(parseFloat(e.target.value) || 0)
+                handleDiscountPercentChange(parseFloat(e.target.value) || 0)
               }
             />
             <span className="text-lg font-bold">
