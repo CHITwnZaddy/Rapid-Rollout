@@ -180,6 +180,7 @@ export default function BidSheetPage() {
 
   const afterDollar = Math.max(0, scenarioSubtotal - discountDollars);
   const discountedScenarioTotal = afterDollar * (1 - discountPercent / 100);
+  const proposalSubtotal = scenarioSubtotal + migrationTotal + scopedTotal;
   const finalTotal = discountedScenarioTotal + migrationTotal + scopedTotal;
 
   const blendedRate = totalHours > 0 ? finalTotal / totalHours : 0;
@@ -281,7 +282,7 @@ export default function BidSheetPage() {
                 <TableCell>Subtotal</TableCell>
                 <TableCell />
                 <TableCell className="text-right tabular-nums">
-                  {formatCurrency(grandTotal)}
+                  {formatCurrency(proposalSubtotal)}
                 </TableCell>
               </TableRow>
             </TableBody>
