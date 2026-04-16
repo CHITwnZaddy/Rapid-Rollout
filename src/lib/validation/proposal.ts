@@ -25,3 +25,66 @@ export const newProposalSchema = z.object({
 });
 
 export type NewProposalInput = z.infer<typeof newProposalSchema>;
+
+// ─────────────────────────────────────────────────────────────
+// Supabase response schemas
+// Used with safeParseSupabaseResult to replace unsafe `as` casts.
+// ─────────────────────────────────────────────────────────────
+
+export const ScenarioDataSchema = z.object({
+  scenario_type: z.string(),
+  summary_total_hours: z.number(),
+  summary_total_cost: z.number(),
+});
+export type ScenarioData = z.infer<typeof ScenarioDataSchema>;
+
+// Supabase returns a joined customers row as either an object or a
+// single-element array depending on the relationship cardinality — the
+// union covers both so the schema doesn't reject valid API responses.
+const CustomerNameSchema = z.object({ company_name: z.string() });
+
+export const ProposalListItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  customers: z
+    .union([CustomerNameSchema, z.array(CustomerNameSchema)])
+    .nullable()
+    .optional(),
+  scenarios: z
+    .array(
+      z.object({
+        scenario_type: z.string(),
+        summary_total_cost: z.number(),
+        summary_total_hours: z.number(),
+      })
+    )
+    .default([]),
+});
+export type ProposalListItem = z.infer<typeof ProposalListItemSchema>;
+
+export const ProposalListSchema = z.array(ProposalListItemSchema);
+
+export const BidSheetDataSchema = z.object({
+  id: z.string(),
+  customer_id: z.string().nullable(),
+  discount_percent: z.number(),
+  discount_dollars: z.number(),
+  notes: z.string().nullable(),
+});
+export type BidSheetData = z.infer<typeof BidSheetDataSchema>;
+
+export const CustomerSchema = z.object({
+  id: z.string(),
+  company_name: z.string(),
+  address_line1: z.string().nullable(),
+  address_line2: z.string().nullable(),
+  city: z.string().nullable(),
+  state: z.string().nullable(),
+  zip: z.string().nullable(),
+});
+export type Customer = z.infer<typeof CustomerSchema>;
+
+export const ScopedCostSchema = z.object({ cost: z.number() });

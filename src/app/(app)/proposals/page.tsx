@@ -16,21 +16,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
-
-interface ProposalRow {
-  id: string;
-  name: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  customers: { company_name: string } | { company_name: string }[] | null;
-  scenarios: { scenario_type: string; summary_total_cost: number; summary_total_hours: number }[];
-}
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
+import { ProposalListSchema } from "@/lib/validation/proposal";
 
 export default async function ProposalsPage() {
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const proposalsResult = await supabase
     .from("proposals")
     .select(
       `
@@ -44,7 +36,26 @@ export default async function ProposalsPage() {
     `
     )
     .order("updated_at", { ascending: false });
-  const proposals = data as ProposalRow[] | null;
+
+  const parsed = safeParseSupabaseResult(ProposalListSchema, proposalsResult);
+  if (!parsed.ok) {
+    return (
+      <div>
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Proposals</h1>
+          <Link href="/proposals/new">
+            <Button>New Proposal</Button>
+          </Link>
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            Unable to load proposals. Refresh to retry.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  const proposals = parsed.data;
 
   return (
     <div>
@@ -55,7 +66,7 @@ export default async function ProposalsPage() {
         </Link>
       </div>
 
-      {!proposals?.length ? (
+      {!proposals.length ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             No proposals yet. Create your first one to get started.
@@ -94,25 +105,16 @@ export default async function ProposalsPage() {
                     {scenarios.length > 0 && (
                       <div className="mt-3 flex gap-4 text-sm text-muted-foreground">
                         {scenarios
-                          .filter(
-                            (s: { summary_total_cost: number }) =>
-                              s.summary_total_cost > 0
-                          )
-                          .map(
-                            (s: {
-                              scenario_type: string;
-                              summary_total_cost: number;
-                              summary_total_hours: number;
-                            }) => (
-                              <span key={s.scenario_type}>
-                                <span className="font-medium">
-                                  {s.scenario_type}:
-                                </span>{" "}
-                                {formatCurrency(s.summary_total_cost)} &middot;{" "}
-                                {formatHours(s.summary_total_hours)} hrs
-                              </span>
-                            )
-                          )}
+                          .filter((s) => s.summary_total_cost > 0)
+                          .map((s) => (
+                            <span key={s.scenario_type}>
+                              <span className="font-medium">
+                                {s.scenario_type}:
+                              </span>{" "}
+                              {formatCurrency(s.summary_total_cost)} &middot;{" "}
+                              {formatHours(s.summary_total_hours)} hrs
+                            </span>
+                          ))}
                       </div>
                     )}
                   </CardHeader>
