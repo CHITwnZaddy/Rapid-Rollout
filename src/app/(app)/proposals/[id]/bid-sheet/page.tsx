@@ -30,6 +30,11 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
 import {
+  calculateMigrationTotals,
+  type MigrationConfig as EngineMigrationConfig,
+  type MigrationDetailLine,
+} from "@/lib/calculations/migration-engine";
+import {
   discountPercentSchema,
   discountDollarsSchema,
 } from "@/lib/validation/bid-sheet";
@@ -63,7 +68,7 @@ export default function BidSheetPage() {
 
   useEffect(() => {
     const load = async () => {
-      const [bidRes, scenarioRes, customerRes, migrationRes, scopedRes] =
+      const [bidRes, scenarioRes, customerRes, migCfgRes, migLinesRes, ratesRes, scopedRes] =
         await Promise.all([
           // maybeSingle() instead of single() so a missing row comes
           // back as data=null instead of an error — lets us heal the
@@ -82,11 +87,27 @@ export default function BidSheetPage() {
             .from("customers")
             .select("*")
             .order("company_name"),
+          // Full config fields needed for live migration total computation.
           supabase
             .from("migration_config")
-            .select("computed_total_cost")
+            .select(
+              "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, ba_complexity_factor, pm_complexity_factor, ba_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
+            )
             .eq("proposal_id", proposalId)
             .single(),
+          supabase
+            .from("migration_detail_lines")
+            .select("id, section, label, quantity, items_per_object, total_line_items, row_order")
+            .eq("proposal_id", proposalId)
+            .order("row_order"),
+          supabase
+            .from("rate_cards")
+            .select("lookup_key, rate")
+            .in("lookup_key", [
+              "Master|Business Analyst",
+              "Master|Program Manager",
+              "Master|Travel Cost/Trip",
+            ]),
           supabase
             .from("scoped_services")
             .select("cost")
@@ -136,10 +157,59 @@ export default function BidSheetPage() {
       );
       const scopedData = scopedParsed.ok ? scopedParsed.data : [];
 
-      const migrationData =
-        !migrationRes.error && migrationRes.data
-          ? (migrationRes.data as { computed_total_cost: number })
-          : null;
+      // Compute migration total live — same approach as the Summary and
+      // Scenario Breakout pages — so the bid sheet always reflects the
+      // current section data rather than the stored computed_total_cost
+      // snapshot which only updates when the migration page saves.
+      const NUM = (v: unknown) => Number(v) || 0;
+      const migCfg = !migCfgRes.error ? migCfgRes.data : null;
+      const migLines = migLinesRes.data ?? [];
+      const rateRows = ratesRes.data ?? [];
+      const baRate = rateRows.find((r) => r.lookup_key === "Master|Business Analyst")?.rate;
+      const pmRate = rateRows.find((r) => r.lookup_key === "Master|Program Manager")?.rate;
+      const travelRate = rateRows.find((r) => r.lookup_key === "Master|Travel Cost/Trip")?.rate;
+
+      let liveMigrationTotal = 0;
+      if (migCfg && baRate != null && pmRate != null && travelRate != null) {
+        const numP = NUM(migCfg.num_projects);
+        const engineCfg: EngineMigrationConfig = {
+          num_projects: numP,
+          hrs_per_import: NUM(migCfg.hrs_per_import),
+          lines_per_import_file: NUM(migCfg.lines_per_import_file),
+          is_effort_included: migCfg.is_effort_included,
+          is_workshop_included: migCfg.is_workshop_included,
+          pm_contingency_pct: 0,
+          ba_complexity_factor: NUM(migCfg.ba_complexity_factor),
+          pm_complexity_factor: NUM(migCfg.pm_complexity_factor),
+          ba_trips: NUM(migCfg.ba_trips),
+          pm_trips: NUM(migCfg.pm_trips),
+          doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
+          doc_mb_per_hour: NUM(migCfg.doc_mb_per_hour),
+          core_requirements_hrs: NUM(migCfg.core_requirements_hrs),
+          core_migration_plan_hrs: NUM(migCfg.core_migration_plan_hrs),
+          core_validation_hrs: NUM(migCfg.core_validation_hrs),
+          core_final_qa_hrs: NUM(migCfg.core_final_qa_hrs),
+          core_pm_oversight_hrs: NUM(migCfg.core_pm_oversight_hrs),
+        };
+        const toLine = (l: typeof migLines[0], qty?: number): MigrationDetailLine => ({
+          id: l.id,
+          section: l.section as "project" | "workflow" | "cost",
+          label: l.label,
+          quantity: qty ?? NUM(l.quantity),
+          items_per_object: NUM(l.items_per_object),
+          total_line_items: NUM(l.total_line_items),
+          row_order: l.row_order,
+        });
+        liveMigrationTotal = calculateMigrationTotals(
+          engineCfg,
+          migLines.filter((l) => l.section === "project").map((l) => toLine(l, numP)),
+          migLines.filter((l) => l.section === "workflow").map((l) => toLine(l)),
+          migLines.filter((l) => l.section === "cost").map((l) => toLine(l)),
+          Number(baRate),
+          Number(pmRate),
+          Number(travelRate)
+        ).salesPrice;
+      }
 
       // Self-heal: if no bid_sheets row exists for this proposal
       // (e.g. because the new-proposal flow failed silently on
@@ -176,9 +246,7 @@ export default function BidSheetPage() {
           customerData.find((c) => c.id === bidData!.customer_id) ?? null
         );
       }
-      if (migrationData) {
-        setMigrationTotal(Number(migrationData.computed_total_cost) || 0);
-      }
+      setMigrationTotal(liveMigrationTotal);
       setScopedTotal(scopedData.reduce((sum, s) => sum + Number(s.cost), 0));
     };
     load();
