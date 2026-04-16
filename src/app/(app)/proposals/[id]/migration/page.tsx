@@ -277,19 +277,57 @@ export default function MigrationPage() {
     [saveLine, supabase]
   );
 
-  // Save on unmount
+  // Save on unmount — flush any changes the debounce timer would have
+  // written. React cleanup functions can't be async, so these are
+  // fire-and-forget. For in-page SPA navigation the browser keeps
+  // in-flight fetches alive; for hard tab-close delivery is best-effort
+  // (sendBeacon can't carry the Supabase auth header, so there's no
+  // reliable alternative).
   useEffect(() => {
     return () => {
       clearTimeout(saveTimer.current);
-      // Fire final save
-      if (configRef.current) {
-        const totals = computeTotals(configRef.current, linesRef.current);
-        if (totals) {
-          supabase
-            .from("migration_config")
-            .update({ computed_total_cost: totals.salesPrice, updated_at: new Date().toISOString() })
-            .eq("id", configRef.current.id);
-        }
+      const cfg = configRef.current;
+      const lines = linesRef.current;
+      if (!cfg) return;
+
+      const totals = computeTotals(cfg, lines);
+      const totalCost = totals?.salesPrice ?? cfg.computed_total_cost;
+
+      supabase
+        .from("migration_config")
+        .update({
+          num_projects: cfg.num_projects,
+          hrs_per_import: cfg.hrs_per_import,
+          lines_per_import_file: cfg.lines_per_import_file,
+          is_effort_included: cfg.is_effort_included,
+          is_workshop_included: cfg.is_workshop_included,
+          pm_contingency_pct: cfg.pm_contingency_pct,
+          ba_complexity_factor: cfg.ba_complexity_factor,
+          pm_complexity_factor: cfg.pm_complexity_factor,
+          ba_trips: cfg.ba_trips,
+          pm_trips: cfg.pm_trips,
+          doc_avg_mb_per_project: cfg.doc_avg_mb_per_project,
+          doc_mb_per_hour: cfg.doc_mb_per_hour,
+          core_requirements_hrs: cfg.core_requirements_hrs,
+          core_migration_plan_hrs: cfg.core_migration_plan_hrs,
+          core_validation_hrs: cfg.core_validation_hrs,
+          core_final_qa_hrs: cfg.core_final_qa_hrs,
+          core_pm_oversight_hrs: cfg.core_pm_oversight_hrs,
+          computed_total_cost: totalCost,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", cfg.id);
+
+      for (const line of lines) {
+        supabase
+          .from("migration_detail_lines")
+          .update({
+            label: line.label,
+            quantity: line.quantity,
+            items_per_object: line.items_per_object,
+            total_line_items: line.total_line_items,
+          })
+          .eq("id", line.id);
       }
     };
   }, [supabase]);
