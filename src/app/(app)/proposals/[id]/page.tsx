@@ -19,6 +19,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
+import {
+  calculateMigrationTotals,
+  type MigrationConfig as EngineMigrationConfig,
+  type MigrationDetailLine,
+} from "@/lib/calculations/migration-engine";
 
 function getMarginBadgeClass(marginPercent: number | null) {
   if (marginPercent === null) return "bg-muted text-muted-foreground";
@@ -46,7 +51,7 @@ export default async function ProposalSummaryPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [scenarioRes, scopedRes, migrationRes, bidSheetRes, burdenRes] =
+  const [scenarioRes, scopedRes, migrationConfigRes, migrationLinesRes, bidSheetRes, ratesRes] =
     await Promise.all([
       supabase
         .from("scenarios")
@@ -59,9 +64,16 @@ export default async function ProposalSummaryPage({
         .eq("proposal_id", id),
       supabase
         .from("migration_config")
-        .select("computed_total_cost")
+        .select(
+          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, ba_complexity_factor, pm_complexity_factor, ba_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
+        )
         .eq("proposal_id", id)
         .single(),
+      supabase
+        .from("migration_detail_lines")
+        .select("id, section, label, quantity, items_per_object, total_line_items, row_order")
+        .eq("proposal_id", id)
+        .order("row_order"),
       supabase
         .from("bid_sheets")
         .select("discount_percent, discount_dollars")
@@ -69,15 +81,22 @@ export default async function ProposalSummaryPage({
         .single(),
       supabase
         .from("rate_cards")
-        .select("rate")
-        .eq("lookup_key", "Master|Burden Rate")
-        .single(),
+        .select("lookup_key, rate")
+        .in("lookup_key", [
+          "Master|Burden Rate",
+          "Master|Business Analyst",
+          "Master|Program Manager",
+          "Master|Travel Cost/Trip",
+        ]),
     ]);
+
+  const rateRows = ratesRes.data ?? [];
+  const burdenRateRow = rateRows.find((r) => r.lookup_key === "Master|Burden Rate");
 
   // Fail closed: margins are pricing-critical. If we can't read the
   // burden rate, refuse to render margins rather than silently use a
   // stale default. See migration 007 for the seed row.
-  if (burdenRes.error || burdenRes.data?.rate == null) {
+  if (ratesRes.error || !burdenRateRow) {
     return (
       <Card>
         <CardHeader>
@@ -99,7 +118,14 @@ export default async function ProposalSummaryPage({
       </Card>
     );
   }
-  const burdenRate = Number(burdenRes.data.rate);
+  const burdenRate = Number(burdenRateRow.rate);
+
+  const baRateRow = rateRows.find((r) => r.lookup_key === "Master|Business Analyst");
+  const pmRateRow = rateRows.find((r) => r.lookup_key === "Master|Program Manager");
+  const travelRateRow = rateRows.find((r) => r.lookup_key === "Master|Travel Cost/Trip");
+  const baRate = baRateRow ? Number(baRateRow.rate) : null;
+  const pmRate = pmRateRow ? Number(pmRateRow.rate) : null;
+  const travelRate = travelRateRow ? Number(travelRateRow.rate) : null;
 
   const scenarios = scenarioRes.data;
   if (!scenarios) notFound();
@@ -108,7 +134,79 @@ export default async function ProposalSummaryPage({
     (sum, s) => sum + Number(s.cost),
     0
   );
-  const migrationTotal = Number(migrationRes.data?.computed_total_cost) || 0;
+
+  // Compute migration total live from the same inputs the Migration
+  // Services page uses, instead of trusting the stored
+  // computed_total_cost snapshot (which only updates when the migration
+  // page's debounced save fires and can lag or be zero on new proposals).
+  const NUM = (v: unknown) => Number(v) || 0;
+  const migCfg = migrationConfigRes.data;
+  const migLines = migrationLinesRes.data ?? [];
+  let migrationTotal = 0;
+  if (migCfg && baRate !== null && pmRate !== null && travelRate !== null) {
+    const numP = NUM(migCfg.num_projects);
+    const engineCfg: EngineMigrationConfig = {
+      num_projects: numP,
+      hrs_per_import: NUM(migCfg.hrs_per_import),
+      lines_per_import_file: NUM(migCfg.lines_per_import_file),
+      is_effort_included: migCfg.is_effort_included,
+      is_workshop_included: migCfg.is_workshop_included,
+      pm_contingency_pct: 0,
+      ba_complexity_factor: NUM(migCfg.ba_complexity_factor),
+      pm_complexity_factor: NUM(migCfg.pm_complexity_factor),
+      ba_trips: NUM(migCfg.ba_trips),
+      pm_trips: NUM(migCfg.pm_trips),
+      doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
+      doc_mb_per_hour: NUM(migCfg.doc_mb_per_hour),
+      core_requirements_hrs: NUM(migCfg.core_requirements_hrs),
+      core_migration_plan_hrs: NUM(migCfg.core_migration_plan_hrs),
+      core_validation_hrs: NUM(migCfg.core_validation_hrs),
+      core_final_qa_hrs: NUM(migCfg.core_final_qa_hrs),
+      core_pm_oversight_hrs: NUM(migCfg.core_pm_oversight_hrs),
+    };
+    const projectLines: MigrationDetailLine[] = migLines
+      .filter((l) => l.section === "project")
+      .map((l) => ({
+        id: l.id,
+        section: "project" as const,
+        label: l.label,
+        quantity: numP,
+        items_per_object: NUM(l.items_per_object),
+        total_line_items: NUM(l.total_line_items),
+        row_order: l.row_order,
+      }));
+    const workflowLines: MigrationDetailLine[] = migLines
+      .filter((l) => l.section === "workflow")
+      .map((l) => ({
+        id: l.id,
+        section: "workflow" as const,
+        label: l.label,
+        quantity: NUM(l.quantity),
+        items_per_object: NUM(l.items_per_object),
+        total_line_items: NUM(l.total_line_items),
+        row_order: l.row_order,
+      }));
+    const costLines: MigrationDetailLine[] = migLines
+      .filter((l) => l.section === "cost")
+      .map((l) => ({
+        id: l.id,
+        section: "cost" as const,
+        label: l.label,
+        quantity: NUM(l.quantity),
+        items_per_object: NUM(l.items_per_object),
+        total_line_items: NUM(l.total_line_items),
+        row_order: l.row_order,
+      }));
+    migrationTotal = calculateMigrationTotals(
+      engineCfg,
+      projectLines,
+      workflowLines,
+      costLines,
+      baRate,
+      pmRate,
+      travelRate
+    ).salesPrice;
+  }
 
   const discountPercent = Number(bidSheetRes.data?.discount_percent) || 0;
   const discountDollars = Number(bidSheetRes.data?.discount_dollars) || 0;
