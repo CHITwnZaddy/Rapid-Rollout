@@ -19,13 +19,15 @@ interface LogEntry {
   action: string;
   record_id: string;
   created_at: string;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
 }
 
 export default async function ChangeLogPage() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("change_log")
-    .select("id, table_name, action, record_id, created_at")
+    .select("id, table_name, action, record_id, created_at, old_values, new_values")
     .order("created_at", { ascending: false })
     .limit(100);
   const logs = data as LogEntry[] | null;
@@ -40,40 +42,86 @@ export default async function ChangeLogPage() {
               <TableHead>Date</TableHead>
               <TableHead>Table</TableHead>
               <TableHead>Action</TableHead>
-              <TableHead>Record ID</TableHead>
+              <TableHead>Proposal / Record</TableHead>
+              <TableHead>Justification / Details</TableHead>
+              <TableHead>Deleted By</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(!logs || logs.length === 0) && (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={6}
                   className="py-8 text-center text-muted-foreground"
                 >
                   No changes recorded yet.
                 </TableCell>
               </TableRow>
             )}
-            {logs?.map((log) => (
-              <TableRow key={log.id}>
-                <TableCell className="text-sm">
-                  {new Date(log.created_at).toLocaleString()}
-                </TableCell>
-                <TableCell>{log.table_name}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      log.action === "DELETE" ? "destructive" : "secondary"
-                    }
-                  >
-                    {log.action}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {log.record_id}
-                </TableCell>
-              </TableRow>
-            ))}
+            {logs?.map((log) => {
+              const proposalName =
+                typeof log.old_values?.name === "string"
+                  ? log.old_values.name
+                  : null;
+              const proposalStatus =
+                typeof log.old_values?.status === "string"
+                  ? log.old_values.status
+                  : null;
+              const justification =
+                typeof log.new_values?.justification === "string"
+                  ? log.new_values.justification
+                  : null;
+              const deletedByEmail =
+                typeof log.new_values?.deleted_by_email === "string"
+                  ? log.new_values.deleted_by_email
+                  : null;
+
+              return (
+                <TableRow key={log.id}>
+                  <TableCell className="text-sm whitespace-nowrap">
+                    {new Date(log.created_at).toLocaleString()}
+                  </TableCell>
+                  <TableCell>{log.table_name}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        log.action === "DELETE" ? "destructive" : "secondary"
+                      }
+                    >
+                      {log.action}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {proposalName ? (
+                      <div>
+                        <p className="font-medium">{proposalName}</p>
+                        {proposalStatus && (
+                          <p className="text-xs text-muted-foreground">
+                            Status at deletion: {proposalStatus}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {log.record_id}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-xs">
+                    {justification ? (
+                      <p className="text-sm">{justification}</p>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {deletedByEmail ?? (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
