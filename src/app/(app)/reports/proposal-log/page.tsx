@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/calculations/engine";
-import * as XLSX from "xlsx";
+import type ExcelJS from "exceljs";
 
 interface Customer {
   id: string;
@@ -169,30 +169,192 @@ export default function ProposalLogReport() {
     setLoading(false);
   }, [supabase, selectedCustomer, selectedStatus, customers]);
 
-  const exportXLSX = useCallback(() => {
+  const exportXLSX = useCallback(async () => {
     if (rows.length === 0) return;
 
-    const exportRows = rows.map((r) => ({
-      Customer: r.customerName,
-      Proposal: r.proposalName,
-      Status: r.status,
-      P1: r.p1Cost,
-      P2: r.p2Cost,
-      Opt1: r.opt1Cost,
-      Opt2: r.opt2Cost,
-      "Scoped Services": r.scopedCost,
-      "Migration Services": r.migrationCost,
-      "Grand Total": r.grandTotal,
-    }));
+    // Dynamic import keeps exceljs out of the initial JS bundle.
+    const ExcelJS = (await import("exceljs")).default;
 
-    const ws = XLSX.utils.json_to_sheet(exportRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Proposal Log");
-    XLSX.writeFile(
-      wb,
-      `proposal-log-${new Date().toISOString().slice(0, 10)}.xlsx`
+    // ── Sort: Status A→Z, then Customer A→Z within each status ──────────────
+    const sorted = [...rows].sort((a, b) => {
+      const sd = a.status.localeCompare(b.status);
+      return sd !== 0 ? sd : a.customerName.localeCompare(b.customerName);
+    });
+
+    // ── Filter label ─────────────────────────────────────────────────────────
+    const customerLabel =
+      selectedCustomer === "all"
+        ? "All Customers"
+        : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
+          "All Customers");
+    const statusLabel =
+      selectedStatus === "All" ? "All Statuses" : selectedStatus;
+
+    // ── Workbook / sheet ─────────────────────────────────────────────────────
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Proposal Log");
+
+    const TOTAL_COLS = 10;
+    const LAST_COL_LETTER = "J";
+    const CURRENCY_FMT = '$#,##0.00';
+    const TITLE_BG    = "FFD6E4F7"; // light blue
+    const HEADER_BG   = "FFE2E8F0"; // light gray
+    const ALT_ROW_BG  = "FFF0F4FA"; // very light blue-gray (alternating)
+    const WHITE       = "FFFFFFFF";
+
+    // ── Column widths ────────────────────────────────────────────────────────
+    sheet.columns = [
+      { width: 24 }, // A Customer
+      { width: 32 }, // B Proposal Name
+      { width: 20 }, // C Proposal Status
+      { width: 15 }, // D Phase 1
+      { width: 15 }, // E Phase 2
+      { width: 15 }, // F Option 1
+      { width: 15 }, // G Option 2
+      { width: 20 }, // H Ad-hoc Services
+      { width: 22 }, // I Migration Services
+      { width: 18 }, // J Grand Total
+    ];
+
+    // ── Row 1: Title ─────────────────────────────────────────────────────────
+    sheet.mergeCells(`A1:${LAST_COL_LETTER}1`);
+    const titleCell = sheet.getCell("A1");
+    titleCell.value = "Rapid Rollout – Proposal Log";
+    titleCell.font = { bold: true, size: 24 };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+    titleCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: TITLE_BG },
+    };
+    sheet.getRow(1).height = 44;
+
+    // ── Row 2: Filter label ──────────────────────────────────────────────────
+    sheet.mergeCells(`A2:${LAST_COL_LETTER}2`);
+    const filterCell = sheet.getCell("A2");
+    filterCell.value = `Filtered by: ${customerLabel} and ${statusLabel}`;
+    filterCell.font = { size: 11, italic: true };
+    filterCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
+    sheet.getRow(2).height = 20;
+
+    // ── Row 3: Spacer ────────────────────────────────────────────────────────
+    sheet.getRow(3).height = 8;
+
+    // ── Row 4: Column headers ────────────────────────────────────────────────
+    const HEADER_NAMES = [
+      "Customer",
+      "Proposal Name",
+      "Proposal Status",
+      "Phase 1",
+      "Phase 2",
+      "Option 1",
+      "Option 2",
+      "Ad-hoc Services",
+      "Migration Services",
+      "Grand Total",
+    ];
+    const headerRow = sheet.getRow(4);
+    HEADER_NAMES.forEach((name, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = name;
+      cell.font = { bold: true, size: 12 };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: HEADER_BG },
+      };
+    });
+    headerRow.height = 22;
+
+    // ── Data rows (starting at row 5) ────────────────────────────────────────
+    const DATA_START = 5;
+    sorted.forEach((r, idx) => {
+      const rowNum = DATA_START + idx;
+      const row = sheet.getRow(rowNum);
+      const bgArgb = idx % 2 === 0 ? ALT_ROW_BG : WHITE;
+      const fill: ExcelJS.Fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: bgArgb },
+      };
+
+      // Text columns: Customer, Proposal Name, Proposal Status
+      const textValues = [r.customerName, r.proposalName, r.status];
+      textValues.forEach((v, i) => {
+        const cell = row.getCell(i + 1);
+        cell.value = v;
+        cell.font = { size: 12 };
+        cell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
+        cell.fill = fill;
+      });
+
+      // Numeric columns: Phase 1 … Grand Total
+      const numValues = [
+        r.p1Cost,
+        r.p2Cost,
+        r.opt1Cost,
+        r.opt2Cost,
+        r.scopedCost,
+        r.migrationCost,
+        r.grandTotal,
+      ];
+      numValues.forEach((v, i) => {
+        const cell = row.getCell(4 + i);
+        cell.value = v;
+        cell.numFmt = CURRENCY_FMT;
+        cell.font = { size: 12 };
+        cell.alignment = { horizontal: "right", vertical: "middle" };
+        cell.fill = fill;
+      });
+
+      row.height = 18;
+    });
+
+    // ── Grand Total row ──────────────────────────────────────────────────────
+    const grandTotalRowNum = DATA_START + sorted.length;
+    const grandTotalRow = sheet.getRow(grandTotalRowNum);
+    const grandTotalValue = sorted.reduce((sum, r) => sum + r.grandTotal, 0);
+    const gtFill: ExcelJS.Fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: HEADER_BG },
+    };
+
+    // Merge A–I for the "Grand Total" label
+    sheet.mergeCells(
+      `A${grandTotalRowNum}:I${grandTotalRowNum}`
     );
-  }, [rows]);
+    const gtLabelCell = grandTotalRow.getCell(1);
+    gtLabelCell.value = "Grand Total";
+    gtLabelCell.font = { bold: true, size: 12 };
+    gtLabelCell.alignment = {
+      horizontal: "right",
+      vertical: "middle",
+      indent: 1,
+    };
+    gtLabelCell.fill = gtFill;
+
+    const gtValueCell = grandTotalRow.getCell(TOTAL_COLS);
+    gtValueCell.value = grandTotalValue;
+    gtValueCell.numFmt = CURRENCY_FMT;
+    gtValueCell.font = { bold: true, size: 12 };
+    gtValueCell.alignment = { horizontal: "right", vertical: "middle" };
+    gtValueCell.fill = gtFill;
+    grandTotalRow.height = 22;
+
+    // ── Write buffer → trigger browser download ──────────────────────────────
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `proposal-log-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [rows, selectedCustomer, selectedStatus, customers]);
 
   return (
     <div className="space-y-6">
