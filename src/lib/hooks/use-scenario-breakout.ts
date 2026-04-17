@@ -290,10 +290,10 @@ export function useScenarioBreakout() {
         })()
       : 0;
 
-  const exportXLSX = useCallback(() => {
+  const exportXLSX = useCallback(async () => {
     const proposalName =
       proposals.find((p) => p.id === selectedProposal)?.name ?? "report";
-    exportScenarioBreakoutXLSX({
+    await exportScenarioBreakoutXLSX({
       proposalName,
       scenarioGroups,
       scopedLines,

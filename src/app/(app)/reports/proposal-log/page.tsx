@@ -28,6 +28,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/calculations/engine";
 import type ExcelJS from "exceljs";
+import {
+  calculateMigrationTotals,
+  type MigrationConfig as EngineMigrationConfig,
+  type MigrationDetailLine,
+} from "@/lib/calculations/migration-engine";
 
 interface Customer {
   id: string;
@@ -103,21 +108,38 @@ export default function ProposalLogReport() {
 
     const proposalIds = proposals.map((p) => p.id);
 
-    // Fetch all related data in parallel
-    const [scenarioRes, scopedRes, migrationRes] = await Promise.all([
-      supabase
-        .from("scenarios")
-        .select("proposal_id, scenario_type, summary_total_cost")
-        .in("proposal_id", proposalIds),
-      supabase
-        .from("scoped_services")
-        .select("proposal_id, cost")
-        .in("proposal_id", proposalIds),
-      supabase
-        .from("migration_config")
-        .select("proposal_id, computed_total_cost")
-        .in("proposal_id", proposalIds),
-    ]);
+    // Fetch all related data in parallel.
+    // migration_config fetches all fields needed by calculateMigrationTotals
+    // so we can compute a live total instead of reading the stale snapshot.
+    const [scenarioRes, scopedRes, migrationRes, migLinesRes, ratesRes] =
+      await Promise.all([
+        supabase
+          .from("scenarios")
+          .select("proposal_id, scenario_type, summary_total_cost")
+          .in("proposal_id", proposalIds),
+        supabase
+          .from("scoped_services")
+          .select("proposal_id, cost")
+          .in("proposal_id", proposalIds),
+        supabase
+          .from("migration_config")
+          .select("proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, ba_complexity_factor, pm_complexity_factor, ba_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs")
+          .in("proposal_id", proposalIds),
+        supabase
+          .from("migration_detail_lines")
+          .select(
+            "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order"
+          )
+          .in("proposal_id", proposalIds),
+        supabase
+          .from("rate_cards")
+          .select("lookup_key, rate")
+          .in("lookup_key", [
+            "Master|Business Analyst",
+            "Master|Program Manager",
+            "Master|Travel Cost/Trip",
+          ]),
+      ]);
 
     // Build customer lookup
     const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
@@ -135,10 +157,82 @@ export default function ProposalLogReport() {
       scopedMap.set(s.proposal_id, (scopedMap.get(s.proposal_id) ?? 0) + (Number(s.cost) || 0));
     }
 
-    // Migration cost map: proposalId -> total
+    // Rate card lookup (shared across all proposals)
+    const rateMap = new Map(
+      (ratesRes.data ?? []).map((r) => [r.lookup_key, Number(r.rate) || 0])
+    );
+    const baRate = (rateMap.get("Master|Business Analyst") ?? 0);
+    const pmRate = (rateMap.get("Master|Program Manager") ?? 0);
+    const travelRate = (rateMap.get("Master|Travel Cost/Trip") ?? 0);
+
+    // Group migration detail lines by proposal
+    const migLinesMap = new Map<string, typeof migLinesRes.data>();
+    for (const l of migLinesRes.data ?? []) {
+      if (!migLinesMap.has(l.proposal_id)) migLinesMap.set(l.proposal_id, []);
+      migLinesMap.get(l.proposal_id)!.push(l);
+    }
+
+    // Compute live migration total per proposal via calculateMigrationTotals.
+    // Falls back to 0 if config is missing (no migration services configured).
     const migrationMap = new Map<string, number>();
-    for (const m of migrationRes.data ?? []) {
-      migrationMap.set(m.proposal_id, Number(m.computed_total_cost) || 0);
+    for (const cfg of migrationRes.data ?? []) {
+      const allLines = migLinesMap.get(cfg.proposal_id) ?? [];
+      const numP = Number(cfg.num_projects) || 0;
+
+      const engineCfg: EngineMigrationConfig = {
+        num_projects: numP,
+        hrs_per_import: Number(cfg.hrs_per_import) || 0,
+        lines_per_import_file: Number(cfg.lines_per_import_file) || 0,
+        is_effort_included: cfg.is_effort_included,
+        is_workshop_included: cfg.is_workshop_included,
+        pm_contingency_pct: 0,
+        ba_complexity_factor: Number(cfg.ba_complexity_factor) || 0,
+        pm_complexity_factor: Number(cfg.pm_complexity_factor) || 0,
+        ba_trips: Number(cfg.ba_trips) || 0,
+        pm_trips: Number(cfg.pm_trips) || 0,
+        doc_avg_mb_per_project: Number(cfg.doc_avg_mb_per_project) || 0,
+        doc_mb_per_hour: Number(cfg.doc_mb_per_hour) || 0,
+        core_requirements_hrs: Number(cfg.core_requirements_hrs) || 0,
+        core_migration_plan_hrs: Number(cfg.core_migration_plan_hrs) || 0,
+        core_validation_hrs: Number(cfg.core_validation_hrs) || 0,
+        core_final_qa_hrs: Number(cfg.core_final_qa_hrs) || 0,
+        core_pm_oversight_hrs: Number(cfg.core_pm_oversight_hrs) || 0,
+      };
+
+      const toLine = (
+        l: { section: string; label: string; quantity: number; items_per_object: number; total_line_items: number; row_order: number },
+        qtyOverride?: number
+      ): MigrationDetailLine => ({
+        id: "",
+        section: l.section as "project" | "workflow" | "cost",
+        label: l.label,
+        quantity: qtyOverride ?? (Number(l.quantity) || 0),
+        items_per_object: Number(l.items_per_object) || 0,
+        total_line_items: Number(l.total_line_items) || 0,
+        row_order: l.row_order,
+      });
+
+      const projectLines = allLines
+        .filter((l) => l.section === "project")
+        .map((l) => toLine(l, numP));
+      const workflowLines = allLines
+        .filter((l) => l.section === "workflow" && l.label && l.label !== "WF Object Name" && l.label.trim() !== "")
+        .map((l) => toLine(l));
+      const costLines = allLines
+        .filter((l) => l.section === "cost" && l.label && l.label !== "TBD" && l.label.trim() !== "")
+        .map((l) => toLine(l));
+
+      const liveTotal = calculateMigrationTotals(
+        engineCfg,
+        projectLines,
+        workflowLines,
+        costLines,
+        baRate,
+        pmRate,
+        travelRate
+      ).salesPrice;
+
+      migrationMap.set(cfg.proposal_id, liveTotal);
     }
 
     const reportRows: ReportRow[] = proposals.map((p) => {
