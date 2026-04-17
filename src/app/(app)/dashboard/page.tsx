@@ -1,15 +1,11 @@
-// Phase 2.7 — was `force-dynamic`, switched to 60s revalidation.
-// Proposals are globally readable (SE backup workflow) so the
-// same HTML is fine to serve to all authenticated users. Middleware
-// still gates auth on every request.
-export const revalidate = 60;
+// Per-user "My Proposals" count requires auth.uid() — must be dynamic.
+export const dynamic = "force-dynamic";
 
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -30,7 +26,7 @@ interface ProposalRow {
   }[];
 }
 
-type FilterValue = "all" | "draft" | "submitted";
+type FilterValue = "all" | "draft" | "submitted" | "mine";
 
 export default async function DashboardPage({
   searchParams,
@@ -40,9 +36,21 @@ export default async function DashboardPage({
   const supabase = await createClient();
   const sp = await searchParams;
   const filter: FilterValue =
-    sp.filter === "draft" ? "draft" : sp.filter === "submitted" ? "submitted" : "all";
+    sp.filter === "draft"
+      ? "draft"
+      : sp.filter === "submitted"
+        ? "submitted"
+        : sp.filter === "mine"
+          ? "mine"
+          : "all";
 
-  // Base proposals query for Recent Proposals list
+  // Current user — needed for the My Proposals count and filter.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const userId = user?.id ?? null;
+
+  // Base proposals query for the Recent Proposals list.
   let proposalsQuery = supabase
     .from("proposals")
     .select(
@@ -62,44 +70,54 @@ export default async function DashboardPage({
     proposalsQuery = proposalsQuery.eq("status", "Draft");
   } else if (filter === "submitted") {
     proposalsQuery = proposalsQuery.neq("status", "Draft");
+  } else if (filter === "mine" && userId) {
+    proposalsQuery = proposalsQuery.eq("created_by", userId);
   }
 
-  // Phase 2.2 — run the proposal list + both counts in parallel.
-  // Previously these were three sequential awaits (~150-300ms of
-  // avoidable waterfall). submittedCount is derived from total -
-  // draft, so we only need two count queries.
-  const [proposalsRes, totalRes, draftRes] = await Promise.all([
+  // Run all queries in parallel — proposal list + three counts.
+  const [proposalsRes, totalRes, draftRes, myRes] = await Promise.all([
     proposalsQuery,
     supabase.from("proposals").select("*", { count: "exact", head: true }),
     supabase
       .from("proposals")
       .select("*", { count: "exact", head: true })
       .eq("status", "Draft"),
+    userId
+      ? supabase
+          .from("proposals")
+          .select("*", { count: "exact", head: true })
+          .eq("created_by", userId)
+      : Promise.resolve({ count: 0, error: null }),
   ]);
 
   const proposals = proposalsRes.data as ProposalRow[] | null;
   const totalProposals = totalRes.count;
   const draftCount = draftRes.count;
   const submittedCount = (totalProposals ?? 0) - (draftCount ?? 0);
+  const myCount = myRes.count ?? 0;
 
   const cardClass = (isActive: boolean) =>
     `transition-colors ${isActive ? "ring-2 ring-primary bg-primary/5" : "hover:bg-muted/30"}`;
 
+  const filterLabel =
+    filter === "draft"
+      ? "Draft only"
+      : filter === "submitted"
+        ? "Submitted only"
+        : filter === "mine"
+          ? "My proposals only"
+          : null;
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of your scoping proposals
-          </p>
-        </div>
+        <h1 className="text-2xl font-bold">Proposal Dashboard</h1>
         <Link href="/proposals/new">
           <Button>New Proposal</Button>
         </Link>
       </div>
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+      <div className="mb-8 grid gap-4 sm:grid-cols-4">
         <Link href="/dashboard?filter=all">
           <Card className={cardClass(filter === "all")}>
             <CardHeader className="pb-2">
@@ -126,22 +144,31 @@ export default async function DashboardPage({
             </CardHeader>
           </Card>
         </Link>
+
+        <Link href="/dashboard?filter=mine">
+          <Card className={cardClass(filter === "mine")}>
+            <CardHeader className="pb-2">
+              <CardDescription>My Proposals</CardDescription>
+              <CardTitle className="text-3xl">{myCount}</CardTitle>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
 
       <h2 className="mb-4 text-lg font-semibold">
         Recent Proposals
-        {filter !== "all" && (
+        {filterLabel && (
           <span className="ml-2 text-sm font-normal text-muted-foreground">
-            ({filter === "draft" ? "Draft only" : "Submitted only"})
+            ({filterLabel})
           </span>
         )}
       </h2>
 
       {!proposals?.length ? (
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
+          <CardHeader className="py-12 text-center text-muted-foreground">
             No proposals found for this filter.
-          </CardContent>
+          </CardHeader>
         </Card>
       ) : (
         <div className="grid gap-4">
@@ -175,7 +202,9 @@ export default async function DashboardPage({
                         </span>
                       )}
                       <Badge
-                        variant={proposal.status === "Draft" ? "secondary" : "default"}
+                        variant={
+                          proposal.status === "Draft" ? "secondary" : "default"
+                        }
                       >
                         {proposal.status}
                       </Badge>
