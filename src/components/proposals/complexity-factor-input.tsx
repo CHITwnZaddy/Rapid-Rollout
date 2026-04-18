@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -22,6 +22,13 @@ export function ComplexityFactorInput({
 }: Props) {
   const [value, setValue] = useState(initialValue.toFixed(2));
   const [isPending, startTransition] = useTransition();
+
+  // Sync when initialValue updates (e.g. parent finishes its async fetch
+  // after the initial 1.00 default). Without this, the input displays
+  // the first prop it ever saw and ignores later updates.
+  useEffect(() => {
+    setValue(initialValue.toFixed(2));
+  }, [initialValue]);
 
   const commit = () => {
     const parsed = Number(value);
