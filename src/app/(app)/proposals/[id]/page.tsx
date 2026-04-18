@@ -236,7 +236,7 @@ export default async function ProposalSummaryPage({
 
   const allocated = scenarioRows.map((s) => {
     const totalCost = applyComplexity(Number(s!.summary_total_cost), complexityFactor);
-    const totalHours = Number(s!.summary_total_hours);
+    const totalHours = applyComplexity(Number(s!.summary_total_hours), complexityFactor);
     const share = scenarioSubtotal > 0 ? totalCost / scenarioSubtotal : 0;
     const discountedCost = discountedScenarioTotal * share;
     const marginPercent = calcMarginPercent(discountedCost, totalHours, burdenRate);

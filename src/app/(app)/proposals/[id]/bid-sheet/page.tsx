@@ -327,7 +327,7 @@ export default function BidSheetPage() {
     0
   );
   const totalHours = scenarios.reduce(
-    (sum, sc) => sum + Number(sc.summary_total_hours),
+    (sum, sc) => sum + applyComplexity(Number(sc.summary_total_hours), complexityFactor),
     0
   );
 
@@ -410,10 +410,10 @@ export default function BidSheetPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatHours(Number(s.summary_total_hours))}
+                    {formatHours(applyComplexity(Number(s.summary_total_hours), complexityFactor))}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrency(Number(s.summary_total_cost))}
+                    {formatCurrency(applyComplexity(Number(s.summary_total_cost), complexityFactor))}
                   </TableCell>
                 </TableRow>
               ))}
