@@ -24,6 +24,8 @@ import {
   type MigrationConfig as EngineMigrationConfig,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
+import { applyComplexity } from "@/lib/calculations/complexity";
+import { ComplexityFactorInput } from "@/components/proposals/complexity-factor-input";
 
 function getMarginBadgeClass(marginPercent: number | null) {
   if (marginPercent === null) return "bg-muted text-muted-foreground";
@@ -51,8 +53,13 @@ export default async function ProposalSummaryPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [scenarioRes, scopedRes, migrationConfigRes, migrationLinesRes, bidSheetRes, ratesRes] =
+  const [proposalRes, scenarioRes, scopedRes, migrationConfigRes, migrationLinesRes, bidSheetRes, ratesRes] =
     await Promise.all([
+      supabase
+        .from("proposals")
+        .select("complexity_factor")
+        .eq("id", id)
+        .single(),
       supabase
         .from("scenarios")
         .select("scenario_type, summary_total_hours, summary_total_cost, is_active")
@@ -130,10 +137,13 @@ export default async function ProposalSummaryPage({
   const scenarios = scenarioRes.data;
   if (!scenarios) notFound();
 
-  const scopedTotal = (scopedRes.data ?? []).reduce(
+  const complexityFactor = Number(proposalRes.data?.complexity_factor) || 1;
+
+  const scopedRawTotal = (scopedRes.data ?? []).reduce(
     (sum, s) => sum + Number(s.cost),
     0
   );
+  const scopedTotal = applyComplexity(scopedRawTotal, complexityFactor);
 
   // Compute migration total live from the same inputs the Migration
   // Services page uses, instead of trusting the stored
@@ -217,7 +227,7 @@ export default async function ProposalSummaryPage({
     .filter(Boolean);
 
   const scenarioSubtotal = scenarioRows.reduce(
-    (sum, s) => sum + Number(s!.summary_total_cost),
+    (sum, s) => sum + applyComplexity(Number(s!.summary_total_cost), complexityFactor),
     0
   );
 
@@ -225,7 +235,7 @@ export default async function ProposalSummaryPage({
   const discountedScenarioTotal = afterDollar * (1 - discountPercent / 100);
 
   const allocated = scenarioRows.map((s) => {
-    const totalCost = Number(s!.summary_total_cost);
+    const totalCost = applyComplexity(Number(s!.summary_total_cost), complexityFactor);
     const totalHours = Number(s!.summary_total_hours);
     const share = scenarioSubtotal > 0 ? totalCost / scenarioSubtotal : 0;
     const discountedCost = discountedScenarioTotal * share;
@@ -247,6 +257,18 @@ export default async function ProposalSummaryPage({
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Pricing Adjustments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ComplexityFactorInput
+            proposalId={id}
+            initialValue={complexityFactor}
+          />
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Scenario Comparison</CardTitle>

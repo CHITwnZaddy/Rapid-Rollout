@@ -34,6 +34,7 @@ import {
   type MigrationConfig as EngineMigrationConfig,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
+import { applyComplexity } from "@/lib/calculations/complexity";
 import {
   discountPercentSchema,
   discountDollarsSchema,
@@ -65,10 +66,11 @@ export default function BidSheetPage() {
   );
   const [migrationTotal, setMigrationTotal] = useState(0);
   const [scopedTotal, setScopedTotal] = useState(0);
+  const [complexityFactor, setComplexityFactor] = useState(1);
 
   useEffect(() => {
     const load = async () => {
-      const [bidRes, scenarioRes, customerRes, migCfgRes, migLinesRes, ratesRes, scopedRes] =
+      const [bidRes, scenarioRes, customerRes, migCfgRes, migLinesRes, ratesRes, scopedRes, proposalRes] =
         await Promise.all([
           // maybeSingle() instead of single() so a missing row comes
           // back as data=null instead of an error — lets us heal the
@@ -112,7 +114,14 @@ export default function BidSheetPage() {
             .from("scoped_services")
             .select("cost")
             .eq("proposal_id", proposalId),
+          supabase
+            .from("proposals")
+            .select("complexity_factor")
+            .eq("id", proposalId)
+            .single(),
         ]);
+
+      const factor = Number(proposalRes.data?.complexity_factor) || 1;
 
       if (bidRes.error) {
         toast.error(`Failed to load bid sheet: ${bidRes.error.message}`);
@@ -247,7 +256,13 @@ export default function BidSheetPage() {
         );
       }
       setMigrationTotal(liveMigrationTotal);
-      setScopedTotal(scopedData.reduce((sum, s) => sum + Number(s.cost), 0));
+      setScopedTotal(
+        applyComplexity(
+          scopedData.reduce((sum, s) => sum + Number(s.cost), 0),
+          factor
+        )
+      );
+      setComplexityFactor(factor);
     };
     load();
   }, [proposalId, supabase]);
@@ -308,7 +323,7 @@ export default function BidSheetPage() {
   const discountDollars = bidSheet?.discount_dollars ?? 0;
 
   const scenarioSubtotal = scenarios.reduce(
-    (sum, sc) => sum + Number(sc.summary_total_cost),
+    (sum, sc) => sum + applyComplexity(Number(sc.summary_total_cost), complexityFactor),
     0
   );
   const totalHours = scenarios.reduce(

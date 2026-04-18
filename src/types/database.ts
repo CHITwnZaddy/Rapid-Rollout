@@ -134,6 +134,7 @@ export interface Database {
           created_by: string;
           status: string;
           notes: string | null;
+          complexity_factor: number;
           created_at: string;
           updated_at: string;
         };
@@ -144,6 +145,7 @@ export interface Database {
           created_by: string;
           status?: string;
           notes?: string | null;
+          complexity_factor?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -154,6 +156,7 @@ export interface Database {
           created_by?: string;
           status?: string;
           notes?: string | null;
+          complexity_factor?: number;
           created_at?: string;
           updated_at?: string;
         };

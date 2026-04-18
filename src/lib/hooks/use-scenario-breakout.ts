@@ -6,6 +6,7 @@ import {
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { exportScenarioBreakoutXLSX } from "@/lib/exports/scenario-breakout";
+import { applyComplexity } from "@/lib/calculations/complexity";
 
 export interface Proposal {
   id: string;
@@ -78,6 +79,7 @@ export function useScenarioBreakout() {
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [rateReloadToken, setRateReloadToken] = useState(0);
+  const [complexityFactor, setComplexityFactor] = useState(1);
 
   useEffect(() => {
     supabase
@@ -155,7 +157,7 @@ export function useScenarioBreakout() {
 
     const scenarioIds = (scenarioRes.data ?? []).map((s) => s.id);
 
-    const [linesRes, scopedRes, migCfgRes, migLinesRes] = await Promise.all([
+    const [linesRes, scopedRes, migCfgRes, migLinesRes, proposalRes] = await Promise.all([
       supabase
         .from("scenario_lines")
         .select("scenario_id, module, scope_selection, total_cost")
@@ -179,7 +181,15 @@ export function useScenarioBreakout() {
         .eq("proposal_id", selectedProposal)
         .order("section")
         .order("row_order"),
+      supabase
+        .from("proposals")
+        .select("complexity_factor")
+        .eq("id", selectedProposal)
+        .single(),
     ]);
+
+    const factor = Number(proposalRes.data?.complexity_factor) || 1;
+    setComplexityFactor(factor);
 
     // Build scenario groups
     const scenarios = scenarioRes.data ?? [];
@@ -197,12 +207,12 @@ export function useScenarioBreakout() {
           .map((l) => ({
             module: l.module,
             scope_selection: l.scope_selection,
-            total_cost: NUM(l.total_cost),
+            total_cost: applyComplexity(NUM(l.total_cost), factor),
           }));
         return {
           scenarioType: type,
           lines,
-          totalCost: NUM(scenario.summary_total_cost),
+          totalCost: applyComplexity(NUM(scenario.summary_total_cost), factor),
         };
       })
       .filter(Boolean) as ScenarioGroup[];
@@ -215,7 +225,7 @@ export function useScenarioBreakout() {
       .map((s) => ({
         service_type: s.service_type,
         description: s.description,
-        cost: NUM(s.cost),
+        cost: applyComplexity(NUM(s.cost), factor),
       }));
     setScopedLines(scoped);
 
@@ -334,6 +344,7 @@ export function useScenarioBreakout() {
     ratesReady,
     migrationLiveTotal,
     coreEffortHours,
+    complexityFactor,
     runReport,
     exportXLSX,
     retryRates: () => setRateReloadToken((n) => n + 1),

@@ -1,10 +1,43 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
 
 export type DeleteProposalResult =
   | { ok: true }
   | { ok: false; error: string };
+
+export type UpdateComplexityFactorResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function updateComplexityFactor(
+  proposalId: string,
+  value: number
+): Promise<UpdateComplexityFactorResult> {
+  if (!Number.isFinite(value) || value < 0.5 || value > 9.99) {
+    return {
+      ok: false,
+      error: "Complexity factor must be between 0.50 and 9.99.",
+    };
+  }
+
+  const supabase = await createClient();
+
+  const rounded = Math.round(value * 100) / 100;
+
+  const { error } = await supabase
+    .from("proposals")
+    .update({ complexity_factor: rounded })
+    .eq("id", proposalId);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  revalidatePath(`/proposals/${proposalId}`);
+  return { ok: true };
+}
 
 /**
  * Deletes a proposal after re-authenticating the user and writing an audit

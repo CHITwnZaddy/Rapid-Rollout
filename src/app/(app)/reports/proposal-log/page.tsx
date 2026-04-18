@@ -33,6 +33,7 @@ import {
   type MigrationConfig as EngineMigrationConfig,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
+import { applyComplexity } from "@/lib/calculations/complexity";
 
 interface Customer {
   id: string;
@@ -89,7 +90,7 @@ export default function ProposalLogReport() {
     // Build proposal query
     let query = supabase
       .from("proposals")
-      .select("id, name, status, customer_id")
+      .select("id, name, status, customer_id, complexity_factor")
       .order("created_at", { ascending: false });
 
     if (selectedCustomer !== "all") {
@@ -237,11 +238,12 @@ export default function ProposalLogReport() {
 
     const reportRows: ReportRow[] = proposals.map((p) => {
       const sc = scenarioMap.get(p.id) ?? {};
-      const p1 = sc["P1"] ?? 0;
-      const p2 = sc["P2"] ?? 0;
-      const opt1 = sc["Opt1"] ?? 0;
-      const opt2 = sc["Opt2"] ?? 0;
-      const scoped = scopedMap.get(p.id) ?? 0;
+      const factor = Number(p.complexity_factor) || 1;
+      const p1 = applyComplexity(sc["P1"] ?? 0, factor);
+      const p2 = applyComplexity(sc["P2"] ?? 0, factor);
+      const opt1 = applyComplexity(sc["Opt1"] ?? 0, factor);
+      const opt2 = applyComplexity(sc["Opt2"] ?? 0, factor);
+      const scoped = applyComplexity(scopedMap.get(p.id) ?? 0, factor);
       const migration = migrationMap.get(p.id) ?? 0;
 
       return {
