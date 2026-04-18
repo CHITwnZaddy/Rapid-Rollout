@@ -619,6 +619,41 @@ export interface Database {
           },
         ];
       };
+      proposal_status_history: {
+        Row: {
+          id: string;
+          proposal_id: string;
+          old_status: string | null;
+          new_status: string;
+          changed_by: string;
+          changed_at: string;
+        };
+        Insert: {
+          id?: string;
+          proposal_id: string;
+          old_status?: string | null;
+          new_status: string;
+          changed_by: string;
+          changed_at?: string;
+        };
+        Update: {
+          id?: string;
+          proposal_id?: string;
+          old_status?: string | null;
+          new_status?: string;
+          changed_by?: string;
+          changed_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "proposal_status_history_proposal_id_fkey";
+            columns: ["proposal_id"];
+            isOneToOne: false;
+            referencedRelation: "proposals";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
