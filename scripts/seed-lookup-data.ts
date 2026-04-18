@@ -131,9 +131,7 @@ async function main() {
       rate: Number(r["Rate"] ?? 0),
       role_category: String(r["RoleCategory"] ?? ""),
       status: String(r["Status"] ?? "Active"),
-      lookup_key: String(
-        r["LookupKey"] ?? `${r["RateCardName"]}|${r["Activity"]}`
-      ),
+      lookup_key: `${String(r["RateCardName"] ?? "Master")}|${String(r["Activity"] ?? "")}`,
     }));
 
   const svcSheet = wb.Sheets["tblServiceHours"];
