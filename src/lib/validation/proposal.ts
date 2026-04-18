@@ -35,6 +35,7 @@ export const ScenarioDataSchema = z.object({
   scenario_type: z.string(),
   summary_total_hours: z.number(),
   summary_total_cost: z.number(),
+  complexity_factor: z.number().optional(),
 });
 export type ScenarioData = z.infer<typeof ScenarioDataSchema>;
 

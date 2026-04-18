@@ -26,6 +26,8 @@ import {
   formatHours,
   type RateCardRow,
 } from "@/lib/calculations/engine";
+import { applyComplexity } from "@/lib/calculations/complexity";
+import { ScopedComplexityFactor } from "@/components/proposals/scoped-complexity-factor";
 
 const SERVICE_TYPES = [
   "01 Data Fix",
@@ -51,23 +53,29 @@ export default function ScopedServicesPage() {
 
   const [lines, setLines] = useState<ScopedServiceLine[]>([]);
   const [rateCards, setRateCards] = useState<RateCardRow[]>([]);
+  const [complexityFactor, setComplexityFactor] = useState<number>(1);
   const rateCardMap = useMemo(() => buildRateCardMap(rateCards), [rateCards]);
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: scopedData }, { data: rateData }] = await Promise.all([
-        supabase
-          .from("scoped_services")
-          .select("*")
-          .eq("proposal_id", proposalId)
-          .order("row_order"),
-        supabase
-          .from("rate_cards")
-          .select("*")
-          .eq("status", "Active"),
-      ]);
+      const [{ data: scopedData }, { data: rateData }, { data: proposalData }] =
+        await Promise.all([
+          supabase
+            .from("scoped_services")
+            .select("*")
+            .eq("proposal_id", proposalId)
+            .order("row_order"),
+          supabase.from("rate_cards").select("*").eq("status", "Active"),
+          supabase
+            .from("proposals")
+            .select("scoped_complexity_factor")
+            .eq("id", proposalId)
+            .single(),
+        ]);
       if (scopedData) setLines(scopedData);
       if (rateData) setRateCards(rateData);
+      if (proposalData)
+        setComplexityFactor(Number(proposalData.scoped_complexity_factor ?? 1));
     };
     load();
   }, [proposalId, supabase]);
@@ -133,11 +141,19 @@ export default function ScopedServicesPage() {
     [supabase]
   );
 
-  const totalCost = lines.reduce((sum, l) => sum + l.cost, 0);
-  const totalHours = lines.reduce((sum, l) => sum + l.hours, 0);
+  const rawTotalCost = lines.reduce((sum, l) => sum + l.cost, 0);
+  const rawTotalHours = lines.reduce((sum, l) => sum + l.hours, 0);
+  const totalCost = applyComplexity(rawTotalCost, complexityFactor);
+  const totalHours = applyComplexity(rawTotalHours, complexityFactor);
 
   return (
-    <div>
+    <div className="space-y-4">
+      <div className="rounded-md border bg-card p-4">
+        <ScopedComplexityFactor
+          proposalId={proposalId}
+          initialValue={complexityFactor}
+        />
+      </div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Scoped Services</h2>
         <Button onClick={addLine} size="sm">
@@ -223,7 +239,7 @@ export default function ScopedServicesPage() {
                   </Select>
                 </TableCell>
                 <TableCell className="text-right tabular-nums font-medium">
-                  {formatCurrency(line.cost)}
+                  {formatCurrency(applyComplexity(line.cost, complexityFactor))}
                 </TableCell>
                 <TableCell>
                   <Button

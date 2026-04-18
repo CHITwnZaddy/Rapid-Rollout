@@ -4,14 +4,20 @@ import { useState, useTransition } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { updateComplexityFactor } from "@/app/(app)/proposals/[id]/actions";
 
 type Props = {
-  proposalId: string;
   initialValue: number;
+  label?: string;
+  helperText?: string;
+  onSave: (value: number) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
 
-export function ComplexityFactorInput({ proposalId, initialValue }: Props) {
+export function ComplexityFactorInput({
+  initialValue,
+  label = "Complexity Factor",
+  helperText = "1.00 = no adjustment; 1.15 = +15% surcharge.",
+  onSave,
+}: Props) {
   const [value, setValue] = useState(initialValue.toFixed(2));
   const [isPending, startTransition] = useTransition();
 
@@ -25,7 +31,7 @@ export function ComplexityFactorInput({ proposalId, initialValue }: Props) {
     if (parsed === initialValue) return;
 
     startTransition(async () => {
-      const result = await updateComplexityFactor(proposalId, parsed);
+      const result = await onSave(parsed);
       if (!result.ok) {
         toast.error(`Failed to save: ${result.error}`);
         setValue(initialValue.toFixed(2));
@@ -37,11 +43,8 @@ export function ComplexityFactorInput({ proposalId, initialValue }: Props) {
 
   return (
     <div className="flex items-center gap-3">
-      <Label htmlFor="complexity-factor" className="text-sm font-medium">
-        Complexity Factor
-      </Label>
+      <Label className="text-sm font-medium whitespace-nowrap">{label}</Label>
       <Input
-        id="complexity-factor"
         type="number"
         min={0.5}
         max={9.99}
@@ -57,10 +60,7 @@ export function ComplexityFactorInput({ proposalId, initialValue }: Props) {
         }}
         className="w-24"
       />
-      <span className="text-xs text-muted-foreground">
-        1.00 = no adjustment; 1.15 = +15% surcharge. Applies to scenarios &amp;
-        scoped services only (not migration).
-      </span>
+      <span className="text-xs text-muted-foreground">{helperText}</span>
     </div>
   );
 }

@@ -90,7 +90,7 @@ export default function ProposalLogReport() {
     // Build proposal query
     let query = supabase
       .from("proposals")
-      .select("id, name, status, customer_id, complexity_factor")
+      .select("id, name, status, customer_id, scoped_complexity_factor")
       .order("created_at", { ascending: false });
 
     if (selectedCustomer !== "all") {
@@ -116,7 +116,9 @@ export default function ProposalLogReport() {
       await Promise.all([
         supabase
           .from("scenarios")
-          .select("proposal_id, scenario_type, summary_total_cost")
+          .select(
+            "proposal_id, scenario_type, summary_total_cost, complexity_factor"
+          )
           .in("proposal_id", proposalIds),
         supabase
           .from("scoped_services")
@@ -146,10 +148,14 @@ export default function ProposalLogReport() {
     const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
 
     // Build scenario cost map: proposalId -> { P1: cost, P2: cost, ... }
+    // Cost is already multiplied by the scenario's own complexity_factor here.
     const scenarioMap = new Map<string, Record<string, number>>();
     for (const s of scenarioRes.data ?? []) {
       if (!scenarioMap.has(s.proposal_id)) scenarioMap.set(s.proposal_id, {});
-      scenarioMap.get(s.proposal_id)![s.scenario_type] = Number(s.summary_total_cost) || 0;
+      scenarioMap.get(s.proposal_id)![s.scenario_type] = applyComplexity(
+        Number(s.summary_total_cost) || 0,
+        Number(s.complexity_factor ?? 1)
+      );
     }
 
     // Scoped cost map: proposalId -> total
@@ -238,12 +244,12 @@ export default function ProposalLogReport() {
 
     const reportRows: ReportRow[] = proposals.map((p) => {
       const sc = scenarioMap.get(p.id) ?? {};
-      const factor = Number(p.complexity_factor) || 1;
-      const p1 = applyComplexity(sc["P1"] ?? 0, factor);
-      const p2 = applyComplexity(sc["P2"] ?? 0, factor);
-      const opt1 = applyComplexity(sc["Opt1"] ?? 0, factor);
-      const opt2 = applyComplexity(sc["Opt2"] ?? 0, factor);
-      const scoped = applyComplexity(scopedMap.get(p.id) ?? 0, factor);
+      const scopedFactor = Number(p.scoped_complexity_factor) || 1;
+      const p1 = sc["P1"] ?? 0;
+      const p2 = sc["P2"] ?? 0;
+      const opt1 = sc["Opt1"] ?? 0;
+      const opt2 = sc["Opt2"] ?? 0;
+      const scoped = applyComplexity(scopedMap.get(p.id) ?? 0, scopedFactor);
       const migration = migrationMap.get(p.id) ?? 0;
 
       return {

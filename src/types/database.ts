@@ -134,7 +134,7 @@ export interface Database {
           created_by: string;
           status: string;
           notes: string | null;
-          complexity_factor: number;
+          scoped_complexity_factor: number;
           created_at: string;
           updated_at: string;
         };
@@ -145,7 +145,7 @@ export interface Database {
           created_by: string;
           status?: string;
           notes?: string | null;
-          complexity_factor?: number;
+          scoped_complexity_factor?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -156,7 +156,7 @@ export interface Database {
           created_by?: string;
           status?: string;
           notes?: string | null;
-          complexity_factor?: number;
+          scoped_complexity_factor?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -178,6 +178,7 @@ export interface Database {
           is_active: boolean;
           summary_total_hours: number;
           summary_total_cost: number;
+          complexity_factor: number;
           created_at: string;
           updated_at: string;
         };
@@ -188,6 +189,7 @@ export interface Database {
           is_active?: boolean;
           summary_total_hours?: number;
           summary_total_cost?: number;
+          complexity_factor?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -198,6 +200,7 @@ export interface Database {
           is_active?: boolean;
           summary_total_hours?: number;
           summary_total_cost?: number;
+          complexity_factor?: number;
           created_at?: string;
           updated_at?: string;
         };

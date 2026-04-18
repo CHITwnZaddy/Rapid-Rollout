@@ -11,29 +11,51 @@ export type UpdateComplexityFactorResult =
   | { ok: true }
   | { ok: false; error: string };
 
-export async function updateComplexityFactor(
+function validateFactor(value: number): string | null {
+  if (!Number.isFinite(value) || value < 0.5 || value > 9.99) {
+    return "Complexity factor must be between 0.50 and 9.99.";
+  }
+  return null;
+}
+
+export async function updateScenarioComplexityFactor(
+  scenarioId: string,
   proposalId: string,
   value: number
 ): Promise<UpdateComplexityFactorResult> {
-  if (!Number.isFinite(value) || value < 0.5 || value > 9.99) {
-    return {
-      ok: false,
-      error: "Complexity factor must be between 0.50 and 9.99.",
-    };
-  }
+  const err = validateFactor(value);
+  if (err) return { ok: false, error: err };
 
   const supabase = await createClient();
+  const rounded = Math.round(value * 100) / 100;
 
+  const { error } = await supabase
+    .from("scenarios")
+    .update({ complexity_factor: rounded })
+    .eq("id", scenarioId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/proposals/${proposalId}`);
+  return { ok: true };
+}
+
+export async function updateScopedComplexityFactor(
+  proposalId: string,
+  value: number
+): Promise<UpdateComplexityFactorResult> {
+  const err = validateFactor(value);
+  if (err) return { ok: false, error: err };
+
+  const supabase = await createClient();
   const rounded = Math.round(value * 100) / 100;
 
   const { error } = await supabase
     .from("proposals")
-    .update({ complexity_factor: rounded })
+    .update({ scoped_complexity_factor: rounded })
     .eq("id", proposalId);
 
-  if (error) {
-    return { ok: false, error: error.message };
-  }
+  if (error) return { ok: false, error: error.message };
 
   revalidatePath(`/proposals/${proposalId}`);
   return { ok: true };

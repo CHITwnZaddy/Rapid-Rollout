@@ -13,6 +13,7 @@ import {
   type RateCardRow,
   type ScenarioLineOutput,
 } from "@/lib/calculations/engine";
+import { applyComplexity } from "@/lib/calculations/complexity";
 import {
   Select,
   SelectContent,
@@ -53,6 +54,7 @@ interface ScenarioGridProps {
   initialLines: ScenarioLineRow[];
   serviceHours: ServiceHoursRow[];
   rateCards: RateCardRow[];
+  complexityFactor?: number;
 }
 
 export function ScenarioGrid({
@@ -61,6 +63,7 @@ export function ScenarioGrid({
   initialLines,
   serviceHours,
   rateCards,
+  complexityFactor = 1,
 }: ScenarioGridProps) {
   const supabase = createClient();
   const serviceHoursMap = useMemo(
@@ -300,10 +303,14 @@ export function ScenarioGrid({
                     {line.baCost > 0 ? formatCurrency(line.baCost) : "-"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {line.totalHours > 0 ? formatHours(line.totalHours) : "-"}
+                    {line.totalHours > 0
+                      ? formatHours(applyComplexity(line.totalHours, complexityFactor))
+                      : "-"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
-                    {line.totalCost > 0 ? formatCurrency(line.totalCost) : "-"}
+                    {line.totalCost > 0
+                      ? formatCurrency(applyComplexity(line.totalCost, complexityFactor))
+                      : "-"}
                   </TableCell>
                 </TableRow>
               );
@@ -330,10 +337,10 @@ export function ScenarioGrid({
                 {formatCurrency(totals.totalBaCost)}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatHours(totals.totalHours)}
+                {formatHours(applyComplexity(totals.totalHours, complexityFactor))}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatCurrency(totals.totalCost)}
+                {formatCurrency(applyComplexity(totals.totalCost, complexityFactor))}
               </TableCell>
             </TableRow>
           </TableBody>

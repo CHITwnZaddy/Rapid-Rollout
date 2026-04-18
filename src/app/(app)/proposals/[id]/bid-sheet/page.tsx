@@ -66,7 +66,6 @@ export default function BidSheetPage() {
   );
   const [migrationTotal, setMigrationTotal] = useState(0);
   const [scopedTotal, setScopedTotal] = useState(0);
-  const [complexityFactor, setComplexityFactor] = useState(1);
 
   useEffect(() => {
     const load = async () => {
@@ -82,7 +81,9 @@ export default function BidSheetPage() {
             .maybeSingle(),
           supabase
             .from("scenarios")
-            .select("scenario_type, summary_total_hours, summary_total_cost")
+            .select(
+              "scenario_type, summary_total_hours, summary_total_cost, complexity_factor"
+            )
             .eq("proposal_id", proposalId)
             .order("scenario_type"),
           supabase
@@ -116,12 +117,13 @@ export default function BidSheetPage() {
             .eq("proposal_id", proposalId),
           supabase
             .from("proposals")
-            .select("complexity_factor")
+            .select("scoped_complexity_factor")
             .eq("id", proposalId)
             .single(),
         ]);
 
-      const factor = Number(proposalRes.data?.complexity_factor) || 1;
+      const scopedFactor =
+        Number(proposalRes.data?.scoped_complexity_factor) || 1;
 
       if (bidRes.error) {
         toast.error(`Failed to load bid sheet: ${bidRes.error.message}`);
@@ -259,10 +261,9 @@ export default function BidSheetPage() {
       setScopedTotal(
         applyComplexity(
           scopedData.reduce((sum, s) => sum + Number(s.cost), 0),
-          factor
+          scopedFactor
         )
       );
-      setComplexityFactor(factor);
     };
     load();
   }, [proposalId, supabase]);
@@ -323,11 +324,21 @@ export default function BidSheetPage() {
   const discountDollars = bidSheet?.discount_dollars ?? 0;
 
   const scenarioSubtotal = scenarios.reduce(
-    (sum, sc) => sum + applyComplexity(Number(sc.summary_total_cost), complexityFactor),
+    (sum, sc) =>
+      sum +
+      applyComplexity(
+        Number(sc.summary_total_cost),
+        Number(sc.complexity_factor ?? 1)
+      ),
     0
   );
   const totalHours = scenarios.reduce(
-    (sum, sc) => sum + applyComplexity(Number(sc.summary_total_hours), complexityFactor),
+    (sum, sc) =>
+      sum +
+      applyComplexity(
+        Number(sc.summary_total_hours),
+        Number(sc.complexity_factor ?? 1)
+      ),
     0
   );
 
@@ -410,10 +421,20 @@ export default function BidSheetPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatHours(applyComplexity(Number(s.summary_total_hours), complexityFactor))}
+                    {formatHours(
+                      applyComplexity(
+                        Number(s.summary_total_hours),
+                        Number(s.complexity_factor ?? 1)
+                      )
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrency(applyComplexity(Number(s.summary_total_cost), complexityFactor))}
+                    {formatCurrency(
+                      applyComplexity(
+                        Number(s.summary_total_cost),
+                        Number(s.complexity_factor ?? 1)
+                      )
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

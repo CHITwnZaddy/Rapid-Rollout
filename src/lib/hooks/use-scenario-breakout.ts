@@ -79,7 +79,6 @@ export function useScenarioBreakout() {
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [rateReloadToken, setRateReloadToken] = useState(0);
-  const [complexityFactor, setComplexityFactor] = useState(1);
 
   useEffect(() => {
     supabase
@@ -151,7 +150,7 @@ export function useScenarioBreakout() {
     //      fan out the four dependent queries in parallel.
     const scenarioRes = await supabase
       .from("scenarios")
-      .select("id, scenario_type, summary_total_cost")
+      .select("id, scenario_type, summary_total_cost, complexity_factor")
       .eq("proposal_id", selectedProposal)
       .order("scenario_type");
 
@@ -183,36 +182,39 @@ export function useScenarioBreakout() {
         .order("row_order"),
       supabase
         .from("proposals")
-        .select("complexity_factor")
+        .select("scoped_complexity_factor")
         .eq("id", selectedProposal)
         .single(),
     ]);
 
-    const factor = Number(proposalRes.data?.complexity_factor) || 1;
-    setComplexityFactor(factor);
+    const scopedFactor = Number(proposalRes.data?.scoped_complexity_factor) || 1;
 
     // Build scenario groups
     const scenarios = scenarioRes.data ?? [];
     const allLines = linesRes.data ?? [];
     const scenarioIdMap = new Map(scenarios.map((s) => [s.id, s.scenario_type]));
+    const scenarioFactorMap = new Map(
+      scenarios.map((s) => [s.id, Number(s.complexity_factor ?? 1) || 1])
+    );
 
     const order = ["P1", "P2", "Opt1", "Opt2"];
     const groups: ScenarioGroup[] = order
       .map((type) => {
         const scenario = scenarios.find((s) => s.scenario_type === type);
         if (!scenario) return null;
+        const sFactor = scenarioFactorMap.get(scenario.id) ?? 1;
         const lines = allLines
           .filter((l) => scenarioIdMap.get(l.scenario_id) === type)
           .filter((l) => NUM(l.total_cost) > 0)
           .map((l) => ({
             module: l.module,
             scope_selection: l.scope_selection,
-            total_cost: applyComplexity(NUM(l.total_cost), factor),
+            total_cost: applyComplexity(NUM(l.total_cost), sFactor),
           }));
         return {
           scenarioType: type,
           lines,
-          totalCost: applyComplexity(NUM(scenario.summary_total_cost), factor),
+          totalCost: applyComplexity(NUM(scenario.summary_total_cost), sFactor),
         };
       })
       .filter(Boolean) as ScenarioGroup[];
@@ -225,7 +227,7 @@ export function useScenarioBreakout() {
       .map((s) => ({
         service_type: s.service_type,
         description: s.description,
-        cost: applyComplexity(NUM(s.cost), factor),
+        cost: applyComplexity(NUM(s.cost), scopedFactor),
       }));
     setScopedLines(scoped);
 
@@ -344,7 +346,6 @@ export function useScenarioBreakout() {
     ratesReady,
     migrationLiveTotal,
     coreEffortHours,
-    complexityFactor,
     runReport,
     exportXLSX,
     retryRates: () => setRateReloadToken((n) => n + 1),
