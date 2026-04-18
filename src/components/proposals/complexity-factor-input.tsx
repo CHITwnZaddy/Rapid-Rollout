@@ -10,6 +10,7 @@ type Props = {
   label?: string;
   helperText?: string;
   onSave: (value: number) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onChange?: (value: number) => void;
 };
 
 export function ComplexityFactorInput({
@@ -17,6 +18,7 @@ export function ComplexityFactorInput({
   label = "Complexity Factor",
   helperText = "1.00 = no adjustment; 1.15 = +15% surcharge.",
   onSave,
+  onChange,
 }: Props) {
   const [value, setValue] = useState(initialValue.toFixed(2));
   const [isPending, startTransition] = useTransition();
@@ -37,6 +39,7 @@ export function ComplexityFactorInput({
         setValue(initialValue.toFixed(2));
       } else {
         toast.success("Complexity factor saved.");
+        onChange?.(parsed);
       }
     });
   };

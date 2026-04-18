@@ -152,6 +152,7 @@ export default function ScopedServicesPage() {
         <ScopedComplexityFactor
           proposalId={proposalId}
           initialValue={complexityFactor}
+          onChange={setComplexityFactor}
         />
       </div>
       <div className="mb-4 flex items-center justify-between">

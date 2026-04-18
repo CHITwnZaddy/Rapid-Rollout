@@ -6,14 +6,16 @@ import { updateScopedComplexityFactor } from "@/app/(app)/proposals/[id]/actions
 type Props = {
   proposalId: string;
   initialValue: number;
+  onChange?: (value: number) => void;
 };
 
-export function ScopedComplexityFactor({ proposalId, initialValue }: Props) {
+export function ScopedComplexityFactor({ proposalId, initialValue, onChange }: Props) {
   return (
     <ComplexityFactorInput
       initialValue={initialValue}
       helperText="1.00 = no adjustment; applies to Scoped Services Total Hrs & Cost."
       onSave={(value) => updateScopedComplexityFactor(proposalId, value)}
+      onChange={onChange}
     />
   );
 }

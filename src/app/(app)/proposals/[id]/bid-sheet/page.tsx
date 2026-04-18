@@ -250,7 +250,13 @@ export default function BidSheetPage() {
       }
 
       setBidSheet(bidData);
-      setScenarios(scenarioData);
+      const scenarioOrder = ["P1", "P2", "Opt1", "Opt2"];
+      const orderedScenarios = [...scenarioData].sort(
+        (a, b) =>
+          scenarioOrder.indexOf(a.scenario_type) -
+          scenarioOrder.indexOf(b.scenario_type)
+      );
+      setScenarios(orderedScenarios);
       setCustomers(customerData);
       if (bidData?.customer_id) {
         setSelectedCustomer(
@@ -439,17 +445,17 @@ export default function BidSheetPage() {
                 </TableRow>
               ))}
               <TableRow>
-                <TableCell className="font-medium">Migration Services</TableCell>
-                <TableCell className="text-right">-</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatCurrency(migrationTotal)}
-                </TableCell>
-              </TableRow>
-              <TableRow>
                 <TableCell className="font-medium">Scoped Services</TableCell>
                 <TableCell className="text-right">-</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatCurrency(scopedTotal)}
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="font-medium">Migration Services</TableCell>
+                <TableCell className="text-right">-</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {formatCurrency(migrationTotal)}
                 </TableCell>
               </TableRow>
               <TableRow className="bg-muted/50 font-semibold">
