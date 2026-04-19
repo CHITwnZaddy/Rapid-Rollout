@@ -5,6 +5,7 @@ import {
   calculateSectionHours,
   calculateDocumentHours,
   calculateMigrationTotals,
+  computeLineHours,
   DEFAULT_PROJECT_LINES,
   DEFAULT_WORKFLOW_LINES,
   DEFAULT_COST_LINES,
@@ -103,6 +104,39 @@ describe("effectiveTotalLineItems", () => {
         })
       )
     ).toBe(100);
+  });
+});
+
+describe("computeLineHours", () => {
+  it("matches the two-step form (effectiveTotalLineItems + calculateLineImports)", () => {
+    const l = line({ quantity: 5, items_per_object: 200 });
+    const viaHelper = computeLineHours(l, baseConfig);
+    const viaTwoStep = calculateLineImports(
+      effectiveTotalLineItems(l),
+      baseConfig.lines_per_import_file,
+      baseConfig.hrs_per_import
+    );
+    expect(viaHelper).toEqual(viaTwoStep);
+  });
+
+  // Drift-prevention guarantee: the section total MUST equal the sum
+  // of per-row hours. Previously these two values were computed by
+  // parallel inline loops in migration-detail-section.tsx and
+  // scenario-breakout-results.tsx — editing one without the other
+  // would silently desync row totals from the footer. Now both go
+  // through computeLineHours, so this invariant is structural.
+  it("sums to exactly calculateSectionHours (no drift)", () => {
+    const lines = [
+      line({ quantity: 5, items_per_object: 200 }),
+      line({ quantity: 10, items_per_object: 300 }),
+      line({ quantity: 3, items_per_object: 150 }),
+      line({ quantity: 0, items_per_object: 0 }), // empty row
+    ];
+    const rowSum = lines
+      .map((l) => computeLineHours(l, baseConfig).totalHours)
+      .reduce((a, b) => a + b, 0);
+    const sectionTotal = calculateSectionHours(lines, baseConfig);
+    expect(rowSum).toBe(sectionTotal);
   });
 });
 

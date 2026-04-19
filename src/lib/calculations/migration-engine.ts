@@ -89,21 +89,31 @@ export function effectiveTotalLineItems(
 }
 
 /**
- * Sum total hours across a set of lines.
+ * For a single detail line, return the full LineCalc (effective total,
+ * # of imports, hrs/import, total hours). This is the canonical way to
+ * compute per-row hours: both the UI row renderer and the section-total
+ * sum go through it, so the two cannot drift.
+ */
+export function computeLineHours(
+  line: MigrationDetailLine,
+  config: Pick<MigrationConfig, "lines_per_import_file" | "hrs_per_import">
+): LineCalc {
+  return calculateLineImports(
+    effectiveTotalLineItems(line),
+    config.lines_per_import_file,
+    config.hrs_per_import
+  );
+}
+
+/**
+ * Sum total hours across a set of lines — identical to summing
+ * computeLineHours(l, cfg).totalHours for every line.
  */
 export function calculateSectionHours(
   lines: MigrationDetailLine[],
   config: MigrationConfig
 ): number {
-  return lines.reduce((sum, line) => {
-    const total = effectiveTotalLineItems(line);
-    const calc = calculateLineImports(
-      total,
-      config.lines_per_import_file,
-      config.hrs_per_import
-    );
-    return sum + calc.totalHours;
-  }, 0);
+  return lines.reduce((sum, line) => sum + computeLineHours(line, config).totalHours, 0);
 }
 
 // ─── Document migration ──────────────────────────────────────────────
