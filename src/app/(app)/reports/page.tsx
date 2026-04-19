@@ -22,6 +22,12 @@ const reports = [
       "Detailed breakout of a single proposal showing every module, scope, scoped service line, and migration service line with subtotals.",
     href: "/reports/scenario-breakout",
   },
+  {
+    title: "Time to Close",
+    description:
+      "Days from Proposal Sent to Won/Lost across proposals. Red rows closed in >30 days; green ≤30. Filter by customer, status, owner, and sent-date range.",
+    href: "/reports/time-to-close",
+  },
 ];
 
 export default function ReportsPage() {
