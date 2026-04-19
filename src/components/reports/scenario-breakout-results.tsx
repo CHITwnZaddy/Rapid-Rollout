@@ -16,8 +16,7 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/calculations/engine";
 import {
-  calculateLineImports,
-  effectiveTotalLineItems,
+  computeLineHours,
   calculateDocumentHours,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
@@ -65,12 +64,10 @@ export function ScenarioBreakoutResults({
         total_line_items: NUM(l.total_line_items),
         row_order: 0,
       };
-      const total = effectiveTotalLineItems(el);
-      const calc = calculateLineImports(
-        total,
-        NUM(migrationConfig.lines_per_import_file),
-        NUM(migrationConfig.hrs_per_import)
-      );
+      const calc = computeLineHours(el, {
+        lines_per_import_file: NUM(migrationConfig.lines_per_import_file),
+        hrs_per_import: NUM(migrationConfig.hrs_per_import),
+      });
       return sum + calc.totalHours;
     }, 0);
   }
@@ -279,12 +276,10 @@ export function ScenarioBreakoutResults({
                           total_line_items: NUM(l.total_line_items),
                           row_order: 0,
                         };
-                        const t = effectiveTotalLineItems(el);
-                        const c = calculateLineImports(
-                          t,
-                          NUM(migrationConfig.lines_per_import_file),
-                          NUM(migrationConfig.hrs_per_import)
-                        );
+                        const c = computeLineHours(el, {
+                          lines_per_import_file: NUM(migrationConfig.lines_per_import_file),
+                          hrs_per_import: NUM(migrationConfig.hrs_per_import),
+                        });
                         if (c.totalHours === 0) return null;
                         return (
                           <TableRow key={i}>
@@ -336,12 +331,10 @@ export function ScenarioBreakoutResults({
                           total_line_items: NUM(l.total_line_items),
                           row_order: 0,
                         };
-                        const t = effectiveTotalLineItems(el);
-                        const c = calculateLineImports(
-                          t,
-                          NUM(migrationConfig.lines_per_import_file),
-                          NUM(migrationConfig.hrs_per_import)
-                        );
+                        const c = computeLineHours(el, {
+                          lines_per_import_file: NUM(migrationConfig.lines_per_import_file),
+                          hrs_per_import: NUM(migrationConfig.hrs_per_import),
+                        });
                         if (c.totalHours === 0) return null;
                         return (
                           <TableRow key={i}>
@@ -393,12 +386,10 @@ export function ScenarioBreakoutResults({
                           total_line_items: NUM(l.total_line_items),
                           row_order: 0,
                         };
-                        const t = effectiveTotalLineItems(el);
-                        const c = calculateLineImports(
-                          t,
-                          NUM(migrationConfig.lines_per_import_file),
-                          NUM(migrationConfig.hrs_per_import)
-                        );
+                        const c = computeLineHours(el, {
+                          lines_per_import_file: NUM(migrationConfig.lines_per_import_file),
+                          hrs_per_import: NUM(migrationConfig.hrs_per_import),
+                        });
                         if (c.totalHours === 0) return null;
                         return (
                           <TableRow key={i}>

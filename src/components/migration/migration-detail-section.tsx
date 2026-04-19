@@ -17,8 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  calculateLineImports,
-  effectiveTotalLineItems,
+  computeLineHours,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
@@ -130,12 +129,10 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                   total_line_items: NUM(line.total_line_items),
                   row_order: line.row_order,
                 };
-                const effTotal = effectiveTotalLineItems(engineLine);
-                const calc = calculateLineImports(
-                  effTotal,
-                  linesPerFile,
-                  hrsPerImport
-                );
+                const calc = computeLineHours(engineLine, {
+                  lines_per_import_file: linesPerFile,
+                  hrs_per_import: hrsPerImport,
+                });
                 const isLabelEditable =
                   typeof labelEditable === "function"
                     ? labelEditable(line)
@@ -208,7 +205,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                         />
                       ) : (
                         <div className="text-right text-sm tabular-nums">
-                          {effTotal.toLocaleString()}
+                          {calc.totalLineItems.toLocaleString()}
                         </div>
                       )}
                     </TableCell>
@@ -266,12 +263,10 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                         total_line_items: NUM(line.total_line_items),
                         row_order: line.row_order,
                       };
-                      const t = effectiveTotalLineItems(el);
-                      const c = calculateLineImports(
-                        t,
-                        linesPerFile,
-                        hrsPerImport
-                      );
+                      const c = computeLineHours(el, {
+                        lines_per_import_file: linesPerFile,
+                        hrs_per_import: hrsPerImport,
+                      });
                       return sum + c.totalHours;
                     }, 0)
                     .toFixed(2)}
