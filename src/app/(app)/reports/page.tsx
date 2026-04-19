@@ -23,6 +23,12 @@ const reports = [
     href: "/reports/scenario-breakout",
   },
   {
+    title: "Portfolio Value",
+    description:
+      "Pipeline value grouped by status (scenario + scoped + migration, complexity-adjusted). Defaults to My Proposals and excludes Lost/VOID.",
+    href: "/reports/portfolio-value",
+  },
+  {
     title: "Stale Proposals",
     description:
       "In-flight proposals sitting in their current status too long. Red when Days in Status > 21. Filter by customer, status, and owner.",
