@@ -23,6 +23,12 @@ const reports = [
     href: "/reports/scenario-breakout",
   },
   {
+    title: "Stale Proposals",
+    description:
+      "In-flight proposals sitting in their current status too long. Red when Days in Status > 21. Filter by customer, status, and owner.",
+    href: "/reports/stale-proposals",
+  },
+  {
     title: "Time to Close",
     description:
       "Days from Proposal Sent to Won/Lost across proposals. Red rows closed in >30 days; green ≤30. Filter by customer, status, owner, and sent-date range.",
