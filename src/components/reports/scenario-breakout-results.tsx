@@ -26,8 +26,8 @@ import {
   type ScopedLine,
   type MigrationConfig,
   type MigrationLine,
-  NUM,
 } from "@/lib/hooks/use-scenario-breakout";
+import { NUM } from "@/lib/calculations/num";
 
 interface ScenarioBreakoutResultsProps {
   scenarioGroups: ScenarioGroup[];

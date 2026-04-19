@@ -9,6 +9,9 @@ import {
   type MigrationDetailLine,
   type MigrationTotals,
 } from "@/lib/calculations/migration-engine";
+import { NUM } from "@/lib/calculations/num";
+import { toEngineLine } from "@/lib/calculations/adapters";
+import { fetchRequiredRates } from "@/lib/supabase/queries";
 
 export interface DbConfig {
   id: string;
@@ -44,19 +47,6 @@ export interface DbLine {
   row_order: number;
 }
 
-const NUM = (v: unknown) => Number(v) || 0;
-
-function toEngineLine(l: DbLine): MigrationDetailLine {
-  return {
-    id: l.id,
-    section: l.section as "project" | "workflow" | "cost",
-    label: l.label,
-    quantity: NUM(l.quantity),
-    items_per_object: NUM(l.items_per_object),
-    total_line_items: NUM(l.total_line_items),
-    row_order: l.row_order,
-  };
-}
 
 export interface UseMigrationConfigReturn {
   config: DbConfig | null;
@@ -133,9 +123,13 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       };
       const pLines = allLines
         .filter((l) => l.section === "project")
-        .map((l) => toEngineLine({ ...l, quantity: numProjects }));
-      const wLines = allLines.filter((l) => l.section === "workflow").map(toEngineLine);
-      const cLines = allLines.filter((l) => l.section === "cost").map(toEngineLine);
+        .map((l) => toEngineLine(l, { quantityOverride: numProjects }));
+      const wLines = allLines
+        .filter((l) => l.section === "workflow")
+        .map((l) => toEngineLine(l));
+      const cLines = allLines
+        .filter((l) => l.section === "cost")
+        .map((l) => toEngineLine(l));
       return calculateMigrationTotals(mc, pLines, wLines, cLines, ba, pm, travel);
     },
     [] // refs are always current — no state deps needed
@@ -147,37 +141,19 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       setLoading(true);
       setRateError(null);
 
-      const { data: rates, error: ratesError } = await supabase
-        .from("rate_cards")
-        .select("lookup_key, rate")
-        .in("lookup_key", [
-          "Master|Business Analyst",
-          "Master|Program Manager",
-          "Master|Travel Cost/Trip",
-        ]);
-
-      if (ratesError || !rates) {
-        setRateError(
-          ratesError?.message ??
-            "Unable to reach the rate card table. Check your connection and retry."
-        );
+      const ratesResult = await fetchRequiredRates(supabase, [
+        "Master|Business Analyst",
+        "Master|Program Manager",
+        "Master|Travel Cost/Trip",
+      ]);
+      if (!ratesResult.ok) {
+        setRateError(ratesResult.error);
         setLoading(false);
         return;
       }
-
-      const rateMap = new Map(rates.map((r) => [r.lookup_key, NUM(r.rate)]));
-      const ba = rateMap.get("Master|Business Analyst");
-      const pm = rateMap.get("Master|Program Manager");
-      const travel = rateMap.get("Master|Travel Cost/Trip");
-
-      if (ba == null || pm == null || travel == null) {
-        setRateError(
-          "One or more required rate card rows are missing (Business Analyst, Program Manager, Travel Cost/Trip). An admin must seed these before migration services can be priced."
-        );
-        setLoading(false);
-        return;
-      }
-
+      const ba = ratesResult.rates.get("Master|Business Analyst")!;
+      const pm = ratesResult.rates.get("Master|Program Manager")!;
+      const travel = ratesResult.rates.get("Master|Travel Cost/Trip")!;
       setBaRate(ba);
       setPmRate(pm);
       setTravelRate(travel);

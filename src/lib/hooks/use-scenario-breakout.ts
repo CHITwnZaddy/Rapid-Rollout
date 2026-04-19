@@ -3,10 +3,12 @@ import { createClient } from "@/lib/supabase/client";
 import {
   calculateMigrationTotals,
   type MigrationConfig as EngineMigrationConfig,
-  type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { exportScenarioBreakoutXLSX } from "@/lib/exports/scenario-breakout";
 import { applyComplexity } from "@/lib/calculations/complexity";
+import { NUM } from "@/lib/calculations/num";
+import { toEngineLine } from "@/lib/calculations/adapters";
+import { fetchRequiredRates } from "@/lib/supabase/queries";
 
 export interface Proposal {
   id: string;
@@ -59,7 +61,6 @@ export interface MigrationLine {
   total_line_items: number;
 }
 
-export const NUM = (v: unknown) => Number(v) || 0;
 
 export function useScenarioBreakout() {
   const supabase = createClient();
@@ -95,37 +96,20 @@ export function useScenarioBreakout() {
   useEffect(() => {
     let cancelled = false;
     setRateError(null);
-    supabase
-      .from("rate_cards")
-      .select("lookup_key, rate")
-      .in("lookup_key", [
-        "Master|Business Analyst",
-        "Master|Program Manager",
-        "Master|Travel Cost/Trip",
-      ])
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error || !data) {
-          setRateError(
-            error?.message ??
-              "Unable to reach the rate card table. Check your connection and retry."
-          );
-          return;
-        }
-        const map = new Map(data.map((r) => [r.lookup_key, NUM(r.rate)]));
-        const ba = map.get("Master|Business Analyst");
-        const pm = map.get("Master|Program Manager");
-        const travel = map.get("Master|Travel Cost/Trip");
-        if (ba == null || pm == null || travel == null) {
-          setRateError(
-            "One or more required rate card rows are missing (Business Analyst, Program Manager, Travel Cost/Trip)."
-          );
-          return;
-        }
-        setBaRate(ba);
-        setPmRate(pm);
-        setTravelRate(travel);
-      });
+    fetchRequiredRates(supabase, [
+      "Master|Business Analyst",
+      "Master|Program Manager",
+      "Master|Travel Cost/Trip",
+    ]).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setRateError(result.error);
+        return;
+      }
+      setBaRate(result.rates.get("Master|Business Analyst")!);
+      setPmRate(result.rates.get("Master|Program Manager")!);
+      setTravelRate(result.rates.get("Master|Travel Cost/Trip")!);
+    });
     return () => {
       cancelled = true;
     };
@@ -278,18 +262,11 @@ export function useScenarioBreakout() {
             core_final_qa_hrs: NUM(migrationConfig.core_final_qa_hrs),
             core_pm_oversight_hrs: NUM(migrationConfig.core_pm_oversight_hrs),
           };
-          const toEngine = (l: MigrationLine, qtyOverride?: number): MigrationDetailLine => ({
-            id: "",
-            section: l.section as "project" | "workflow" | "cost",
-            label: l.label,
-            quantity: qtyOverride ?? NUM(l.quantity),
-            items_per_object: NUM(l.items_per_object),
-            total_line_items: NUM(l.total_line_items),
-            row_order: 0,
-          });
-          const engineProject = projectLines.map((l) => toEngine(l, numP));
-          const engineWorkflow = workflowLines.map((l) => toEngine(l));
-          const engineCost = costDataLines.map((l) => toEngine(l));
+          const engineProject = projectLines.map((l) =>
+            toEngineLine(l, { quantityOverride: numP })
+          );
+          const engineWorkflow = workflowLines.map((l) => toEngineLine(l));
+          const engineCost = costDataLines.map((l) => toEngineLine(l));
           return calculateMigrationTotals(
             engineCfg,
             engineProject,

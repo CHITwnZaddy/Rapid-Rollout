@@ -19,6 +19,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
+import { NUM } from "@/lib/calculations/num";
+import { toEngineLine } from "@/lib/calculations/adapters";
 import {
   calculateMigrationTotals,
   type MigrationConfig as EngineMigrationConfig,
@@ -151,11 +153,35 @@ export default async function ProposalSummaryPage({
   // Services page uses, instead of trusting the stored
   // computed_total_cost snapshot (which only updates when the migration
   // page's debounced save fires and can lag or be zero on new proposals).
-  const NUM = (v: unknown) => Number(v) || 0;
   const migCfg = migrationConfigRes.data;
   const migLines = migrationLinesRes.data ?? [];
   let migrationTotal = 0;
-  if (migCfg && baRate !== null && pmRate !== null && travelRate !== null) {
+  if (migCfg) {
+    // Fail closed on missing BA/PM/Travel rates. Previously the page
+    // silently rendered migrationTotal = 0, which is how the Sr. IM
+    // bug class (missing lookup_key → $0 cost) stayed invisible.
+    if (baRate === null || pmRate === null || travelRate === null) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>Unable to load pricing data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              One or more required rate card rows are missing:
+              <code>Master|Business Analyst</code>,{" "}
+              <code>Master|Program Manager</code>, or{" "}
+              <code>Master|Travel Cost/Trip</code>. The migration total
+              depends on these, so the proposal summary has been blocked
+              to prevent incorrect pricing being shown.
+            </p>
+            <p>
+              An admin should seed these rows in the rate card table.
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
     const numP = NUM(migCfg.num_projects);
     const engineCfg: EngineMigrationConfig = {
       num_projects: numP,
@@ -178,37 +204,13 @@ export default async function ProposalSummaryPage({
     };
     const projectLines: MigrationDetailLine[] = migLines
       .filter((l) => l.section === "project")
-      .map((l) => ({
-        id: l.id,
-        section: "project" as const,
-        label: l.label,
-        quantity: numP,
-        items_per_object: NUM(l.items_per_object),
-        total_line_items: NUM(l.total_line_items),
-        row_order: l.row_order,
-      }));
+      .map((l) => toEngineLine(l, { quantityOverride: numP }));
     const workflowLines: MigrationDetailLine[] = migLines
       .filter((l) => l.section === "workflow")
-      .map((l) => ({
-        id: l.id,
-        section: "workflow" as const,
-        label: l.label,
-        quantity: NUM(l.quantity),
-        items_per_object: NUM(l.items_per_object),
-        total_line_items: NUM(l.total_line_items),
-        row_order: l.row_order,
-      }));
+      .map((l) => toEngineLine(l));
     const costLines: MigrationDetailLine[] = migLines
       .filter((l) => l.section === "cost")
-      .map((l) => ({
-        id: l.id,
-        section: "cost" as const,
-        label: l.label,
-        quantity: NUM(l.quantity),
-        items_per_object: NUM(l.items_per_object),
-        total_line_items: NUM(l.total_line_items),
-        row_order: l.row_order,
-      }));
+      .map((l) => toEngineLine(l));
     migrationTotal = calculateMigrationTotals(
       engineCfg,
       projectLines,

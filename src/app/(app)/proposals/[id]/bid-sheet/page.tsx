@@ -32,9 +32,10 @@ import { formatCurrency, formatHours } from "@/lib/calculations/engine";
 import {
   calculateMigrationTotals,
   type MigrationConfig as EngineMigrationConfig,
-  type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
+import { NUM } from "@/lib/calculations/num";
+import { toEngineLine } from "@/lib/calculations/adapters";
 import {
   discountPercentSchema,
   discountDollarsSchema,
@@ -172,7 +173,6 @@ export default function BidSheetPage() {
       // Scenario Breakout pages — so the bid sheet always reflects the
       // current section data rather than the stored computed_total_cost
       // snapshot which only updates when the migration page saves.
-      const NUM = (v: unknown) => Number(v) || 0;
       const migCfg = !migCfgRes.error ? migCfgRes.data : null;
       const migLines = migLinesRes.data ?? [];
       const rateRows = ratesRes.data ?? [];
@@ -180,8 +180,18 @@ export default function BidSheetPage() {
       const pmRate = rateRows.find((r) => r.lookup_key === "Master|Program Manager")?.rate;
       const travelRate = rateRows.find((r) => r.lookup_key === "Master|Travel Cost/Trip")?.rate;
 
+      // Fail closed on missing rate-card rows. Previously we silently
+      // left liveMigrationTotal at 0 — that hid the Sr. IM-class bug
+      // where a renamed lookup_key made migration cost vanish from
+      // the bid sheet without any user-visible error.
       let liveMigrationTotal = 0;
-      if (migCfg && baRate != null && pmRate != null && travelRate != null) {
+      if (migCfg) {
+        if (baRate == null || pmRate == null || travelRate == null) {
+          toast.error(
+            "Migration total unavailable: one or more required rate card rows are missing (Business Analyst, Program Manager, Travel Cost/Trip). Ask an admin to seed these."
+          );
+          return;
+        }
         const numP = NUM(migCfg.num_projects);
         const engineCfg: EngineMigrationConfig = {
           num_projects: numP,
@@ -202,20 +212,17 @@ export default function BidSheetPage() {
           core_final_qa_hrs: NUM(migCfg.core_final_qa_hrs),
           core_pm_oversight_hrs: NUM(migCfg.core_pm_oversight_hrs),
         };
-        const toLine = (l: typeof migLines[0], qty?: number): MigrationDetailLine => ({
-          id: l.id,
-          section: l.section as "project" | "workflow" | "cost",
-          label: l.label,
-          quantity: qty ?? NUM(l.quantity),
-          items_per_object: NUM(l.items_per_object),
-          total_line_items: NUM(l.total_line_items),
-          row_order: l.row_order,
-        });
         liveMigrationTotal = calculateMigrationTotals(
           engineCfg,
-          migLines.filter((l) => l.section === "project").map((l) => toLine(l, numP)),
-          migLines.filter((l) => l.section === "workflow").map((l) => toLine(l)),
-          migLines.filter((l) => l.section === "cost").map((l) => toLine(l)),
+          migLines
+            .filter((l) => l.section === "project")
+            .map((l) => toEngineLine(l, { quantityOverride: NUM(migCfg.num_projects) })),
+          migLines
+            .filter((l) => l.section === "workflow")
+            .map((l) => toEngineLine(l)),
+          migLines
+            .filter((l) => l.section === "cost")
+            .map((l) => toEngineLine(l)),
           Number(baRate),
           Number(pmRate),
           Number(travelRate)
