@@ -21,6 +21,7 @@ import {
   effectiveTotalLineItems,
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
+import { NUM } from "@/lib/calculations/num";
 
 /**
  * Shared row shape for the Project / Workflow / Cost migration tables.
@@ -67,8 +68,6 @@ export interface MigrationDetailSectionProps<T extends MigrationSectionRow> {
   onAddLine: (section: "project" | "workflow" | "cost") => void;
   onRemoveLine: (id: string) => void;
 }
-
-const NUM = (v: unknown) => Number(v) || 0;
 
 export function MigrationDetailSection<T extends MigrationSectionRow>({
   title,

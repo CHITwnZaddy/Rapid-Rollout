@@ -17,8 +17,7 @@ import {
 } from "@/components/ui/card";
 import { type DbConfig } from "@/lib/hooks/use-migration-config";
 import { type MigrationTotals } from "@/lib/calculations/migration-engine";
-
-const NUM = (v: unknown) => Number(v) || 0;
+import { NUM } from "@/lib/calculations/num";
 
 interface MigrationConfigFormProps {
   config: DbConfig | null;
