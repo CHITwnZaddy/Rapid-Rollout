@@ -22,6 +22,30 @@ const reports = [
       "Detailed breakout of a single proposal showing every module, scope, scoped service line, and migration service line with subtotals.",
     href: "/reports/scenario-breakout",
   },
+  {
+    title: "Proposal Hours",
+    description:
+      "Scoped hours per proposal broken out by role (Sr IM, PM, BA) across scenarios, scoped services, and migration.",
+    href: "/reports/proposal-hours",
+  },
+  {
+    title: "Portfolio Value",
+    description:
+      "Pipeline value grouped by status (scenario + scoped + migration, complexity-adjusted). Defaults to My Proposals and excludes Lost/VOID.",
+    href: "/reports/portfolio-value",
+  },
+  {
+    title: "Stale Proposals",
+    description:
+      "In-flight proposals sitting in their current status too long. Red when Days in Status > 21. Filter by customer, status, and owner.",
+    href: "/reports/stale-proposals",
+  },
+  {
+    title: "Time to Close",
+    description:
+      "Days from Proposal Sent to Won/Lost across proposals. Red rows closed in >30 days; green ≤30. Filter by customer, status, owner, and sent-date range.",
+    href: "/reports/time-to-close",
+  },
 ];
 
 export default function ReportsPage() {

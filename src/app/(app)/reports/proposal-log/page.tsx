@@ -34,6 +34,11 @@ import {
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
+import {
+  buildStatusMetricsMap,
+  type StatusHistoryRow,
+} from "@/lib/reports/status-history";
+import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 
 interface Customer {
   id: string;
@@ -52,6 +57,12 @@ interface ReportRow {
   scopedCost: number;
   migrationCost: number;
   grandTotal: number;
+  // PR 3b: new columns sourced from proposal_status_history + proposals
+  dateCreated: string | null;
+  dateProposalSent: string | null;
+  dateWon: string | null;
+  daysInCurrentStatus: number | null;
+  scopedComplexityFactor: number;
 }
 
 const STATUSES = [
@@ -90,7 +101,9 @@ export default function ProposalLogReport() {
     // Build proposal query
     let query = supabase
       .from("proposals")
-      .select("id, name, status, customer_id, scoped_complexity_factor")
+      .select(
+        "id, name, status, customer_id, scoped_complexity_factor, created_at"
+      )
       .order("created_at", { ascending: false });
 
     if (selectedCustomer !== "all") {
@@ -112,8 +125,14 @@ export default function ProposalLogReport() {
     // Fetch all related data in parallel.
     // migration_config fetches all fields needed by calculateMigrationTotals
     // so we can compute a live total instead of reading the stale snapshot.
-    const [scenarioRes, scopedRes, migrationRes, migLinesRes, ratesRes] =
-      await Promise.all([
+    const [
+      scenarioRes,
+      scopedRes,
+      migrationRes,
+      migLinesRes,
+      ratesRes,
+      historyRes,
+    ] = await Promise.all([
         supabase
           .from("scenarios")
           .select(
@@ -142,7 +161,15 @@ export default function ProposalLogReport() {
             "Master|Program Manager",
             "Master|Travel Cost/Trip",
           ]),
+        supabase
+          .from("proposal_status_history")
+          .select("proposal_id, old_status, new_status, changed_at")
+          .in("proposal_id", proposalIds),
       ]);
+
+    const historyMetrics = buildStatusMetricsMap(
+      (historyRes.data ?? []) as StatusHistoryRow[]
+    );
 
     // Build customer lookup
     const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
@@ -251,6 +278,7 @@ export default function ProposalLogReport() {
       const opt2 = sc["Opt2"] ?? 0;
       const scoped = applyComplexity(scopedMap.get(p.id) ?? 0, scopedFactor);
       const migration = migrationMap.get(p.id) ?? 0;
+      const metrics = historyMetrics.get(p.id);
 
       return {
         proposalId: p.id,
@@ -264,6 +292,11 @@ export default function ProposalLogReport() {
         scopedCost: scoped,
         migrationCost: migration,
         grandTotal: p1 + p2 + opt1 + opt2 + scoped + migration,
+        dateCreated: p.created_at,
+        dateProposalSent: metrics?.firstSentAt ?? null,
+        dateWon: metrics?.firstWonAt ?? null,
+        daysInCurrentStatus: metrics?.daysInCurrentStatus ?? null,
+        scopedComplexityFactor: scopedFactor,
       };
     });
 
@@ -296,8 +329,8 @@ export default function ProposalLogReport() {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Proposal Log");
 
-    const TOTAL_COLS = 10;
-    const LAST_COL_LETTER = "J";
+    const TOTAL_COLS = 15;
+    const LAST_COL_LETTER = "O";
     const CURRENCY_FMT = '$#,##0.00';
     const TITLE_BG    = "FFD6E4F7"; // light blue
     const HEADER_BG   = "FFE2E8F0"; // light gray
@@ -309,13 +342,18 @@ export default function ProposalLogReport() {
       { width: 24 }, // A Customer
       { width: 32 }, // B Proposal Name
       { width: 20 }, // C Proposal Status
-      { width: 15 }, // D Phase 1
-      { width: 15 }, // E Phase 2
-      { width: 15 }, // F Option 1
-      { width: 15 }, // G Option 2
-      { width: 20 }, // H Ad-hoc Services
-      { width: 22 }, // I Migration Services
-      { width: 18 }, // J Grand Total
+      { width: 13 }, // D Date Created
+      { width: 13 }, // E Date Proposal Sent
+      { width: 13 }, // F Date Won
+      { width: 15 }, // G Days in Current Status
+      { width: 12 }, // H Scoped CF
+      { width: 15 }, // I Phase 1
+      { width: 15 }, // J Phase 2
+      { width: 15 }, // K Option 1
+      { width: 15 }, // L Option 2
+      { width: 20 }, // M Ad-hoc Services
+      { width: 22 }, // N Migration Services
+      { width: 18 }, // O Grand Total
     ];
 
     // ── Row 1: Title ─────────────────────────────────────────────────────────
@@ -347,6 +385,11 @@ export default function ProposalLogReport() {
       "Customer",
       "Proposal Name",
       "Proposal Status",
+      "Date Created",
+      "Date Proposal Sent",
+      "Date Won",
+      "Days in Current Status",
+      "Scoped CF",
       "Phase 1",
       "Phase 2",
       "Option 1",
@@ -381,7 +424,7 @@ export default function ProposalLogReport() {
         fgColor: { argb: bgArgb },
       };
 
-      // Text columns: Customer, Proposal Name, Proposal Status
+      // Text columns A-C: Customer, Proposal Name, Status
       const textValues = [r.customerName, r.proposalName, r.status];
       textValues.forEach((v, i) => {
         const cell = row.getCell(i + 1);
@@ -391,7 +434,42 @@ export default function ProposalLogReport() {
         cell.fill = fill;
       });
 
-      // Numeric columns: Phase 1 … Grand Total
+      // Date columns D-F: real Date cells with "dd mmm yy" format so
+      // Excel sort/filter still works. Nulls write as "—" text cells.
+      const dateValues: (Date | null)[] = [
+        toDateOrNull(r.dateCreated),
+        toDateOrNull(r.dateProposalSent),
+        toDateOrNull(r.dateWon),
+      ];
+      dateValues.forEach((d, i) => {
+        const cell = row.getCell(4 + i);
+        if (d) {
+          cell.value = d;
+          cell.numFmt = "dd mmm yy";
+        } else {
+          cell.value = "—";
+        }
+        cell.font = { size: 12 };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.fill = fill;
+      });
+
+      // Integer column G: Days in Current Status
+      const daysCell = row.getCell(7);
+      daysCell.value = r.daysInCurrentStatus ?? "";
+      daysCell.font = { size: 12 };
+      daysCell.alignment = { horizontal: "right", vertical: "middle" };
+      daysCell.fill = fill;
+
+      // Factor column H: Scoped CF
+      const cfCell = row.getCell(8);
+      cfCell.value = r.scopedComplexityFactor;
+      cfCell.numFmt = "0.00";
+      cfCell.font = { size: 12 };
+      cfCell.alignment = { horizontal: "right", vertical: "middle" };
+      cfCell.fill = fill;
+
+      // Currency columns I-O: Phase 1 … Grand Total
       const numValues = [
         r.p1Cost,
         r.p2Cost,
@@ -402,7 +480,7 @@ export default function ProposalLogReport() {
         r.grandTotal,
       ];
       numValues.forEach((v, i) => {
-        const cell = row.getCell(4 + i);
+        const cell = row.getCell(9 + i);
         cell.value = v;
         cell.numFmt = CURRENCY_FMT;
         cell.font = { size: 12 };
@@ -423,9 +501,9 @@ export default function ProposalLogReport() {
       fgColor: { argb: HEADER_BG },
     };
 
-    // Merge A–I for the "Grand Total" label
+    // Merge A–N for the "Grand Total" label (col O holds the value)
     sheet.mergeCells(
-      `A${grandTotalRowNum}:I${grandTotalRowNum}`
+      `A${grandTotalRowNum}:N${grandTotalRowNum}`
     );
     const gtLabelCell = grandTotalRow.getCell(1);
     gtLabelCell.value = "Grand Total";
@@ -457,6 +535,12 @@ export default function ProposalLogReport() {
     anchor.click();
     URL.revokeObjectURL(url);
   }, [rows, selectedCustomer, selectedStatus, customers]);
+
+  // Screen sort: Customer A→Z. XLSX intentionally keeps its own Status→Customer
+  // sort (see exportXLSX) — managers want status-grouped output in the file.
+  const screenRows = [...rows].sort((a, b) =>
+    a.customerName.localeCompare(b.customerName)
+  );
 
   return (
     <div className="space-y-6">
@@ -542,19 +626,24 @@ export default function ProposalLogReport() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Proposal</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">P1</TableHead>
-                      <TableHead className="text-right">P2</TableHead>
-                      <TableHead className="text-right">Opt1</TableHead>
-                      <TableHead className="text-right">Opt2</TableHead>
-                      <TableHead className="text-right">Scoped</TableHead>
-                      <TableHead className="text-right">Migration</TableHead>
+                      <TableHead>Proposal Name</TableHead>
+                      <TableHead>Proposal Status</TableHead>
+                      <TableHead>Created On</TableHead>
+                      <TableHead>Sent On</TableHead>
+                      <TableHead>Won On</TableHead>
+                      <TableHead className="text-right">Days in Status</TableHead>
+                      <TableHead className="text-right">Complexity Factor</TableHead>
+                      <TableHead className="text-right">Phase 1</TableHead>
+                      <TableHead className="text-right">Phase 2</TableHead>
+                      <TableHead className="text-right">Option 1</TableHead>
+                      <TableHead className="text-right">Option 2</TableHead>
+                      <TableHead className="text-right">Scoped Services</TableHead>
+                      <TableHead className="text-right">Migration Services</TableHead>
                       <TableHead className="text-right">Grand Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((r) => (
+                    {screenRows.map((r) => (
                       <TableRow key={r.proposalId}>
                         <TableCell className="font-medium">
                           {r.customerName}
@@ -572,6 +661,21 @@ export default function ProposalLogReport() {
                           >
                             {r.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="tabular-nums text-xs">
+                          {formatDateShort(r.dateCreated)}
+                        </TableCell>
+                        <TableCell className="tabular-nums text-xs">
+                          {formatDateShort(r.dateProposalSent)}
+                        </TableCell>
+                        <TableCell className="tabular-nums text-xs">
+                          {formatDateShort(r.dateWon)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.daysInCurrentStatus ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.scopedComplexityFactor.toFixed(2)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {r.p1Cost > 0 ? formatCurrency(r.p1Cost) : "—"}
@@ -600,7 +704,7 @@ export default function ProposalLogReport() {
                     ))}
                     {/* Totals row */}
                     <TableRow className="bg-muted/50 font-semibold">
-                      <TableCell colSpan={3}>Totals</TableCell>
+                      <TableCell colSpan={8}>Totals</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatCurrency(rows.reduce((s, r) => s + r.p1Cost, 0))}
                       </TableCell>
