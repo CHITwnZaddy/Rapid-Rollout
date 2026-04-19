@@ -23,6 +23,12 @@ const reports = [
     href: "/reports/scenario-breakout",
   },
   {
+    title: "Proposal Hours",
+    description:
+      "Scoped hours per proposal broken out by role (Sr IM, PM, BA) across scenarios, scoped services, and migration.",
+    href: "/reports/proposal-hours",
+  },
+  {
     title: "Portfolio Value",
     description:
       "Pipeline value grouped by status (scenario + scoped + migration, complexity-adjusted). Defaults to My Proposals and excludes Lost/VOID.",
