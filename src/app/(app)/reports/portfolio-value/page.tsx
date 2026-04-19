@@ -32,6 +32,7 @@ import {
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
+import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
 
 type OwnerFilter = "all" | "mine";
@@ -262,10 +263,20 @@ export default function PortfolioValueReport() {
           grandTotal: scenarioTotal + scopedTotal + migrationTotal,
         };
       })
-      // Sort by status, then by grand total desc — bigger deals bubble up within each status.
+      // Group order follows PROPOSAL_STATUSES (Draft → Proposal Sent → … → VOID).
+      // Within each group, sort by Proposal Name A→Z. Unknown statuses sink to
+      // the bottom via a large sentinel index.
       .sort((a, b) => {
-        const s = a.status.localeCompare(b.status);
-        return s !== 0 ? s : b.grandTotal - a.grandTotal;
+        const ai = PROPOSAL_STATUSES.indexOf(
+          a.status as (typeof PROPOSAL_STATUSES)[number]
+        );
+        const bi = PROPOSAL_STATUSES.indexOf(
+          b.status as (typeof PROPOSAL_STATUSES)[number]
+        );
+        const aIdx = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
+        const bIdx = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return a.proposalName.localeCompare(b.proposalName);
       });
 
     setRows(portfolio);
@@ -328,12 +339,12 @@ export default function PortfolioValueReport() {
     sheet.getRow(3).height = 8;
 
     const headers = [
-      "Proposal",
+      "Proposal Name",
       "Customer",
-      "Status",
+      "Proposal Status",
       "Scenario Total",
-      "Scoped Total",
-      "Migration Total",
+      "Scoped Services Total",
+      "Migration Services Total",
       "Grand Total",
     ];
     const hr = sheet.getRow(4);
@@ -450,7 +461,9 @@ export default function PortfolioValueReport() {
                 }
               >
                 <SelectTrigger className="h-8 w-[200px]">
-                  <SelectValue />
+                  <SelectValue>
+                    {ownerFilter === "mine" ? "My Proposals" : "All Owners"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mine">My Proposals</SelectItem>
@@ -497,12 +510,12 @@ export default function PortfolioValueReport() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Proposal</TableHead>
+                      <TableHead>Proposal Name</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Proposal Status</TableHead>
                       <TableHead className="text-right">Scenario Total</TableHead>
-                      <TableHead className="text-right">Scoped Total</TableHead>
-                      <TableHead className="text-right">Migration Total</TableHead>
+                      <TableHead className="text-right">Scoped Services Total</TableHead>
+                      <TableHead className="text-right">Migration Services Total</TableHead>
                       <TableHead className="text-right">Grand Total</TableHead>
                     </TableRow>
                   </TableHeader>

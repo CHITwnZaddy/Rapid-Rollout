@@ -38,6 +38,7 @@ import {
   buildStatusMetricsMap,
   type StatusHistoryRow,
 } from "@/lib/reports/status-history";
+import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 
 interface Customer {
   id: string;
@@ -62,13 +63,6 @@ interface ReportRow {
   dateWon: string | null;
   daysInCurrentStatus: number | null;
   scopedComplexityFactor: number;
-}
-
-// Convert a timestamptz string into a YYYY-MM-DD display. Returns "—"
-// for nulls so the table never renders raw "null" text.
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toISOString().slice(0, 10);
 }
 
 const STATUSES = [
@@ -430,21 +424,33 @@ export default function ProposalLogReport() {
         fgColor: { argb: bgArgb },
       };
 
-      // Text/date columns A-F: Customer, Proposal Name, Status,
-      // Date Created, Date Proposal Sent, Date Won
-      const textValues = [
-        r.customerName,
-        r.proposalName,
-        r.status,
-        fmtDate(r.dateCreated),
-        fmtDate(r.dateProposalSent),
-        fmtDate(r.dateWon),
-      ];
+      // Text columns A-C: Customer, Proposal Name, Status
+      const textValues = [r.customerName, r.proposalName, r.status];
       textValues.forEach((v, i) => {
         const cell = row.getCell(i + 1);
         cell.value = v;
         cell.font = { size: 12 };
         cell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
+        cell.fill = fill;
+      });
+
+      // Date columns D-F: real Date cells with "dd mmm yy" format so
+      // Excel sort/filter still works. Nulls write as "—" text cells.
+      const dateValues: (Date | null)[] = [
+        toDateOrNull(r.dateCreated),
+        toDateOrNull(r.dateProposalSent),
+        toDateOrNull(r.dateWon),
+      ];
+      dateValues.forEach((d, i) => {
+        const cell = row.getCell(4 + i);
+        if (d) {
+          cell.value = d;
+          cell.numFmt = "dd mmm yy";
+        } else {
+          cell.value = "—";
+        }
+        cell.font = { size: 12 };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
         cell.fill = fill;
       });
 
@@ -530,6 +536,12 @@ export default function ProposalLogReport() {
     URL.revokeObjectURL(url);
   }, [rows, selectedCustomer, selectedStatus, customers]);
 
+  // Screen sort: Customer A→Z. XLSX intentionally keeps its own Status→Customer
+  // sort (see exportXLSX) — managers want status-grouped output in the file.
+  const screenRows = [...rows].sort((a, b) =>
+    a.customerName.localeCompare(b.customerName)
+  );
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Proposal Log Report</h1>
@@ -614,24 +626,24 @@ export default function ProposalLogReport() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Proposal</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Sent</TableHead>
-                      <TableHead>Won</TableHead>
+                      <TableHead>Proposal Name</TableHead>
+                      <TableHead>Proposal Status</TableHead>
+                      <TableHead>Created On</TableHead>
+                      <TableHead>Sent On</TableHead>
+                      <TableHead>Won On</TableHead>
                       <TableHead className="text-right">Days in Status</TableHead>
-                      <TableHead className="text-right">Scoped CF</TableHead>
-                      <TableHead className="text-right">P1</TableHead>
-                      <TableHead className="text-right">P2</TableHead>
-                      <TableHead className="text-right">Opt1</TableHead>
-                      <TableHead className="text-right">Opt2</TableHead>
-                      <TableHead className="text-right">Scoped</TableHead>
-                      <TableHead className="text-right">Migration</TableHead>
+                      <TableHead className="text-right">Complexity Factor</TableHead>
+                      <TableHead className="text-right">Phase 1</TableHead>
+                      <TableHead className="text-right">Phase 2</TableHead>
+                      <TableHead className="text-right">Option 1</TableHead>
+                      <TableHead className="text-right">Option 2</TableHead>
+                      <TableHead className="text-right">Scoped Services</TableHead>
+                      <TableHead className="text-right">Migration Services</TableHead>
                       <TableHead className="text-right">Grand Total</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((r) => (
+                    {screenRows.map((r) => (
                       <TableRow key={r.proposalId}>
                         <TableCell className="font-medium">
                           {r.customerName}
@@ -651,13 +663,13 @@ export default function ProposalLogReport() {
                           </Badge>
                         </TableCell>
                         <TableCell className="tabular-nums text-xs">
-                          {fmtDate(r.dateCreated)}
+                          {formatDateShort(r.dateCreated)}
                         </TableCell>
                         <TableCell className="tabular-nums text-xs">
-                          {fmtDate(r.dateProposalSent)}
+                          {formatDateShort(r.dateProposalSent)}
                         </TableCell>
                         <TableCell className="tabular-nums text-xs">
-                          {fmtDate(r.dateWon)}
+                          {formatDateShort(r.dateWon)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {r.daysInCurrentStatus ?? "—"}

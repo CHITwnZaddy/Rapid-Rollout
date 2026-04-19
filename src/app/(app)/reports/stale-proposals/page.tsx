@@ -25,10 +25,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Fragment } from "react";
 import {
   buildStatusMetricsMap,
   type StatusHistoryRow,
 } from "@/lib/reports/status-history";
+import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
+import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
 
 type Customer = { id: string; company_name: string };
@@ -51,11 +54,6 @@ const STALE_THRESHOLD_DAYS = 21;
 // "stale" because a Won or Lost proposal sitting for 30 days is by design.
 const IN_FLIGHT_STATUSES = ["Draft", "Proposal Sent", "Customer Review"];
 const STATUS_OPTIONS = ["All", ...IN_FLIGHT_STATUSES];
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toISOString().slice(0, 10);
-}
 
 export default function StaleProposalsReport() {
   const supabase = createClient();
@@ -123,7 +121,7 @@ export default function StaleProposalsReport() {
         const m = metricsMap.get(p.id);
         const days = m?.daysInCurrentStatus ?? null;
         const threshold: ReportRow["threshold"] =
-          days == null ? null : days > STALE_THRESHOLD_DAYS ? "red" : "green";
+          days == null ? null : days >= STALE_THRESHOLD_DAYS ? "red" : "green";
         return {
           proposalId: p.id,
           proposalName: p.name,
@@ -134,11 +132,22 @@ export default function StaleProposalsReport() {
           threshold,
         };
       })
-      // Sort most-stale first so leadership sees the worst offenders at the top.
-      .sort(
-        (a, b) =>
-          (b.daysInStatus ?? -Infinity) - (a.daysInStatus ?? -Infinity)
-      );
+      // Group by status in the canonical PROPOSAL_STATUSES order, then sort
+      // by Proposal Name A→Z within each group. Only Draft / Proposal Sent /
+      // Customer Review ever populate (Won/Lost/VOID are excluded upstream),
+      // so the other groups will simply render empty.
+      .sort((a, b) => {
+        const ai = PROPOSAL_STATUSES.indexOf(
+          a.status as (typeof PROPOSAL_STATUSES)[number]
+        );
+        const bi = PROPOSAL_STATUSES.indexOf(
+          b.status as (typeof PROPOSAL_STATUSES)[number]
+        );
+        const aIdx = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
+        const bIdx = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return a.proposalName.localeCompare(b.proposalName);
+      });
 
     setRows(reportRows);
     setLoading(false);
@@ -192,7 +201,7 @@ export default function StaleProposalsReport() {
         ? "All Customers"
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
-    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "All owners"}  |  Red when Days in Status > ${STALE_THRESHOLD_DAYS}`;
+    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "All owners"}  |  Red when Days in Status >= ${STALE_THRESHOLD_DAYS}`;
     filters.font = { italic: true, size: 11 };
     filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     sheet.getRow(2).height = 20;
@@ -235,25 +244,32 @@ export default function StaleProposalsReport() {
         pattern: "solid",
         fgColor: { argb: fillArgb },
       };
-      const values: (string | number)[] = [
-        r.proposalName,
-        r.customerName,
-        r.status,
-        r.daysInStatus ?? "",
-        fmtDate(r.lastActivity),
-      ];
-      values.forEach((v, i) => {
+      // A-C: text. D: days. E: real Date cell so Excel sort still works.
+      const textValues = [r.proposalName, r.customerName, r.status];
+      textValues.forEach((v, i) => {
         const c = row.getCell(i + 1);
         c.value = v;
         c.font = { size: 12 };
-        c.alignment =
-          i === 3
-            ? { horizontal: "right", vertical: "middle" }
-            : i === 4
-              ? { horizontal: "right", vertical: "middle" }
-              : { horizontal: "left", indent: 1, vertical: "middle" };
+        c.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
         c.fill = fill;
       });
+      const daysCell = row.getCell(4);
+      daysCell.value = r.daysInStatus ?? "";
+      daysCell.font = { size: 12 };
+      daysCell.alignment = { horizontal: "center", vertical: "middle" };
+      daysCell.fill = fill;
+
+      const dateCell = row.getCell(5);
+      const d = toDateOrNull(r.lastActivity);
+      if (d) {
+        dateCell.value = d;
+        dateCell.numFmt = "dd mmm yy";
+      } else {
+        dateCell.value = "—";
+      }
+      dateCell.font = { size: 12 };
+      dateCell.alignment = { horizontal: "center", vertical: "middle" };
+      dateCell.fill = fill;
       row.height = 18;
     });
 
@@ -268,6 +284,15 @@ export default function StaleProposalsReport() {
     a.click();
     URL.revokeObjectURL(url);
   }, [rows, selectedCustomer, selectedStatus, ownerFilter, customers]);
+
+  // Rows come in PROPOSAL_STATUSES order already. Reduce into a Map so we
+  // can render group-header rows — Map preserves insertion order, so the
+  // render order matches the status constant.
+  const groupedStale = rows.reduce<Map<string, ReportRow[]>>((map, r) => {
+    if (!map.has(r.status)) map.set(r.status, []);
+    map.get(r.status)!.push(r);
+    return map;
+  }, new Map());
 
   return (
     <div className="space-y-6">
@@ -330,7 +355,9 @@ export default function StaleProposalsReport() {
                 }
               >
                 <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue />
+                  <SelectValue>
+                    {ownerFilter === "mine" ? "My Proposals" : "All Owners"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Owners</SelectItem>
@@ -355,7 +382,8 @@ export default function StaleProposalsReport() {
           <CardHeader>
             <CardTitle className="text-base">
               Results ({rows.length} proposal{rows.length !== 1 ? "s" : ""}) —
-              red rows stuck &gt;{STALE_THRESHOLD_DAYS} days
+              Red rows indicate proposals that have been in the same status for{" "}
+              {STALE_THRESHOLD_DAYS} days or more.
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -368,37 +396,46 @@ export default function StaleProposalsReport() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Proposal</TableHead>
+                      <TableHead>Proposal Name</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Current Status</TableHead>
-                      <TableHead className="text-right">Days in Status</TableHead>
+                      <TableHead className="text-center">Days in Status</TableHead>
                       <TableHead>Last Activity</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((r) => (
-                      <TableRow
-                        key={r.proposalId}
-                        className={
-                          r.threshold === "red"
-                            ? "bg-red-100 hover:bg-red-100/80 dark:bg-red-950/40 dark:hover:bg-red-950/50"
-                            : r.threshold === "green"
-                              ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/50"
-                              : undefined
-                        }
-                      >
-                        <TableCell className="font-medium">
-                          {r.proposalName}
-                        </TableCell>
-                        <TableCell>{r.customerName}</TableCell>
-                        <TableCell>{r.status}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {r.daysInStatus ?? "—"}
-                        </TableCell>
-                        <TableCell className="tabular-nums text-xs">
-                          {fmtDate(r.lastActivity)}
-                        </TableCell>
-                      </TableRow>
+                    {Array.from(groupedStale.entries()).map(([status, group]) => (
+                      <Fragment key={`group-${status}`}>
+                        <TableRow className="bg-muted/40">
+                          <TableCell colSpan={5} className="font-semibold">
+                            {status} ({group.length})
+                          </TableCell>
+                        </TableRow>
+                        {group.map((r) => (
+                          <TableRow
+                            key={r.proposalId}
+                            className={
+                              r.threshold === "red"
+                                ? "bg-red-100 hover:bg-red-100/80 dark:bg-red-950/40 dark:hover:bg-red-950/50"
+                                : r.threshold === "green"
+                                  ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/50"
+                                  : undefined
+                            }
+                          >
+                            <TableCell className="font-medium">
+                              {r.proposalName}
+                            </TableCell>
+                            <TableCell>{r.customerName}</TableCell>
+                            <TableCell>{r.status}</TableCell>
+                            <TableCell className="text-center tabular-nums">
+                              {r.daysInStatus ?? "—"}
+                            </TableCell>
+                            <TableCell className="tabular-nums text-xs">
+                              {formatDateShort(r.lastActivity)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>

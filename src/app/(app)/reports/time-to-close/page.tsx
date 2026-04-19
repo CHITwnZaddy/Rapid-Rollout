@@ -30,6 +30,7 @@ import {
   buildStatusMetricsMap,
   type StatusHistoryRow,
 } from "@/lib/reports/status-history";
+import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 import type ExcelJS from "exceljs";
 
 type Customer = { id: string; company_name: string };
@@ -54,11 +55,6 @@ const CLOSE_THRESHOLD_DAYS = 30;
 const STATUSES = ["All", "Won", "Lost", "Proposal Sent", "Customer Review"];
 
 type OwnerFilter = "all" | "mine";
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toISOString().slice(0, 10);
-}
 
 // Compare an ISO timestamp to a YYYY-MM-DD boundary (inclusive). Returning
 // false for null lets us exclude proposals that never reached "Sent" when
@@ -190,9 +186,11 @@ export default function TimeToCloseReport() {
     if (rows.length === 0) return;
     const ExcelJS = (await import("exceljs")).default;
 
+    // Matches the on-screen sort: longest daysToClose first, open proposals
+    // (null) sink to the bottom.
     const sorted = [...rows].sort((a, b) => {
-      const aDays = a.daysToClose ?? Number.POSITIVE_INFINITY;
-      const bDays = b.daysToClose ?? Number.POSITIVE_INFINITY;
+      const aDays = a.daysToClose ?? Number.NEGATIVE_INFINITY;
+      const bDays = b.daysToClose ?? Number.NEGATIVE_INFINITY;
       return bDays - aDays;
     });
 
@@ -269,22 +267,36 @@ export default function TimeToCloseReport() {
         fgColor: { argb: fillArgb },
       };
 
-      const values: (string | number)[] = [
-        r.proposalName,
-        r.customerName,
-        r.status,
-        fmtDate(r.dateSent),
-        fmtDate(r.dateClosed),
-        r.daysToClose ?? "",
-      ];
-      values.forEach((v, i) => {
+      // A-C: text. D/E: real Date cells. F: integer.
+      const textValues = [r.proposalName, r.customerName, r.status];
+      textValues.forEach((v, i) => {
         const c = row.getCell(i + 1);
         c.value = v;
         c.font = { size: 12 };
-        c.alignment =
-          i >= 3 ? { horizontal: "right", vertical: "middle" } : { horizontal: "left", indent: 1, vertical: "middle" };
+        c.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
         c.fill = fill;
       });
+      const dateValues: (Date | null)[] = [
+        toDateOrNull(r.dateSent),
+        toDateOrNull(r.dateClosed),
+      ];
+      dateValues.forEach((d, i) => {
+        const c = row.getCell(4 + i);
+        if (d) {
+          c.value = d;
+          c.numFmt = "dd mmm yy";
+        } else {
+          c.value = "—";
+        }
+        c.font = { size: 12 };
+        c.alignment = { horizontal: "center", vertical: "middle" };
+        c.fill = fill;
+      });
+      const daysCell = row.getCell(6);
+      daysCell.value = r.daysToClose ?? "";
+      daysCell.font = { size: 12 };
+      daysCell.alignment = { horizontal: "right", vertical: "middle" };
+      daysCell.fill = fill;
       row.height = 18;
     });
 
@@ -299,6 +311,15 @@ export default function TimeToCloseReport() {
     a.click();
     URL.revokeObjectURL(url);
   }, [rows, selectedCustomer, selectedStatus, ownerFilter, fromDate, toDate, customers]);
+
+  // Screen + XLSX share one sort: worst offenders (longest daysToClose) first.
+  // Open proposals (null daysToClose) sink to the bottom so the top of the
+  // table is always actionable.
+  const sortedRows = [...rows].sort((a, b) => {
+    const aDays = a.daysToClose ?? Number.NEGATIVE_INFINITY;
+    const bDays = b.daysToClose ?? Number.NEGATIVE_INFINITY;
+    return bDays - aDays;
+  });
 
   return (
     <div className="space-y-6">
@@ -361,7 +382,9 @@ export default function TimeToCloseReport() {
                 }
               >
                 <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue />
+                  <SelectValue>
+                    {ownerFilter === "mine" ? "My Proposals" : "All Owners"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Owners</SelectItem>
@@ -426,7 +449,7 @@ export default function TimeToCloseReport() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rows.map((r) => (
+                    {sortedRows.map((r) => (
                       <TableRow
                         key={r.proposalId}
                         className={
@@ -443,10 +466,10 @@ export default function TimeToCloseReport() {
                         <TableCell>{r.customerName}</TableCell>
                         <TableCell>{r.status}</TableCell>
                         <TableCell className="tabular-nums text-xs">
-                          {fmtDate(r.dateSent)}
+                          {formatDateShort(r.dateSent)}
                         </TableCell>
                         <TableCell className="tabular-nums text-xs">
-                          {fmtDate(r.dateClosed)}
+                          {formatDateShort(r.dateClosed)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {r.daysToClose ?? "—"}

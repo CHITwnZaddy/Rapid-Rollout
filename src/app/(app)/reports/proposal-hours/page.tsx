@@ -295,7 +295,13 @@ export default function ProposalHoursReport() {
 
     const order = ["P1", "P2", "Opt1", "Opt2"];
 
-    for (const p of proposals) {
+    // Proposal Name A→Z — scenarios inside a proposal keep their own P1/P2/Opt1/Opt2
+    // ordering, then Scoped + Migration are appended. XLSX export reads from the
+    // same `rows` state so the two surfaces stay in sync.
+    const sortedProposals = [...proposals].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+    for (const p of sortedProposals) {
       const cname = customerName(p.customer_id);
       const pScenarios = (scenariosByProposal.get(p.id) ?? []).sort(
         (a, b) => order.indexOf(a.type) - order.indexOf(b.type)
@@ -405,7 +411,7 @@ export default function ProposalHoursReport() {
     sheet.getRow(3).height = 8;
 
     const headers = [
-      "Proposal",
+      "Proposal Name",
       "Customer",
       "Scenario",
       "Sr IM Hours",
@@ -564,7 +570,9 @@ export default function ProposalHoursReport() {
                 }
               >
                 <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue />
+                  <SelectValue>
+                    {ownerFilter === "mine" ? "My Proposals" : "All Owners"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Owners</SelectItem>
@@ -601,7 +609,7 @@ export default function ProposalHoursReport() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Proposal</TableHead>
+                      <TableHead>Proposal Name</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Scenario</TableHead>
                       <TableHead className="text-right">Sr IM Hours</TableHead>
