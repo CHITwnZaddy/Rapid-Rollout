@@ -72,8 +72,19 @@ export function ScenarioGrid({
   );
   const rateCardMap = useMemo(() => buildRateCardMap(rateCards), [rateCards]);
 
-  // Get available scope options per module
+  // Get available scope options per module.
+  // Sort tiers within a module: prompt rows ("Select # of..." / "Click here...") first,
+  // then numeric values in numeric order (avoids lex "1,10,11,...,2,20"),
+  // then alphabetical, with "Included with no..." pinned last.
   const scopeOptionsByModule = useMemo(() => {
+    const scopeTier = (label: string): number => {
+      const v = label.trim();
+      if (/^Select /i.test(v) || /^Click here/i.test(v)) return 0;
+      if (/^\d+$/.test(v)) return 1;
+      if (/^Included with no/i.test(v)) return 3;
+      return 2;
+    };
+
     const map = new Map<string, { value: string; label: string }[]>();
     for (const sh of serviceHours) {
       if (!map.has(sh.service_name)) {
@@ -82,6 +93,15 @@ export function ScenarioGrid({
       map.get(sh.service_name)!.push({
         value: sh.scope_value,
         label: sh.scope_value,
+      });
+    }
+    for (const opts of map.values()) {
+      opts.sort((a, b) => {
+        const ta = scopeTier(a.label);
+        const tb = scopeTier(b.label);
+        if (ta !== tb) return ta - tb;
+        if (ta === 1) return Number(a.label) - Number(b.label);
+        return a.label.localeCompare(b.label);
       });
     }
     return map;
@@ -268,14 +288,13 @@ export function ScenarioGrid({
                       }
                     >
                       <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Select scope">
+                        <SelectValue>
                           {line.scopeSelection
                             ? (options.find((o) => o.value === line.scopeSelection)?.label ?? line.scopeSelection)
-                            : "Select scope"}
+                            : (options[0]?.label ?? "")}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__">-- None --</SelectItem>
                         {options.map((opt) => (
                           <SelectItem key={opt.value} value={opt.value}>
                             {opt.label}
