@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { PROPOSAL_STATUSES, type ProposalStatus } from "@/lib/constants/statuses";
+import { assertAuthenticated, AuthError } from "@/lib/auth/require-admin";
 
 export type DeleteProposalResult =
   | { ok: true }
@@ -110,9 +111,20 @@ export async function updateScenarioComplexityFactor(
   const err = validateFactor(value);
   if (err) return { ok: false, error: err };
 
+  try {
+    await assertAuthenticated();
+  } catch (e) {
+    if (e instanceof AuthError) return { ok: false, error: e.message };
+    throw e;
+  }
+
   const supabase = await createClient();
   const rounded = Math.round(value * 100) / 100;
 
+  // RLS on scenarios restricts UPDATE to rows whose parent proposal
+  // has created_by = auth.uid(). assertAuthenticated above is
+  // defense-in-depth — if RLS were ever relaxed, the action still
+  // refuses to run for anonymous callers.
   const { error } = await supabase
     .from("scenarios")
     .update({ complexity_factor: rounded })
@@ -131,9 +143,17 @@ export async function updateScopedComplexityFactor(
   const err = validateFactor(value);
   if (err) return { ok: false, error: err };
 
+  try {
+    await assertAuthenticated();
+  } catch (e) {
+    if (e instanceof AuthError) return { ok: false, error: e.message };
+    throw e;
+  }
+
   const supabase = await createClient();
   const rounded = Math.round(value * 100) / 100;
 
+  // RLS on proposals enforces created_by ownership.
   const { error } = await supabase
     .from("proposals")
     .update({ scoped_complexity_factor: rounded })
