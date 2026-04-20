@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/table";
 import { fetchStatusHistoryMap } from "@/lib/reports/data";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
+import { withinRange } from "@/lib/ui/helpers";
 import type ExcelJS from "exceljs";
 
 type Customer = { id: string; company_name: string };
@@ -52,22 +53,6 @@ const CLOSE_THRESHOLD_DAYS = 30;
 const STATUSES = ["All", "Won", "Lost", "Proposal Sent", "Customer Review"];
 
 type OwnerFilter = "all" | "mine";
-
-// Compare an ISO timestamp to a YYYY-MM-DD boundary (inclusive). Returning
-// false for null lets us exclude proposals that never reached "Sent" when
-// the user has set a date filter.
-function withinRange(
-  iso: string | null,
-  from: string | null,
-  to: string | null
-): boolean {
-  if (!iso) return !from && !to;
-  const ts = new Date(iso).getTime();
-  if (from && ts < new Date(from).getTime()) return false;
-  // End-of-day on the "to" bound so a sent-date of 2026-04-18T23:xx still matches.
-  if (to && ts > new Date(to + "T23:59:59.999Z").getTime()) return false;
-  return true;
-}
 
 export default function TimeToCloseReport() {
   const supabase = createClient();
