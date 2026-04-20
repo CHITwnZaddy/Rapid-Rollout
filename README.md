@@ -11,7 +11,8 @@ Proposal scoping & pricing tool for TUC Solution Engineers. Replaces the legacy 
 - **Zod** at form boundaries
 - **Vitest** for unit tests
 - **shadcn/ui + Tailwind v4** for UI
-- **xlsx** for spreadsheet exports
+- **exceljs** for styled spreadsheet exports in-app (dynamic-imported to keep it out of the initial JS bundle)
+- **xlsx** (dev-only) for reading `.xlsm` workbooks in `scripts/seed-lookup-data.ts`
 
 > ⚠️ This repo pins **Next.js 16**, which has breaking changes from older versions. Read `node_modules/next/dist/docs/` before making framework-level changes. See `AGENTS.md`.
 
@@ -68,7 +69,7 @@ src/
     supabase/         server + client + middleware helpers
     validation/       Zod schemas + parseSupabaseResult helper
     hooks/            useAuth, useRequireAdmin, etc.
-    exports/          xlsx export builders
+    exports/          Excel (.xlsx) export builders (exceljs)
   middleware.ts       edge-level auth gate
 supabase/
   migrations/         numbered SQL migrations (authoritative schema)
