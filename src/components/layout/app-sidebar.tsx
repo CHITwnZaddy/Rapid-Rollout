@@ -25,7 +25,7 @@ const adminItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const { user, isAdmin, signOut } = useAuth();
+  const { user, loading, isAdmin, signOut } = useAuth();
 
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -53,7 +53,13 @@ export function AppSidebar() {
           ))}
         </div>
 
-        {isAdmin && (
+        {loading ? (
+          <div className="mt-4 space-y-2 px-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-8 rounded-md bg-sidebar-accent/30 animate-pulse" />
+            ))}
+          </div>
+        ) : isAdmin && (
           <>
             <Separator className="my-4" />
             <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50">

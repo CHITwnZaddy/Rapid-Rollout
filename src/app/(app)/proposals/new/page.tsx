@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -35,18 +35,28 @@ export default function NewProposalPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customerLoadError, setCustomerLoadError] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
-  useEffect(() => {
-    supabase
-      .from("customers")
-      .select("id, company_name")
-      .order("company_name")
-      .then(({ data }) => {
-        if (data) setCustomers(data);
-      });
+  const loadCustomers = useCallback(async () => {
+    setCustomerLoadError(false);
+    try {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("id, company_name")
+        .order("company_name");
+      if (error) throw error;
+      if (data) setCustomers(data);
+    } catch {
+      setCustomerLoadError(true);
+      toast.error("Could not load customers. Check your connection and retry.");
+    }
   }, [supabase]);
+
+  useEffect(() => {
+    loadCustomers();
+  }, [loadCustomers]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,20 +241,29 @@ export default function NewProposalPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="customer">Customer</Label>
-              <Select value={customerId} onValueChange={(v) => setCustomerId(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a customer">
-                    {customers.find((c) => c.id === customerId)?.company_name ?? "Select a customer"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.company_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {customerLoadError ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-destructive">Failed to load customers.</span>
+                  <Button type="button" size="sm" variant="outline" onClick={loadCustomers}>
+                    Retry
+                  </Button>
+                </div>
+              ) : (
+                <Select value={customerId} onValueChange={(v) => setCustomerId(v ?? "")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a customer">
+                      {customers.find((c) => c.id === customerId)?.company_name ?? "Select a customer"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.company_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </CardContent>
           <CardFooter className="flex gap-2">
