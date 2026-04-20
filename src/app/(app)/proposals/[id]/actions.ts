@@ -93,6 +93,7 @@ export async function updateProposalStatus(
   }
 
   revalidatePath(`/proposals/${proposalId}`);
+  revalidatePath("/proposals");
   return { ok: true };
 }
 
@@ -133,6 +134,7 @@ export async function updateScenarioComplexityFactor(
   if (error) return { ok: false, error: error.message };
 
   revalidatePath(`/proposals/${proposalId}`);
+  revalidatePath("/proposals");
   return { ok: true };
 }
 
@@ -162,6 +164,7 @@ export async function updateScopedComplexityFactor(
   if (error) return { ok: false, error: error.message };
 
   revalidatePath(`/proposals/${proposalId}`);
+  revalidatePath("/proposals");
   return { ok: true };
 }
 

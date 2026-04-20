@@ -27,13 +27,7 @@ import {
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
-
-function getMarginBadgeClass(marginPercent: number | null) {
-  if (marginPercent === null) return "bg-muted text-muted-foreground";
-  if (marginPercent <= 30) return "bg-red-100 text-red-800";
-  if (marginPercent < 40) return "bg-yellow-100 text-yellow-800";
-  return "bg-green-100 text-green-800";
-}
+import { getMarginBadgeClass } from "@/lib/ui/helpers";
 
 function calcMarginPercent(
   discountedCost: number,

@@ -1,13 +1,14 @@
 // ─────────────────────────────────────────────────────────────
 // TanStack Query keys + stale-time convention
+// @internal — no consumers yet; the app uses raw Supabase calls.
 // ─────────────────────────────────────────────────────────────
-// Phase 2.6 — the global default staleTime in providers.tsx is
-// 60 seconds, which is fine for per-proposal data but wasteful
-// for lookup tables (rate_cards, service_hours, customers) that
-// rarely change. Rather than touch the global default and break
-// every callsite, this file:
+// The global default staleTime in providers.tsx is 60 seconds,
+// which is fine for per-proposal data but wasteful for lookup
+// tables (rate_cards, service_hours, customers) that rarely
+// change. Rather than touch the global default and break every
+// future callsite, this file:
 //
-//   1. Defines the canonical query-key factories so cache
+//   1. Defines canonical query-key factories so cache
 //      invalidation stays consistent across the app.
 //   2. Exports recommended staleTime values per data class.
 //      Callers should spread these into their useQuery options:
@@ -18,10 +19,8 @@
 //          ...queryDefaults.lookup,
 //        });
 //
-// NOTE: as of Phase 2.6 this file has no consumers — the app
-// currently does raw Supabase calls without TanStack Query.
-// When you migrate a page to useQuery, start by picking a key
-// factory from here and applying the matching defaults.
+// When migrating a page to useQuery, pick a key factory from
+// here and apply the matching defaults — do not invent new keys.
 // ─────────────────────────────────────────────────────────────
 
 export const queryKeys = {
