@@ -305,6 +305,44 @@ describe("calculateMigrationTotals", () => {
     expect(t.blendedRate).toBeCloseTo(t.salesPrice / totalHours, 6);
   });
 
+  it("estimatedMargin is positive when blendedRate > 135", () => {
+    // Workshop only: BA 132hrs @ 200 + PM 8hrs @ 300 = 28800 / 140hrs ≈ 205.7/hr
+    // margin = 1 - 135/205.7 ≈ 0.344
+    const t = calculateMigrationTotals(
+      { ...baseConfig, is_workshop_included: true, is_effort_included: false },
+      [], [], [], 200, 300, 2000
+    );
+    expect(t.estimatedMargin).toBeGreaterThan(0);
+    expect(t.estimatedMargin).toBeCloseTo(1 - 135 / t.blendedRate, 6);
+  });
+
+  it("estimatedMargin goes negative when blendedRate < 135", () => {
+    // Use a low BA rate (100) so blendedRate ends up below 135
+    // Workshop: 132 BA hrs @ 100 = 13200, 8 PM hrs @ 100 = 800 → 14000 / 140 = 100/hr
+    const t = calculateMigrationTotals(
+      { ...baseConfig, is_workshop_included: true, is_effort_included: false },
+      [], [], [], 100, 100, 2000
+    );
+    expect(t.blendedRate).toBeCloseTo(100, 6);
+    expect(t.estimatedMargin).toBeLessThan(0); // surfaced, not clamped
+  });
+
+  it("estimatedMargin is 0 when salesPrice is 0", () => {
+    const cfg: MigrationConfig = {
+      ...baseConfig,
+      is_effort_included: false,
+      is_workshop_included: false,
+      core_requirements_hrs: 0,
+      core_migration_plan_hrs: 0,
+      core_validation_hrs: 0,
+      core_final_qa_hrs: 0,
+      core_pm_oversight_hrs: 0,
+    };
+    const t = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250);
+    expect(t.salesPrice).toBe(0);
+    expect(t.estimatedMargin).toBe(0);
+  });
+
   it("includes section line hours via detail lines", () => {
     const projectLines: MigrationDetailLine[] = [
       line({

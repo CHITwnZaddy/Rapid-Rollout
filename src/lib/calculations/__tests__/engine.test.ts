@@ -238,6 +238,14 @@ describe("formatCurrency", () => {
   it("rounds at display time", () => {
     expect(formatCurrency(1234.56)).toBe("$1,235");
   });
+
+  it("formats negative amounts with a minus sign", () => {
+    expect(formatCurrency(-1000)).toBe("-$1,000");
+  });
+
+  it("formats very large amounts without overflow", () => {
+    expect(formatCurrency(1_000_000_000)).toBe("$1,000,000,000");
+  });
 });
 
 describe("formatHours", () => {

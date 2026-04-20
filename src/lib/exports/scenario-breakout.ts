@@ -86,11 +86,12 @@ export function buildScenarioBreakoutRows(
   }
 
   if (migrationSummary) {
+    const migrationTotal = Number(migrationSummary.total);
     rows.push({
       Section: "Migration Services",
       Item: "Total",
       Detail: "",
-      Subtotal: Number(migrationSummary.total) || 0,
+      Subtotal: Number.isFinite(migrationTotal) ? migrationTotal : 0,
     });
   }
 
