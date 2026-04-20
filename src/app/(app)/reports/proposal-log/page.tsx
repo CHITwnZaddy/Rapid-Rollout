@@ -389,7 +389,7 @@ export default function ProposalLogReport() {
       "Date Proposal Sent",
       "Date Won",
       "Days in Current Status",
-      "Scoped CF",
+      "Complexity Factor",
       "Phase 1",
       "Phase 2",
       "Option 1",

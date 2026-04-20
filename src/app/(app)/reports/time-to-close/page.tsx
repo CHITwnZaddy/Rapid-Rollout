@@ -26,10 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  buildStatusMetricsMap,
-  type StatusHistoryRow,
-} from "@/lib/reports/status-history";
+import { fetchStatusHistoryMap } from "@/lib/reports/data";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 import type ExcelJS from "exceljs";
 
@@ -125,14 +122,7 @@ export default function TimeToCloseReport() {
     }
 
     const proposalIds = proposals.map((p) => p.id);
-    const { data: history } = await supabase
-      .from("proposal_status_history")
-      .select("proposal_id, old_status, new_status, changed_at")
-      .in("proposal_id", proposalIds);
-
-    const metricsMap = buildStatusMetricsMap(
-      (history ?? []) as StatusHistoryRow[]
-    );
+    const metricsMap = await fetchStatusHistoryMap(supabase, proposalIds);
     const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
 
     const reportRows: ReportRow[] = proposals
@@ -239,7 +229,7 @@ export default function TimeToCloseReport() {
 
     sheet.getRow(3).height = 8;
 
-    const headers = ["Proposal", "Customer", "Status", "Date Sent", "Date Closed", "Days to Close"];
+    const headers = ["Proposal Name", "Customer", "Proposal Status", "Date Sent", "Date Closed", "Days to Close"];
     const hr = sheet.getRow(4);
     headers.forEach((h, i) => {
       const c = hr.getCell(i + 1);
