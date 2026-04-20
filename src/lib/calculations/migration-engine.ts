@@ -244,8 +244,11 @@ export function calculateMigrationTotals(
   // Summary
   const totalHours = totalBaHours + totalPmHours;
   const blendedRate = totalHours === 0 ? 0 : salesPrice / totalHours;
+  // Cost baseline: internal delivery cost per hour. Margin goes negative
+  // when blendedRate falls below this — surface it, don't clamp.
+  const INTERNAL_COST_RATE = 135;
   const estimatedMargin =
-    salesPrice === 0 ? 0 : 1 - 75 / blendedRate;
+    salesPrice === 0 ? 0 : 1 - INTERNAL_COST_RATE / blendedRate;
 
   return {
     workshopBaRaw,

@@ -65,4 +65,20 @@ describe("toEngineLine", () => {
     expect(out.items_per_object).toBe(0);
     expect(out.total_line_items).toBe(0);
   });
+
+  // Business rule: Credit/Discount ($) is always >= 0, even for LoE credits.
+  // toEngineLine does NOT enforce this — NUM() passes negatives through unchanged.
+  // The invariant is enforced at the DB constraint level and form-layer Zod schema.
+  // This test documents the current (pass-through) behavior so future readers know
+  // where enforcement lives.
+  it("does not clamp negative quantity — caller must enforce non-negative invariant", () => {
+    const out = toEngineLine({
+      section: "cost",
+      label: "credit",
+      quantity: -5,
+      items_per_object: 10,
+      total_line_items: 0,
+    });
+    expect(out.quantity).toBe(-5); // passes through — see business rule comment above
+  });
 });
