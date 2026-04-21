@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
-import { Providers } from "@/components/providers";
 import { ThemeLoader } from "@/components/theme-loader";
 import { Toaster } from "@/components/ui/sonner";
 import {
   FONT_COOKIE_NAME,
-  GOOGLE_FONT_PARAMS,
+  getGoogleFontParam,
   googleFontUrl,
-} from "@/lib/fonts";
+} from "@/lib/theme";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -41,7 +40,7 @@ export default async function RootLayout({
   const savedFont = cookieStore.get(FONT_COOKIE_NAME)?.value;
   const fontParam =
     savedFont && savedFont !== "default"
-      ? GOOGLE_FONT_PARAMS[savedFont]
+      ? getGoogleFontParam(savedFont)
       : undefined;
   const fontStyle =
     savedFont && savedFont !== "default"
@@ -73,11 +72,9 @@ export default async function RootLayout({
         )}
       </head>
       <body className="min-h-full flex flex-col">
-        <Providers>
-          <ThemeLoader />
-          {children}
-          <Toaster />
-        </Providers>
+        <ThemeLoader />
+        {children}
+        <Toaster />
       </body>
     </html>
   );
