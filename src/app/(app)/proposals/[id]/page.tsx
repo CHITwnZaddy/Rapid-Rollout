@@ -27,6 +27,10 @@ import {
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
+import {
+  allocateAdjustedTotal,
+  calculateBidSheetPricing,
+} from "@/lib/calculations/bid-sheet-pricing";
 import { getMarginBadgeClass } from "@/lib/ui/helpers";
 
 function calcMarginPercent(
@@ -234,15 +238,22 @@ export default async function ProposalSummaryPage({
     0
   );
 
-  const afterDollar = Math.max(0, scenarioSubtotal - discountDollars);
-  const discountedScenarioTotal = afterDollar * (1 - discountPercent / 100);
+  const proposalSubtotal = scenarioSubtotal + migrationTotal + scopedTotal;
+  const pricing = calculateBidSheetPricing(
+    proposalSubtotal,
+    discountDollars,
+    discountPercent
+  );
 
   const allocated = scenarioRows.map((s) => {
     const cf = Number(s!.complexity_factor ?? 1);
     const totalCost = applyComplexity(Number(s!.summary_total_cost), cf);
     const totalHours = applyComplexity(Number(s!.summary_total_hours), cf);
-    const share = scenarioSubtotal > 0 ? totalCost / scenarioSubtotal : 0;
-    const discountedCost = discountedScenarioTotal * share;
+    const discountedCost = allocateAdjustedTotal(
+      totalCost,
+      proposalSubtotal,
+      pricing.finalTotal
+    );
     const marginPercent = calcMarginPercent(discountedCost, totalHours, burdenRate);
 
     return {
@@ -256,8 +267,18 @@ export default async function ProposalSummaryPage({
     };
   });
 
-  const scopedMargin = calcMarginPercent(scopedTotal, 0, burdenRate);
-  const migrationMargin = calcMarginPercent(migrationTotal, 0, burdenRate);
+  const scopedDiscountedCost = allocateAdjustedTotal(
+    scopedTotal,
+    proposalSubtotal,
+    pricing.finalTotal
+  );
+  const migrationDiscountedCost = allocateAdjustedTotal(
+    migrationTotal,
+    proposalSubtotal,
+    pricing.finalTotal
+  );
+  const scopedMargin = calcMarginPercent(scopedDiscountedCost, 0, burdenRate);
+  const migrationMargin = calcMarginPercent(migrationDiscountedCost, 0, burdenRate);
 
   return (
     <div className="space-y-6">
@@ -330,7 +351,7 @@ export default async function ProposalSummaryPage({
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
                 <TableCell className="text-right">
-                  {formatCurrency(scopedTotal)}
+                  {formatCurrency(scopedDiscountedCost)}
                 </TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(scopedTotal)}
@@ -360,7 +381,7 @@ export default async function ProposalSummaryPage({
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
                 <TableCell className="text-right">
-                  {formatCurrency(migrationTotal)}
+                  {formatCurrency(migrationDiscountedCost)}
                 </TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(migrationTotal)}
