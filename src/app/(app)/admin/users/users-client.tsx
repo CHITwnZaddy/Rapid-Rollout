@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { inviteUser, updateUserRole, deleteUser } from "./actions";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {

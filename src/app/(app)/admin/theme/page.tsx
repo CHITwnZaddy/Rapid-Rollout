@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { savedThemeSchema } from "@/lib/validation/theme";
 import { toast } from "sonner";
 
-interface ThemeColors {
+type ThemeColors = {
   primary: string;
   primaryForeground: string;
   secondary: string;
@@ -33,7 +33,7 @@ interface ThemeColors {
   sidebarForeground: string;
   sidebarPrimary: string;
   sidebarAccent: string;
-}
+};
 
 const DEFAULT_THEME: ThemeColors = {
   primary: "#171717",
@@ -209,49 +209,7 @@ export default function ThemePage() {
   const [activePreset, setActivePreset] = useState("Default");
   const [selectedFont, setSelectedFont] = useState("default");
 
-  // Load saved theme + font
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      let parsedRaw: unknown = null;
-      try {
-        parsedRaw = JSON.parse(saved);
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-      if (parsedRaw) {
-        const result = savedThemeSchema.safeParse(parsedRaw);
-        if (result.success) {
-          const colors = result.data.colors as ThemeColors;
-          setTheme(colors);
-          setSavedTheme(colors);
-          setActivePreset(result.data.preset ?? "Custom");
-          applyTheme(colors);
-        } else {
-          // Corrupted / tampered blob — drop it and start from default.
-          localStorage.removeItem(STORAGE_KEY);
-          toast.error(
-            "Saved theme was invalid and has been reset to default."
-          );
-        }
-      }
-    }
-    const savedFont = localStorage.getItem(FONT_STORAGE_KEY);
-    if (savedFont) {
-      setSelectedFont(savedFont);
-      const opt = FONT_OPTIONS.find((f) => f.value === savedFont);
-      if (opt?.google) loadGoogleFont(opt.google);
-      applyFont(savedFont);
-    }
-  }, []);
-
-  // Dirty flag — cheap JSON.stringify compare is fine for 17 keys.
-  const isDirty = useMemo(
-    () => JSON.stringify(theme) !== JSON.stringify(savedTheme),
-    [theme, savedTheme]
-  );
-
-  function applyTheme(colors: ThemeColors) {
+  const applyTheme = useCallback((colors: ThemeColors) => {
     const root = document.documentElement;
     root.style.setProperty("--primary", hexToOklch(colors.primary));
     root.style.setProperty("--primary-foreground", hexToOklch(colors.primaryForeground));
@@ -273,7 +231,61 @@ export default function ThemePage() {
     root.style.setProperty("--sidebar-primary-foreground", hexToOklch(colors.primaryForeground));
     root.style.setProperty("--sidebar-accent", hexToOklch(colors.sidebarAccent));
     root.style.setProperty("--sidebar-accent-foreground", hexToOklch(colors.accentForeground));
-  }
+  }, []);
+
+  // Load saved theme + font
+  useEffect(() => {
+    let nextTheme: ThemeColors | null = null;
+    let nextPreset = "Default";
+    let invalidThemeMessage: string | null = null;
+
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      let parsedRaw: unknown = null;
+      try {
+        parsedRaw = JSON.parse(saved);
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      if (parsedRaw) {
+        const result = savedThemeSchema.safeParse(parsedRaw);
+        if (result.success) {
+          nextTheme = result.data.colors as ThemeColors;
+          nextPreset = result.data.preset ?? "Custom";
+        } else {
+          // Corrupted / tampered blob — drop it and start from default.
+          localStorage.removeItem(STORAGE_KEY);
+          invalidThemeMessage = "Saved theme was invalid and has been reset to default.";
+        }
+      }
+    }
+
+    const savedFont = localStorage.getItem(FONT_STORAGE_KEY);
+
+    queueMicrotask(() => {
+      if (nextTheme) {
+        setTheme(nextTheme);
+        setSavedTheme(nextTheme);
+        setActivePreset(nextPreset);
+        applyTheme(nextTheme);
+      }
+      if (invalidThemeMessage) {
+        toast.error(invalidThemeMessage);
+      }
+      if (savedFont) {
+        setSelectedFont(savedFont);
+        const opt = FONT_OPTIONS.find((f) => f.value === savedFont);
+        if (opt?.google) loadGoogleFont(opt.google);
+        applyFont(savedFont);
+      }
+    });
+  }, [applyTheme]);
+
+  // Dirty flag — cheap JSON.stringify compare is fine for 17 keys.
+  const isDirty = useMemo(
+    () => JSON.stringify(theme) !== JSON.stringify(savedTheme),
+    [theme, savedTheme]
+  );
 
   // Presets auto-save on click — that's the point of a preset
   // ("known good, apply instantly"), and matches the plan.
@@ -285,7 +297,7 @@ export default function ThemePage() {
     setActivePreset(name);
     applyTheme(colors);
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ preset: name, colors }));
-  }, []);
+  }, [applyTheme]);
 
   // Custom color edits are draft-only — they preview live via
   // applyTheme() but do NOT touch localStorage. The user must
@@ -299,7 +311,7 @@ export default function ThemePage() {
       });
       setActivePreset("Custom");
     },
-    []
+    [applyTheme]
   );
 
   const handleSaveCustom = useCallback(() => {
@@ -326,7 +338,7 @@ export default function ThemePage() {
   const handleDiscard = useCallback(() => {
     setTheme(savedTheme);
     applyTheme(savedTheme);
-  }, [savedTheme]);
+  }, [applyTheme, savedTheme]);
 
   const handleFontChange = useCallback((fontValue: string) => {
     setSelectedFont(fontValue);
