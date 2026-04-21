@@ -3,7 +3,11 @@
 export const revalidate = 300;
 
 import { createClient } from "@/lib/supabase/server";
-import { AdminDataTable, type ColumnDef } from "@/components/admin/data-table";
+import {
+  AdminDataTable,
+  type AdminRow,
+  type ColumnDef,
+} from "@/components/admin/data-table";
 
 const columns: ColumnDef[] = [
   { key: "service_name", label: "Service Name", type: "text" },
@@ -30,7 +34,7 @@ export default async function ServiceHoursPage() {
       <AdminDataTable
         tableName="service_hours"
         columns={columns}
-        initialData={(data as Record<string, unknown>[]) ?? []}
+        initialData={(data as AdminRow[]) ?? []}
         createDefaults={{
           service_name: "New Service",
           scope_value: "Included",
