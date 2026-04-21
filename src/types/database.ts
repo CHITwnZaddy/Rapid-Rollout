@@ -656,7 +656,15 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      transition_proposal_status: {
+        Args: {
+          p_proposal_id: string;
+          p_new_status: string;
+        };
+        Returns: boolean;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

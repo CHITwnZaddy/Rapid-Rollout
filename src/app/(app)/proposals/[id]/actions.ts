@@ -41,55 +41,28 @@ export async function updateProposalStatus(
   }
 
   const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-  if (userError || !user) {
-    return { ok: false, error: "You must be signed in to change status." };
+  try {
+    await assertAuthenticated();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return { ok: false, error: "You must be signed in to change status." };
+    }
+    throw e;
   }
 
-  const { data: existing, error: readError } = await supabase
-    .from("proposals")
-    .select("status")
-    .eq("id", proposalId)
-    .single();
+  const { data: changed, error } = await supabase.rpc(
+    "transition_proposal_status",
+    {
+      p_proposal_id: proposalId,
+      p_new_status: newStatus,
+    }
+  );
 
-  if (readError || !existing) {
-    return {
-      ok: false,
-      error: "Proposal not found or you do not have permission to edit it.",
-    };
+  if (error) {
+    return { ok: false, error: error.message };
   }
-
-  if (existing.status === newStatus) {
+  if (!changed) {
     return { ok: true };
-  }
-
-  const { error: updateError } = await supabase
-    .from("proposals")
-    .update({ status: newStatus })
-    .eq("id", proposalId);
-
-  if (updateError) {
-    return { ok: false, error: `Failed to update status: ${updateError.message}` };
-  }
-
-  const { error: historyError } = await supabase
-    .from("proposal_status_history")
-    .insert({
-      proposal_id: proposalId,
-      old_status: existing.status,
-      new_status: newStatus,
-      changed_by: user.id,
-    });
-
-  if (historyError) {
-    return {
-      ok: false,
-      error: `Status saved, but history record failed: ${historyError.message}`,
-    };
   }
 
   revalidatePath(`/proposals/${proposalId}`);
