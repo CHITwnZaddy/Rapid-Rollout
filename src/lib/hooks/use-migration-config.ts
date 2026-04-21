@@ -11,6 +11,7 @@ import {
 import { NUM } from "@/lib/calculations/num";
 import { toEngineLine } from "@/lib/calculations/adapters";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
+import { createMigrationPersistenceController } from "./migration-persistence";
 
 export type DbConfig = {
   id: string;
@@ -45,7 +46,6 @@ export type DbLine = {
   total_line_items: number;
   row_order: number;
 };
-
 
 export type UseMigrationConfigReturn = {
   config: DbConfig | null;
@@ -137,7 +137,10 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const baRateRef = useRef(baRate);
   const pmRateRef = useRef(pmRate);
   const travelRateRef = useRef(travelRate);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const persistenceControllerRef =
+    useRef<ReturnType<typeof createMigrationPersistenceController<DbConfig, DbLine>> | null>(
+      null
+    );
 
   useEffect(() => {
     configRef.current = config;
@@ -158,6 +161,87 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   useEffect(() => {
     travelRateRef.current = travelRate;
   }, [travelRate]);
+
+  useEffect(() => {
+    persistenceControllerRef.current = createMigrationPersistenceController({
+      getSnapshot: () => ({
+        config: configRef.current,
+        lines: linesRef.current,
+      }),
+      saveConfig: async (updated, currentLines) => {
+        const totals = computeTotalsFromState(
+          updated,
+          currentLines,
+          baRateRef.current,
+          pmRateRef.current,
+          travelRateRef.current
+        );
+        const totalCost = totals?.salesPrice ?? 0;
+
+        await supabase
+          .from("migration_config")
+          .update({
+            num_projects: updated.num_projects,
+            hrs_per_import: updated.hrs_per_import,
+            lines_per_import_file: updated.lines_per_import_file,
+            is_effort_included: updated.is_effort_included,
+            is_workshop_included: updated.is_workshop_included,
+            pm_contingency_pct: updated.pm_contingency_pct,
+            ba_complexity_factor: updated.ba_complexity_factor,
+            pm_complexity_factor: updated.pm_complexity_factor,
+            ba_trips: updated.ba_trips,
+            pm_trips: updated.pm_trips,
+            doc_avg_mb_per_project: updated.doc_avg_mb_per_project,
+            doc_mb_per_hour: updated.doc_mb_per_hour,
+            core_requirements_hrs: updated.core_requirements_hrs,
+            core_migration_plan_hrs: updated.core_migration_plan_hrs,
+            core_validation_hrs: updated.core_validation_hrs,
+            core_final_qa_hrs: updated.core_final_qa_hrs,
+            core_pm_oversight_hrs: updated.core_pm_oversight_hrs,
+            computed_total_cost: totalCost,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", updated.id);
+      },
+      saveLine: async (line) => {
+        await supabase
+          .from("migration_detail_lines")
+          .update({
+            label: line.label,
+            quantity: line.quantity,
+            items_per_object: line.items_per_object,
+            total_line_items: line.total_line_items,
+          })
+          .eq("id", line.id);
+      },
+      saveComputedTotal: async (updated, currentLines) => {
+        const totals = computeTotalsFromState(
+          updated,
+          currentLines,
+          baRateRef.current,
+          pmRateRef.current,
+          travelRateRef.current
+        );
+
+        await supabase
+          .from("migration_config")
+          .update({
+            computed_total_cost: totals?.salesPrice ?? updated.computed_total_cost,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", updated.id);
+      },
+    });
+
+    return () => {
+      const controller = persistenceControllerRef.current;
+      persistenceControllerRef.current = null;
+      if (controller) {
+        void controller.flushNow();
+        controller.dispose();
+      }
+    };
+  }, [supabase]);
 
   // ─── Load ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -227,157 +311,6 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     load();
   }, [proposalId, supabase, reloadToken]);
 
-  // ─── Save helpers ────────────────────────────────────────────────
-  const saveConfig = useCallback(
-    async (updated: DbConfig) => {
-      const totals = computeTotalsFromState(
-        updated,
-        linesRef.current,
-        baRateRef.current,
-        pmRateRef.current,
-        travelRateRef.current
-      );
-      const totalCost = totals?.salesPrice ?? 0;
-      await supabase
-        .from("migration_config")
-        .update({
-          num_projects: updated.num_projects,
-          hrs_per_import: updated.hrs_per_import,
-          lines_per_import_file: updated.lines_per_import_file,
-          is_effort_included: updated.is_effort_included,
-          is_workshop_included: updated.is_workshop_included,
-          pm_contingency_pct: updated.pm_contingency_pct,
-          ba_complexity_factor: updated.ba_complexity_factor,
-          pm_complexity_factor: updated.pm_complexity_factor,
-          ba_trips: updated.ba_trips,
-          pm_trips: updated.pm_trips,
-          doc_avg_mb_per_project: updated.doc_avg_mb_per_project,
-          doc_mb_per_hour: updated.doc_mb_per_hour,
-          core_requirements_hrs: updated.core_requirements_hrs,
-          core_migration_plan_hrs: updated.core_migration_plan_hrs,
-          core_validation_hrs: updated.core_validation_hrs,
-          core_final_qa_hrs: updated.core_final_qa_hrs,
-          core_pm_oversight_hrs: updated.core_pm_oversight_hrs,
-          computed_total_cost: totalCost,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", updated.id);
-    },
-    [supabase]
-  );
-
-  const saveLine = useCallback(
-    async (line: DbLine) => {
-      await supabase
-        .from("migration_detail_lines")
-        .update({
-          label: line.label,
-          quantity: line.quantity,
-          items_per_object: line.items_per_object,
-          total_line_items: line.total_line_items,
-        })
-        .eq("id", line.id);
-    },
-    [supabase]
-  );
-
-  const debouncedSaveConfig = useCallback(
-    (updated: DbConfig) => {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        saveConfig(updated);
-      }, 800);
-    },
-    [saveConfig]
-  );
-
-  const debouncedSaveLine = useCallback(
-    (line: DbLine) => {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(async () => {
-        await saveLine(line);
-        if (configRef.current) {
-          const totals = computeTotalsFromState(
-            configRef.current,
-            linesRef.current,
-            baRateRef.current,
-            pmRateRef.current,
-            travelRateRef.current
-          );
-          if (totals) {
-            await supabase
-              .from("migration_config")
-              .update({
-                computed_total_cost: totals.salesPrice,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", configRef.current.id);
-          }
-        }
-      }, 800);
-    },
-    [saveLine, supabase]
-  );
-
-  // ─── Unmount save ────────────────────────────────────────────────
-  // Flush pending debounced changes when the user navigates away.
-  // Fire-and-forget: React cleanup can't await, but in-page SPA
-  // navigation keeps in-flight fetches alive.
-  useEffect(() => {
-    return () => {
-      clearTimeout(saveTimer.current);
-      const cfg = configRef.current;
-      const currentLines = linesRef.current;
-      if (!cfg) return;
-
-      const totals = computeTotalsFromState(
-        cfg,
-        currentLines,
-        baRateRef.current,
-        pmRateRef.current,
-        travelRateRef.current
-      );
-      const totalCost = totals?.salesPrice ?? cfg.computed_total_cost;
-
-      supabase
-        .from("migration_config")
-        .update({
-          num_projects: cfg.num_projects,
-          hrs_per_import: cfg.hrs_per_import,
-          lines_per_import_file: cfg.lines_per_import_file,
-          is_effort_included: cfg.is_effort_included,
-          is_workshop_included: cfg.is_workshop_included,
-          pm_contingency_pct: cfg.pm_contingency_pct,
-          ba_complexity_factor: cfg.ba_complexity_factor,
-          pm_complexity_factor: cfg.pm_complexity_factor,
-          ba_trips: cfg.ba_trips,
-          pm_trips: cfg.pm_trips,
-          doc_avg_mb_per_project: cfg.doc_avg_mb_per_project,
-          doc_mb_per_hour: cfg.doc_mb_per_hour,
-          core_requirements_hrs: cfg.core_requirements_hrs,
-          core_migration_plan_hrs: cfg.core_migration_plan_hrs,
-          core_validation_hrs: cfg.core_validation_hrs,
-          core_final_qa_hrs: cfg.core_final_qa_hrs,
-          core_pm_oversight_hrs: cfg.core_pm_oversight_hrs,
-          computed_total_cost: totalCost,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", cfg.id);
-
-      for (const line of currentLines) {
-        supabase
-          .from("migration_detail_lines")
-          .update({
-            label: line.label,
-            quantity: line.quantity,
-            items_per_object: line.items_per_object,
-            total_line_items: line.total_line_items,
-          })
-          .eq("id", line.id);
-      }
-    };
-  }, [supabase]);
-
   // ─── Update helpers ──────────────────────────────────────────────
   const updateConfig = useCallback(
     (field: keyof DbConfig, value: number | boolean | string) => {
@@ -392,9 +325,10 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       }
 
       setConfig(updated);
-      debouncedSaveConfig(updated);
+      configRef.current = updated;
+      persistenceControllerRef.current?.scheduleConfigSave();
     },
-    [config, debouncedSaveConfig]
+    [config]
   );
 
   const updateLine = useCallback(
@@ -403,12 +337,12 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         const next = prev.map((l) =>
           l.id === lineId ? { ...l, [field]: value } : l
         );
-        const updated = next.find((l) => l.id === lineId);
-        if (updated) debouncedSaveLine(updated);
+        linesRef.current = next;
+        persistenceControllerRef.current?.scheduleLineSave(lineId);
         return next;
       });
     },
-    [debouncedSaveLine]
+    []
   );
 
   const addLine = useCallback(
@@ -436,7 +370,14 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         .select()
         .single();
 
-      if (data) setLines((prev) => [...prev, data as DbLine]);
+      if (data) {
+        setLines((prev) => {
+          const next = [...prev, data as DbLine];
+          linesRef.current = next;
+          return next;
+        });
+        persistenceControllerRef.current?.scheduleTotalsRecompute();
+      }
     },
     [lines, proposalId, supabase]
   );
@@ -444,7 +385,12 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const removeLine = useCallback(
     async (lineId: string) => {
       await supabase.from("migration_detail_lines").delete().eq("id", lineId);
-      setLines((prev) => prev.filter((l) => l.id !== lineId));
+      setLines((prev) => {
+        const next = prev.filter((l) => l.id !== lineId);
+        linesRef.current = next;
+        return next;
+      });
+      persistenceControllerRef.current?.scheduleTotalsRecompute();
     },
     [supabase]
   );
