@@ -260,7 +260,7 @@ export default function ScopedServicesPage() {
                   colSpan={6}
                   className="py-8 text-center text-muted-foreground"
                 >
-                  No scoped services. Click "Add Line" to start.
+                  No scoped services. Click &quot;Add Line&quot; to start.
                 </TableCell>
               </TableRow>
             )}

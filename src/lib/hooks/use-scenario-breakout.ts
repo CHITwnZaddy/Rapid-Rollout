@@ -10,30 +10,30 @@ import { NUM } from "@/lib/calculations/num";
 import { toEngineLine } from "@/lib/calculations/adapters";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 
-export interface Proposal {
+export type Proposal = {
   id: string;
   name: string;
-}
+};
 
-export interface ScenarioLine {
+export type ScenarioLine = {
   module: string;
   scope_selection: string | null;
   total_cost: number;
-}
+};
 
-export interface ScenarioGroup {
+export type ScenarioGroup = {
   scenarioType: string;
   lines: ScenarioLine[];
   totalCost: number;
-}
+};
 
-export interface ScopedLine {
+export type ScopedLine = {
   service_type: string;
   description: string | null;
   cost: number;
-}
+};
 
-export interface MigrationConfig {
+export type MigrationConfig = {
   num_projects: number;
   hrs_per_import: number;
   lines_per_import_file: number;
@@ -51,15 +51,15 @@ export interface MigrationConfig {
   core_final_qa_hrs: number;
   core_pm_oversight_hrs: number;
   computed_total_cost: number;
-}
+};
 
-export interface MigrationLine {
+export type MigrationLine = {
   section: string;
   label: string;
   quantity: number;
   items_per_object: number;
   total_line_items: number;
-}
+};
 
 
 export function useScenarioBreakout() {
@@ -95,7 +95,6 @@ export function useScenarioBreakout() {
   // report refuses to run until this resolves successfully.
   useEffect(() => {
     let cancelled = false;
-    setRateError(null);
     fetchRequiredRates(supabase, [
       "Master|Business Analyst",
       "Master|Program Manager",
@@ -106,6 +105,7 @@ export function useScenarioBreakout() {
         setRateError(result.error);
         return;
       }
+      setRateError(null);
       setBaRate(result.rates.get("Master|Business Analyst")!);
       setPmRate(result.rates.get("Master|Program Manager")!);
       setTravelRate(result.rates.get("Master|Travel Cost/Trip")!);

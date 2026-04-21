@@ -11,7 +11,6 @@ import {
   formatHours,
   type ServiceHoursRow,
   type RateCardRow,
-  type ScenarioLineOutput,
 } from "@/lib/calculations/engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
 import {
@@ -210,9 +209,11 @@ export function ScenarioGrid({
 
   // Save immediately on unmount
   useEffect(() => {
+    const dirtyLines = dirtyLinesRef.current;
+
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (dirtyLinesRef.current.size > 0) {
+      if (dirtyLines.size > 0) {
         doSave();
       }
     };

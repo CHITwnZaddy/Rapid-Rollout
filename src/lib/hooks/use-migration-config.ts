@@ -6,14 +6,13 @@ import {
   DEFAULT_WORKFLOW_LINES,
   DEFAULT_COST_LINES,
   type MigrationConfig,
-  type MigrationDetailLine,
   type MigrationTotals,
 } from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
 import { toEngineLine } from "@/lib/calculations/adapters";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 
-export interface DbConfig {
+export type DbConfig = {
   id: string;
   proposal_id: string;
   num_projects: number;
@@ -34,9 +33,9 @@ export interface DbConfig {
   core_final_qa_hrs: number;
   core_pm_oversight_hrs: number;
   computed_total_cost: number;
-}
+};
 
-export interface DbLine {
+export type DbLine = {
   id: string;
   proposal_id: string;
   section: string;
@@ -45,10 +44,10 @@ export interface DbLine {
   items_per_object: number;
   total_line_items: number;
   row_order: number;
-}
+};
 
 
-export interface UseMigrationConfigReturn {
+export type UseMigrationConfigReturn = {
   config: DbConfig | null;
   lines: DbLine[];
   baRate: number | null;
@@ -66,6 +65,58 @@ export interface UseMigrationConfigReturn {
   addLine: (section: "project" | "workflow" | "cost") => Promise<void>;
   removeLine: (lineId: string) => Promise<void>;
   retry: () => void;
+};
+
+function computeTotalsFromState(
+  cfg: DbConfig | null,
+  allLines: DbLine[],
+  baRate: number | null,
+  pmRate: number | null,
+  travelRate: number | null
+): MigrationTotals | null {
+  if (!cfg || baRate == null || pmRate == null || travelRate == null) {
+    return null;
+  }
+
+  const numProjects = NUM(cfg.num_projects);
+  const migrationConfig: MigrationConfig = {
+    num_projects: numProjects,
+    hrs_per_import: NUM(cfg.hrs_per_import),
+    lines_per_import_file: NUM(cfg.lines_per_import_file),
+    is_effort_included: cfg.is_effort_included,
+    is_workshop_included: cfg.is_workshop_included,
+    pm_contingency_pct: NUM(cfg.pm_contingency_pct),
+    ba_complexity_factor: NUM(cfg.ba_complexity_factor),
+    pm_complexity_factor: NUM(cfg.pm_complexity_factor),
+    ba_trips: NUM(cfg.ba_trips),
+    pm_trips: NUM(cfg.pm_trips),
+    doc_avg_mb_per_project: NUM(cfg.doc_avg_mb_per_project),
+    doc_mb_per_hour: NUM(cfg.doc_mb_per_hour),
+    core_requirements_hrs: NUM(cfg.core_requirements_hrs),
+    core_migration_plan_hrs: NUM(cfg.core_migration_plan_hrs),
+    core_validation_hrs: NUM(cfg.core_validation_hrs),
+    core_final_qa_hrs: NUM(cfg.core_final_qa_hrs),
+    core_pm_oversight_hrs: NUM(cfg.core_pm_oversight_hrs),
+  };
+  const projectLines = allLines
+    .filter((line) => line.section === "project")
+    .map((line) => toEngineLine(line, { quantityOverride: numProjects }));
+  const workflowLines = allLines
+    .filter((line) => line.section === "workflow")
+    .map((line) => toEngineLine(line));
+  const costLines = allLines
+    .filter((line) => line.section === "cost")
+    .map((line) => toEngineLine(line));
+
+  return calculateMigrationTotals(
+    migrationConfig,
+    projectLines,
+    workflowLines,
+    costLines,
+    baRate,
+    pmRate,
+    travelRate
+  );
 }
 
 export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn {
@@ -87,53 +138,26 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const pmRateRef = useRef(pmRate);
   const travelRateRef = useRef(travelRate);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  configRef.current = config;
-  linesRef.current = lines;
-  baRateRef.current = baRate;
-  pmRateRef.current = pmRate;
-  travelRateRef.current = travelRate;
 
-  // computeTotals reads rates from refs so callbacks with stale closures
-  // always see the current values without needing them in dep arrays.
-  const computeTotals = useCallback(
-    (cfg: DbConfig | null, allLines: DbLine[]): MigrationTotals | null => {
-      const ba = baRateRef.current;
-      const pm = pmRateRef.current;
-      const travel = travelRateRef.current;
-      if (!cfg || ba == null || pm == null || travel == null) return null;
-      const numProjects = NUM(cfg.num_projects);
-      const mc: MigrationConfig = {
-        num_projects: numProjects,
-        hrs_per_import: NUM(cfg.hrs_per_import),
-        lines_per_import_file: NUM(cfg.lines_per_import_file),
-        is_effort_included: cfg.is_effort_included,
-        is_workshop_included: cfg.is_workshop_included,
-        pm_contingency_pct: NUM(cfg.pm_contingency_pct),
-        ba_complexity_factor: NUM(cfg.ba_complexity_factor),
-        pm_complexity_factor: NUM(cfg.pm_complexity_factor),
-        ba_trips: NUM(cfg.ba_trips),
-        pm_trips: NUM(cfg.pm_trips),
-        doc_avg_mb_per_project: NUM(cfg.doc_avg_mb_per_project),
-        doc_mb_per_hour: NUM(cfg.doc_mb_per_hour),
-        core_requirements_hrs: NUM(cfg.core_requirements_hrs),
-        core_migration_plan_hrs: NUM(cfg.core_migration_plan_hrs),
-        core_validation_hrs: NUM(cfg.core_validation_hrs),
-        core_final_qa_hrs: NUM(cfg.core_final_qa_hrs),
-        core_pm_oversight_hrs: NUM(cfg.core_pm_oversight_hrs),
-      };
-      const pLines = allLines
-        .filter((l) => l.section === "project")
-        .map((l) => toEngineLine(l, { quantityOverride: numProjects }));
-      const wLines = allLines
-        .filter((l) => l.section === "workflow")
-        .map((l) => toEngineLine(l));
-      const cLines = allLines
-        .filter((l) => l.section === "cost")
-        .map((l) => toEngineLine(l));
-      return calculateMigrationTotals(mc, pLines, wLines, cLines, ba, pm, travel);
-    },
-    [] // refs are always current — no state deps needed
-  );
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
+
+  useEffect(() => {
+    baRateRef.current = baRate;
+  }, [baRate]);
+
+  useEffect(() => {
+    pmRateRef.current = pmRate;
+  }, [pmRate]);
+
+  useEffect(() => {
+    travelRateRef.current = travelRate;
+  }, [travelRate]);
 
   // ─── Load ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -206,7 +230,13 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   // ─── Save helpers ────────────────────────────────────────────────
   const saveConfig = useCallback(
     async (updated: DbConfig) => {
-      const totals = computeTotals(updated, linesRef.current);
+      const totals = computeTotalsFromState(
+        updated,
+        linesRef.current,
+        baRateRef.current,
+        pmRateRef.current,
+        travelRateRef.current
+      );
       const totalCost = totals?.salesPrice ?? 0;
       await supabase
         .from("migration_config")
@@ -233,7 +263,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         })
         .eq("id", updated.id);
     },
-    [supabase, computeTotals]
+    [supabase]
   );
 
   const saveLine = useCallback(
@@ -267,7 +297,13 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       saveTimer.current = setTimeout(async () => {
         await saveLine(line);
         if (configRef.current) {
-          const totals = computeTotals(configRef.current, linesRef.current);
+          const totals = computeTotalsFromState(
+            configRef.current,
+            linesRef.current,
+            baRateRef.current,
+            pmRateRef.current,
+            travelRateRef.current
+          );
           if (totals) {
             await supabase
               .from("migration_config")
@@ -280,7 +316,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         }
       }, 800);
     },
-    [saveLine, supabase, computeTotals]
+    [saveLine, supabase]
   );
 
   // ─── Unmount save ────────────────────────────────────────────────
@@ -294,7 +330,13 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       const currentLines = linesRef.current;
       if (!cfg) return;
 
-      const totals = computeTotals(cfg, currentLines);
+      const totals = computeTotalsFromState(
+        cfg,
+        currentLines,
+        baRateRef.current,
+        pmRateRef.current,
+        travelRateRef.current
+      );
       const totalCost = totals?.salesPrice ?? cfg.computed_total_cost;
 
       supabase
@@ -334,7 +376,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
           .eq("id", line.id);
       }
     };
-  }, [supabase, computeTotals]);
+  }, [supabase]);
 
   // ─── Update helpers ──────────────────────────────────────────────
   const updateConfig = useCallback(
@@ -408,7 +450,13 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   );
 
   // ─── Derived values ──────────────────────────────────────────────
-  const totals = computeTotals(config, lines);
+  const totals = computeTotalsFromState(
+    config,
+    lines,
+    baRate,
+    pmRate,
+    travelRate
+  );
   const numProjects = NUM(config?.num_projects);
   const projectLines = lines.filter((l) => l.section === "project");
   const workflowLines = lines.filter((l) => l.section === "workflow");
