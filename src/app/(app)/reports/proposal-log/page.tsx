@@ -332,9 +332,9 @@ export default function ProposalLogReport() {
     const TOTAL_COLS = 15;
     const LAST_COL_LETTER = "O";
     const CURRENCY_FMT = '$#,##0.00';
-    const TITLE_BG    = "FFD6E4F7"; // light blue
-    const HEADER_BG   = "FFE2E8F0"; // light gray
-    const ALT_ROW_BG  = "FFF0F4FA"; // very light blue-gray (alternating)
+    const TITLE_BG    = "FFC1C1DE"; // #313392 tint — title row
+    const HEADER_BG   = "FFD5D6E9"; // #313392 tint — column headers + section totals
+    const ALT_ROW_BG  = "FFEAEAF4"; // #313392 tint — alternating data rows
     const WHITE       = "FFFFFFFF";
 
     // ── Column widths ────────────────────────────────────────────────────────
