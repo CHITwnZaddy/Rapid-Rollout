@@ -26,14 +26,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/calculations/engine";
-import {
-  calculateMigrationTotals,
-  type MigrationConfig as EngineMigrationConfig,
-  type MigrationDetailLine,
-} from "@/lib/calculations/migration-engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
 import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
+import {
+  buildMigrationCostMap,
+  buildRateMap,
+  buildScenarioTotalByProposal,
+  buildScopedCostMap,
+} from "@/lib/reports/proposal-aggregates";
 
 type OwnerFilter = "all" | "mine";
 
@@ -134,114 +135,16 @@ export default function PortfolioValueReport() {
     const customerMap = new Map(
       (customerRes.data ?? []).map((c) => [c.id, c.company_name])
     );
-
-    const scenarioTotalByProposal = new Map<string, number>();
-    for (const s of scenarioRes.data ?? []) {
-      const multiplied = applyComplexity(
-        Number(s.summary_total_cost) || 0,
-        Number(s.complexity_factor ?? 1)
-      );
-      scenarioTotalByProposal.set(
-        s.proposal_id,
-        (scenarioTotalByProposal.get(s.proposal_id) ?? 0) + multiplied
-      );
-    }
-
-    const scopedRawByProposal = new Map<string, number>();
-    for (const s of scopedRes.data ?? []) {
-      scopedRawByProposal.set(
-        s.proposal_id,
-        (scopedRawByProposal.get(s.proposal_id) ?? 0) + (Number(s.cost) || 0)
-      );
-    }
-
-    const rateMap = new Map(
-      (ratesRes.data ?? []).map((r) => [r.lookup_key, Number(r.rate) || 0])
+    const scenarioTotalByProposal = buildScenarioTotalByProposal(
+      scenarioRes.data ?? []
     );
-    const baRate = rateMap.get("Master|Business Analyst") ?? 0;
-    const pmRate = rateMap.get("Master|Program Manager") ?? 0;
-    const travelRate = rateMap.get("Master|Travel Cost/Trip") ?? 0;
-
-    const migLinesMap = new Map<string, typeof migLinesRes.data>();
-    for (const l of migLinesRes.data ?? []) {
-      if (!migLinesMap.has(l.proposal_id)) migLinesMap.set(l.proposal_id, []);
-      migLinesMap.get(l.proposal_id)!.push(l);
-    }
-
-    const migrationTotalByProposal = new Map<string, number>();
-    for (const cfg of migrationRes.data ?? []) {
-      const allLines = migLinesMap.get(cfg.proposal_id) ?? [];
-      const numP = Number(cfg.num_projects) || 0;
-      const engineCfg: EngineMigrationConfig = {
-        num_projects: numP,
-        hrs_per_import: Number(cfg.hrs_per_import) || 0,
-        lines_per_import_file: Number(cfg.lines_per_import_file) || 0,
-        is_effort_included: cfg.is_effort_included,
-        is_workshop_included: cfg.is_workshop_included,
-        pm_contingency_pct: 0,
-        ba_complexity_factor: Number(cfg.ba_complexity_factor) || 0,
-        pm_complexity_factor: Number(cfg.pm_complexity_factor) || 0,
-        ba_trips: Number(cfg.ba_trips) || 0,
-        pm_trips: Number(cfg.pm_trips) || 0,
-        doc_avg_mb_per_project: Number(cfg.doc_avg_mb_per_project) || 0,
-        doc_mb_per_hour: Number(cfg.doc_mb_per_hour) || 0,
-        core_requirements_hrs: Number(cfg.core_requirements_hrs) || 0,
-        core_migration_plan_hrs: Number(cfg.core_migration_plan_hrs) || 0,
-        core_validation_hrs: Number(cfg.core_validation_hrs) || 0,
-        core_final_qa_hrs: Number(cfg.core_final_qa_hrs) || 0,
-        core_pm_oversight_hrs: Number(cfg.core_pm_oversight_hrs) || 0,
-      };
-      const toLine = (
-        l: {
-          section: string;
-          label: string;
-          quantity: number;
-          items_per_object: number;
-          total_line_items: number;
-          row_order: number;
-        },
-        qtyOverride?: number
-      ): MigrationDetailLine => ({
-        id: "",
-        section: l.section as "project" | "workflow" | "cost",
-        label: l.label,
-        quantity: qtyOverride ?? (Number(l.quantity) || 0),
-        items_per_object: Number(l.items_per_object) || 0,
-        total_line_items: Number(l.total_line_items) || 0,
-        row_order: l.row_order,
-      });
-      const projectLines = allLines
-        .filter((l) => l.section === "project")
-        .map((l) => toLine(l, numP));
-      const workflowLines = allLines
-        .filter(
-          (l) =>
-            l.section === "workflow" &&
-            l.label &&
-            l.label !== "WF Object Name" &&
-            l.label.trim() !== ""
-        )
-        .map((l) => toLine(l));
-      const costLines = allLines
-        .filter(
-          (l) =>
-            l.section === "cost" &&
-            l.label &&
-            l.label !== "TBD" &&
-            l.label.trim() !== ""
-        )
-        .map((l) => toLine(l));
-      const liveTotal = calculateMigrationTotals(
-        engineCfg,
-        projectLines,
-        workflowLines,
-        costLines,
-        baRate,
-        pmRate,
-        travelRate
-      ).salesPrice;
-      migrationTotalByProposal.set(cfg.proposal_id, liveTotal);
-    }
+    const scopedRawByProposal = buildScopedCostMap(scopedRes.data ?? []);
+    const rateMap = buildRateMap(ratesRes.data ?? []);
+    const migrationTotalByProposal = buildMigrationCostMap(
+      migrationRes.data ?? [],
+      migLinesRes.data ?? [],
+      rateMap
+    );
 
     const portfolio: PortfolioRow[] = filtered
       .map((p) => {

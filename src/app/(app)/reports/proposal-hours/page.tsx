@@ -25,12 +25,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  calculateMigrationTotals,
-  type MigrationConfig as EngineMigrationConfig,
-  type MigrationDetailLine,
-} from "@/lib/calculations/migration-engine";
 import type ExcelJS from "exceljs";
+import {
+  buildMigrationHoursMap,
+  buildRateMap,
+  buildScopedHoursMap,
+  BA_RATE_KEY,
+  PM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/reports/proposal-aggregates";
 
 type Customer = { id: string; company_name: string };
 type OwnerFilter = "all" | "mine";
@@ -58,14 +61,6 @@ const SCENARIO_FILTER = [
   "Scoped Services",
   "Migration Services",
 ];
-
-// Lookup keys in scoped_services rows that route hours to each role bucket.
-// Anything that doesn't match these is ignored (scoped services can use
-// arbitrary rate-card keys — Travel, custom, etc. — which don't fit the
-// Sr IM/PM/BA framing of this report).
-const SCOPED_KEY_SR_IM = "Master|Sr. Implementation Manager";
-const SCOPED_KEY_PM = "Master|Program Manager";
-const SCOPED_KEY_BA = "Master|Business Analyst";
 
 export default function ProposalHoursReport() {
   const supabase = createClient();
@@ -150,11 +145,7 @@ export default function ProposalHoursReport() {
       supabase
         .from("rate_cards")
         .select("lookup_key, rate")
-        .in("lookup_key", [
-          SCOPED_KEY_BA,
-          SCOPED_KEY_PM,
-          "Master|Travel Cost/Trip",
-        ]),
+        .in("lookup_key", [BA_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
     ]);
 
     const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
@@ -175,105 +166,16 @@ export default function ProposalHoursReport() {
 
     // Scoped Services — bucket hours by role via rate_card_lookup_key.
     // Anything that isn't Sr IM / PM / BA is dropped (e.g. Travel Cost).
-    const scopedByProposal = new Map<
-      string,
-      { sr: number; pm: number; ba: number }
-    >();
-    for (const s of scopedRes.data ?? []) {
-      const agg = scopedByProposal.get(s.proposal_id) ?? { sr: 0, pm: 0, ba: 0 };
-      const h = Number(s.hours) || 0;
-      if (s.rate_card_lookup_key === SCOPED_KEY_SR_IM) agg.sr += h;
-      else if (s.rate_card_lookup_key === SCOPED_KEY_PM) agg.pm += h;
-      else if (s.rate_card_lookup_key === SCOPED_KEY_BA) agg.ba += h;
-      scopedByProposal.set(s.proposal_id, agg);
-    }
+    const scopedByProposal = buildScopedHoursMap(scopedRes.data ?? []);
 
     // Migration — run the live engine; it returns totalBaHours + totalPmHours.
     // Sr IM isn't part of migration labor.
-    const rateMap = new Map(
-      (ratesRes.data ?? []).map((r) => [r.lookup_key, Number(r.rate) || 0])
+    const rateMap = buildRateMap(ratesRes.data ?? []);
+    const migrationByProposal = buildMigrationHoursMap(
+      migrationRes.data ?? [],
+      migLinesRes.data ?? [],
+      rateMap
     );
-    const baRate = rateMap.get(SCOPED_KEY_BA) ?? 0;
-    const pmRate = rateMap.get(SCOPED_KEY_PM) ?? 0;
-    const travelRate = rateMap.get("Master|Travel Cost/Trip") ?? 0;
-
-    const migLinesMap = new Map<string, typeof migLinesRes.data>();
-    for (const l of migLinesRes.data ?? []) {
-      if (!migLinesMap.has(l.proposal_id)) migLinesMap.set(l.proposal_id, []);
-      migLinesMap.get(l.proposal_id)!.push(l);
-    }
-    const migrationByProposal = new Map<string, { pm: number; ba: number }>();
-    for (const cfg of migrationRes.data ?? []) {
-      const allLines = migLinesMap.get(cfg.proposal_id) ?? [];
-      const numP = Number(cfg.num_projects) || 0;
-      const engineCfg: EngineMigrationConfig = {
-        num_projects: numP,
-        hrs_per_import: Number(cfg.hrs_per_import) || 0,
-        lines_per_import_file: Number(cfg.lines_per_import_file) || 0,
-        is_effort_included: cfg.is_effort_included,
-        is_workshop_included: cfg.is_workshop_included,
-        pm_contingency_pct: 0,
-        ba_complexity_factor: Number(cfg.ba_complexity_factor) || 0,
-        pm_complexity_factor: Number(cfg.pm_complexity_factor) || 0,
-        ba_trips: Number(cfg.ba_trips) || 0,
-        pm_trips: Number(cfg.pm_trips) || 0,
-        doc_avg_mb_per_project: Number(cfg.doc_avg_mb_per_project) || 0,
-        doc_mb_per_hour: Number(cfg.doc_mb_per_hour) || 0,
-        core_requirements_hrs: Number(cfg.core_requirements_hrs) || 0,
-        core_migration_plan_hrs: Number(cfg.core_migration_plan_hrs) || 0,
-        core_validation_hrs: Number(cfg.core_validation_hrs) || 0,
-        core_final_qa_hrs: Number(cfg.core_final_qa_hrs) || 0,
-        core_pm_oversight_hrs: Number(cfg.core_pm_oversight_hrs) || 0,
-      };
-      const toLine = (
-        l: {
-          section: string;
-          label: string;
-          quantity: number;
-          items_per_object: number;
-          total_line_items: number;
-          row_order: number;
-        },
-        qtyOverride?: number
-      ): MigrationDetailLine => ({
-        id: "",
-        section: l.section as "project" | "workflow" | "cost",
-        label: l.label,
-        quantity: qtyOverride ?? (Number(l.quantity) || 0),
-        items_per_object: Number(l.items_per_object) || 0,
-        total_line_items: Number(l.total_line_items) || 0,
-        row_order: l.row_order,
-      });
-      const totals = calculateMigrationTotals(
-        engineCfg,
-        allLines.filter((l) => l.section === "project").map((l) => toLine(l, numP)),
-        allLines
-          .filter(
-            (l) =>
-              l.section === "workflow" &&
-              l.label &&
-              l.label !== "WF Object Name" &&
-              l.label.trim() !== ""
-          )
-          .map((l) => toLine(l)),
-        allLines
-          .filter(
-            (l) =>
-              l.section === "cost" &&
-              l.label &&
-              l.label !== "TBD" &&
-              l.label.trim() !== ""
-          )
-          .map((l) => toLine(l)),
-        baRate,
-        pmRate,
-        travelRate
-      );
-      migrationByProposal.set(cfg.proposal_id, {
-        pm: totals.totalPmHours,
-        ba: totals.totalBaHours,
-      });
-    }
 
     // Build one row per scenario + synthetic "Scoped" + "Migration" rows.
     const out: HoursRow[] = [];
