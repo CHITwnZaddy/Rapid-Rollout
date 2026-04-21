@@ -3,7 +3,11 @@
 export const revalidate = 300;
 
 import { createClient } from "@/lib/supabase/server";
-import { AdminDataTable, type ColumnDef } from "@/components/admin/data-table";
+import {
+  AdminDataTable,
+  type AdminRow,
+  type ColumnDef,
+} from "@/components/admin/data-table";
 
 const columns: ColumnDef[] = [
   { key: "rate_card_name", label: "Rate Card", type: "text" },
@@ -27,7 +31,7 @@ export default async function RateCardsPage() {
       <AdminDataTable
         tableName="rate_cards"
         columns={columns}
-        initialData={(data as Record<string, unknown>[]) ?? []}
+        initialData={(data as AdminRow[]) ?? []}
         createDefaults={{
           rate_card_name: "Master",
           activity: "New Role",
