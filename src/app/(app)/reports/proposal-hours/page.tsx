@@ -369,10 +369,10 @@ export default function ProposalHoursReport() {
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Proposal Hours");
-    const TITLE_BG = "FFD6E4F7";
-    const HEADER_BG = "FFE2E8F0";
+    const TITLE_BG = "FFC1C1DE";
+    const HEADER_BG = "FFD5D6E9";
     const WHITE = "FFFFFFFF";
-    const ALT_ROW_BG = "FFF0F4FA";
+    const ALT_ROW_BG = "FFEAEAF4";
     const NUM_FMT = "#,##0.00";
 
     sheet.columns = [

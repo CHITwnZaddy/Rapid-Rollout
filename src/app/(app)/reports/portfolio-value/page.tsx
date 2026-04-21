@@ -301,11 +301,11 @@ export default function PortfolioValueReport() {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Portfolio Value");
 
-    const TITLE_BG = "FFD6E4F7";
-    const HEADER_BG = "FFE2E8F0";
-    const GROUP_BG = "FFEAF1FB";
+    const TITLE_BG = "FFC1C1DE";
+    const HEADER_BG = "FFD5D6E9";
+    const GROUP_BG = "FFD5D6E9";
     const WHITE = "FFFFFFFF";
-    const ALT_ROW_BG = "FFF0F4FA";
+    const ALT_ROW_BG = "FFEAEAF4";
     const CURRENCY_FMT = "$#,##0.00";
 
     sheet.columns = [

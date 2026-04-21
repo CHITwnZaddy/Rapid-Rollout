@@ -157,12 +157,12 @@ export default function StaleProposalsReport() {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Stale Proposals");
 
-    const TITLE_BG = "FFD6E4F7";
-    const HEADER_BG = "FFE2E8F0";
+    const TITLE_BG = "FFC1C1DE";
+    const HEADER_BG = "FFD5D6E9";
     const RED_BG = "FFFBD5D5";
     const GREEN_BG = "FFD5F5E3";
     const WHITE = "FFFFFFFF";
-    const ALT_ROW_BG = "FFF0F4FA";
+    const ALT_ROW_BG = "FFEAEAF4";
 
     sheet.columns = [
       { width: 32 }, // A Proposal
