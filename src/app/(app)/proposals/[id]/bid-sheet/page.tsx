@@ -40,6 +40,7 @@ import {
   discountPercentSchema,
   discountDollarsSchema,
 } from "@/lib/validation/bid-sheet";
+import { calculateBidSheetPricing } from "@/lib/calculations/bid-sheet-pricing";
 import {
   safeParseSupabaseResult,
 } from "@/lib/validation/parse-supabase";
@@ -355,10 +356,13 @@ export default function BidSheetPage() {
     0
   );
 
-  const afterDollar = Math.max(0, scenarioSubtotal - discountDollars);
-  const discountedScenarioTotal = afterDollar * (1 - discountPercent / 100);
   const proposalSubtotal = scenarioSubtotal + migrationTotal + scopedTotal;
-  const finalTotal = discountedScenarioTotal + migrationTotal + scopedTotal;
+  const pricing = calculateBidSheetPricing(
+    proposalSubtotal,
+    discountDollars,
+    discountPercent
+  );
+  const finalTotal = pricing.finalTotal;
 
   const blendedRate = totalHours > 0 ? finalTotal / totalHours : 0;
   const blendedRateMeetsTarget = blendedRate >= 225;
@@ -482,7 +486,7 @@ export default function BidSheetPage() {
                 className="w-32"
                 type="number"
                 min={0}
-                step={1}
+                step={0.01}
                 value={discountDollars}
                 onChange={(e) =>
                   handleDiscountDollarsChange(parseFloat(e.target.value) || 0)
@@ -499,7 +503,7 @@ export default function BidSheetPage() {
                 type="number"
                 min={0}
                 max={100}
-                step={1}
+                step={0.01}
                 value={discountPercent}
                 onChange={(e) =>
                   handleDiscountPercentChange(parseFloat(e.target.value) || 0)
