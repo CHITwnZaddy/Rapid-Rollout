@@ -657,6 +657,13 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      create_proposal_bundle: {
+        Args: {
+          p_name: string;
+          p_customer_id?: string | null;
+        };
+        Returns: string;
+      };
       transition_proposal_status: {
         Args: {
           p_proposal_id: string;
