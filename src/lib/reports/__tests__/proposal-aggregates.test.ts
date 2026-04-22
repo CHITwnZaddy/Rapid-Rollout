@@ -12,10 +12,13 @@ import {
   SCOPED_KEY_BA,
   SCOPED_KEY_PM,
   SCOPED_KEY_SR_IM,
-  TRAVEL_RATE_KEY,
   type MigrationConfigRow,
   type MigrationLineRow,
 } from "../proposal-aggregates";
+import {
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 describe("proposal aggregates", () => {
   it("builds per-proposal scenario maps and totals", () => {
@@ -123,6 +126,7 @@ describe("proposal aggregates", () => {
     ];
     const rates = buildRateMap([
       { lookup_key: BA_RATE_KEY, rate: 200 },
+      { lookup_key: SR_IM_RATE_KEY, rate: 275 },
       { lookup_key: PM_RATE_KEY, rate: 250 },
       { lookup_key: TRAVEL_RATE_KEY, rate: 1000 },
     ]);
@@ -130,8 +134,10 @@ describe("proposal aggregates", () => {
     const costMap = buildMigrationCostMap(configs, lines, rates);
     const hoursMap = buildMigrationHoursMap(configs, lines, rates);
 
-    expect(costMap.get("p1")).toBeGreaterThan(0);
-    expect(hoursMap.get("p1")?.pm).toBeGreaterThan(0);
-    expect(hoursMap.get("p1")?.ba).toBeGreaterThan(0);
+    expect(costMap.get("p1")).toBe(25600);
+    expect(hoursMap.get("p1")).toEqual({
+      pm: 10,
+      srIm: 84,
+    });
   });
 });

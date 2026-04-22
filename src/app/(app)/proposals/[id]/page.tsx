@@ -32,6 +32,12 @@ import {
 } from "@/lib/calculations/bid-sheet-pricing";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import { getMarginBadgeClass } from "@/lib/ui/helpers";
+import {
+  BURDEN_RATE_KEY,
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 function calcMarginPercent(
   discountedCost: number,
@@ -91,15 +97,15 @@ export default async function ProposalSummaryPage({
         .from("rate_cards")
         .select("lookup_key, rate")
         .in("lookup_key", [
-          "Master|Burden Rate",
-          "Master|Business Analyst",
-          "Master|Program Manager",
-          "Master|Travel Cost/Trip",
+          BURDEN_RATE_KEY,
+          SR_IM_RATE_KEY,
+          PM_RATE_KEY,
+          TRAVEL_RATE_KEY,
         ]),
     ]);
 
   const rateRows = ratesRes.data ?? [];
-  const burdenRateRow = rateRows.find((r) => r.lookup_key === "Master|Burden Rate");
+  const burdenRateRow = rateRows.find((r) => r.lookup_key === BURDEN_RATE_KEY);
 
   // Fail closed: margins are pricing-critical. If we can't read the
   // burden rate, refuse to render margins rather than silently use a
@@ -112,14 +118,14 @@ export default async function ProposalSummaryPage({
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            The burden rate (<code>Master|Burden Rate</code>) could not be read
+            The burden rate (<code>{BURDEN_RATE_KEY}</code>) could not be read
             from <code>rate_cards</code>. Margin calculations depend on this
             value, so the proposal summary has been blocked to prevent
             incorrect pricing being shown.
           </p>
           <p>
             Refresh the page to retry. If the problem persists, an admin should
-            verify the <code>Master|Burden Rate</code> row exists in the rate
+            verify the <code>{BURDEN_RATE_KEY}</code> row exists in the rate
             card table.
           </p>
         </CardContent>
@@ -128,10 +134,10 @@ export default async function ProposalSummaryPage({
   }
   const burdenRate = Number(burdenRateRow.rate);
 
-  const baRateRow = rateRows.find((r) => r.lookup_key === "Master|Business Analyst");
-  const pmRateRow = rateRows.find((r) => r.lookup_key === "Master|Program Manager");
-  const travelRateRow = rateRows.find((r) => r.lookup_key === "Master|Travel Cost/Trip");
-  const baRate = baRateRow ? Number(baRateRow.rate) : null;
+  const srImRateRow = rateRows.find((r) => r.lookup_key === SR_IM_RATE_KEY);
+  const pmRateRow = rateRows.find((r) => r.lookup_key === PM_RATE_KEY);
+  const travelRateRow = rateRows.find((r) => r.lookup_key === TRAVEL_RATE_KEY);
+  const srImRate = srImRateRow ? Number(srImRateRow.rate) : null;
   const pmRate = pmRateRow ? Number(pmRateRow.rate) : null;
   const travelRate = travelRateRow ? Number(travelRateRow.rate) : null;
 
@@ -158,7 +164,7 @@ export default async function ProposalSummaryPage({
     // Fail closed on missing BA/PM/Travel rates. Previously the page
     // silently rendered migrationTotal = 0, which is how the Sr. IM
     // bug class (missing lookup_key → $0 cost) stayed invisible.
-    if (baRate === null || pmRate === null || travelRate === null) {
+    if (srImRate === null || pmRate === null || travelRate === null) {
       return (
         <Card>
           <CardHeader>
@@ -167,9 +173,8 @@ export default async function ProposalSummaryPage({
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>
               One or more required rate card rows are missing:
-              <code>Master|Business Analyst</code>,{" "}
-              <code>Master|Program Manager</code>, or{" "}
-              <code>Master|Travel Cost/Trip</code>. The migration total
+              <code>{SR_IM_RATE_KEY}</code>, <code>{PM_RATE_KEY}</code>, or{" "}
+              <code>{TRAVEL_RATE_KEY}</code>. The migration total
               depends on these, so the proposal summary has been blocked
               to prevent incorrect pricing being shown.
             </p>
@@ -214,7 +219,7 @@ export default async function ProposalSummaryPage({
       projectLines,
       workflowLines,
       costLines,
-      baRate,
+      srImRate,
       pmRate,
       travelRate
     ).salesPrice;

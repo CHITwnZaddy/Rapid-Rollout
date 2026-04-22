@@ -18,7 +18,7 @@ export default function MigrationPage() {
 
   const {
     config,
-    baRate,
+    srImRate,
     pmRate,
     rateError,
     loading,
@@ -112,7 +112,7 @@ export default function MigrationPage() {
       <MigrationTotalsSummary
         config={config}
         totals={totals}
-        baRate={baRate}
+        srImRate={srImRate}
         pmRate={pmRate}
         onUpdate={updateConfig}
       />

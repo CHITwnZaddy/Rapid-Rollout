@@ -25,15 +25,11 @@ export default function ScenarioBreakoutReport() {
     setSelectedProposal,
     scenarioGroups,
     scopedLines,
-    migrationConfig,
-    migrationLines,
-    baRate,
-    pmRate,
+    migrationBreakdownRows,
     rateError,
     loading,
     hasRun,
     ratesReady,
-    migrationLiveTotal,
     runReport,
     exportXLSX,
     retryRates,
@@ -117,11 +113,7 @@ export default function ScenarioBreakoutReport() {
         <ScenarioBreakoutResults
           scenarioGroups={scenarioGroups}
           scopedLines={scopedLines}
-          migrationConfig={migrationConfig}
-          migrationLines={migrationLines}
-          baRate={baRate}
-          pmRate={pmRate}
-          migrationLiveTotal={migrationLiveTotal}
+          migrationRows={migrationBreakdownRows}
         />
       )}
     </div>

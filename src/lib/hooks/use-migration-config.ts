@@ -12,6 +12,11 @@ import { NUM } from "@/lib/calculations/num";
 import { toEngineLine } from "@/lib/calculations/adapters";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 import { createMigrationPersistenceController } from "./migration-persistence";
+import {
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 export type DbConfig = {
   id: string;
@@ -50,7 +55,7 @@ export type DbLine = {
 export type UseMigrationConfigReturn = {
   config: DbConfig | null;
   lines: DbLine[];
-  baRate: number | null;
+  srImRate: number | null;
   pmRate: number | null;
   travelRate: number | null;
   rateError: string | null;
@@ -70,11 +75,11 @@ export type UseMigrationConfigReturn = {
 function computeTotalsFromState(
   cfg: DbConfig | null,
   allLines: DbLine[],
-  baRate: number | null,
+  srImRate: number | null,
   pmRate: number | null,
   travelRate: number | null
 ): MigrationTotals | null {
-  if (!cfg || baRate == null || pmRate == null || travelRate == null) {
+  if (!cfg || srImRate == null || pmRate == null || travelRate == null) {
     return null;
   }
 
@@ -113,7 +118,7 @@ function computeTotalsFromState(
     projectLines,
     workflowLines,
     costLines,
-    baRate,
+    srImRate,
     pmRate,
     travelRate
   );
@@ -124,7 +129,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
 
   const [config, setConfig] = useState<DbConfig | null>(null);
   const [lines, setLines] = useState<DbLine[]>([]);
-  const [baRate, setBaRate] = useState<number | null>(null);
+  const [srImRate, setSrImRate] = useState<number | null>(null);
   const [pmRate, setPmRate] = useState<number | null>(null);
   const [travelRate, setTravelRate] = useState<number | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
@@ -134,7 +139,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   // Refs for closure-safe access to latest values in callbacks/cleanup
   const configRef = useRef(config);
   const linesRef = useRef(lines);
-  const baRateRef = useRef(baRate);
+  const srImRateRef = useRef(srImRate);
   const pmRateRef = useRef(pmRate);
   const travelRateRef = useRef(travelRate);
   const persistenceControllerRef =
@@ -151,8 +156,8 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   }, [lines]);
 
   useEffect(() => {
-    baRateRef.current = baRate;
-  }, [baRate]);
+    srImRateRef.current = srImRate;
+  }, [srImRate]);
 
   useEffect(() => {
     pmRateRef.current = pmRate;
@@ -172,7 +177,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         const totals = computeTotalsFromState(
           updated,
           currentLines,
-          baRateRef.current,
+          srImRateRef.current,
           pmRateRef.current,
           travelRateRef.current
         );
@@ -218,7 +223,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         const totals = computeTotalsFromState(
           updated,
           currentLines,
-          baRateRef.current,
+          srImRateRef.current,
           pmRateRef.current,
           travelRateRef.current
         );
@@ -250,19 +255,19 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       setRateError(null);
 
       const ratesResult = await fetchRequiredRates(supabase, [
-        "Master|Business Analyst",
-        "Master|Program Manager",
-        "Master|Travel Cost/Trip",
+        SR_IM_RATE_KEY,
+        PM_RATE_KEY,
+        TRAVEL_RATE_KEY,
       ]);
       if (!ratesResult.ok) {
         setRateError(ratesResult.error);
         setLoading(false);
         return;
       }
-      const ba = ratesResult.rates.get("Master|Business Analyst")!;
-      const pm = ratesResult.rates.get("Master|Program Manager")!;
-      const travel = ratesResult.rates.get("Master|Travel Cost/Trip")!;
-      setBaRate(ba);
+      const srIm = ratesResult.rates.get(SR_IM_RATE_KEY)!;
+      const pm = ratesResult.rates.get(PM_RATE_KEY)!;
+      const travel = ratesResult.rates.get(TRAVEL_RATE_KEY)!;
+      setSrImRate(srIm);
       setPmRate(pm);
       setTravelRate(travel);
 
@@ -399,7 +404,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const totals = computeTotalsFromState(
     config,
     lines,
-    baRate,
+    srImRate,
     pmRate,
     travelRate
   );
@@ -411,7 +416,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   return {
     config,
     lines,
-    baRate,
+    srImRate,
     pmRate,
     travelRate,
     rateError,

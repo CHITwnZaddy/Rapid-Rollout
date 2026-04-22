@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  BA_RATE_KEY,
   buildMigrationCostMap,
   buildRateMap,
   buildScenarioTotalByProposal,
   buildScopedCostMap,
-  PM_RATE_KEY,
-  TRAVEL_RATE_KEY,
   type MigrationConfigRow,
   type MigrationLineRow,
 } from "../proposal-aggregates";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
+import {
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 describe("revenue report consistency", () => {
   it("reconciles shared report aggregates with proposal pricing totals for the same fixture", () => {
@@ -87,7 +89,7 @@ describe("revenue report consistency", () => {
       },
     ];
     const rates = buildRateMap([
-      { lookup_key: BA_RATE_KEY, rate: 200 },
+      { lookup_key: SR_IM_RATE_KEY, rate: 275 },
       { lookup_key: PM_RATE_KEY, rate: 250 },
       { lookup_key: TRAVEL_RATE_KEY, rate: 1000 },
     ]);

@@ -7,7 +7,7 @@
  * - Workshop hours
  * - Document migration hours
  * - Travel hours
- * - Complexity factors (BA / PM)
+ * - Complexity factors (legacy BA field = Sr. IM / PM)
  * - Rate card lookups for final cost
  */
 
@@ -129,7 +129,8 @@ export function calculateDocumentHours(config: MigrationConfig): number {
 // ─── Full migration totals ──────────────────────────────────────────
 
 export interface MigrationTotals {
-  // Raw section hours (before complexity factor)
+  // Raw section hours (before complexity factor). The `*Ba*` fields are
+  // legacy names that now represent Sr. IM-side migration labor.
   workshopBaRaw: number;
   workshopPmRaw: number;
   coreBaRaw: number;
@@ -170,7 +171,8 @@ export interface MigrationTotals {
 /**
  * Calculate the full migration totals, mirroring the Excel left-panel formulas.
  *
- * BA Hours per section (all × ba_complexity_factor):
+ * Sr. IM hours per section (all × ba_complexity_factor, kept under
+ * legacy `ba_*` config names to avoid a schema migration):
  *   Workshop:  132 if workshop=Yes, else 0
  *   Core:      Requirements + Migration Plan + Validation + Final QA (if effort=Yes)
  *   Project:   Sum of project detail line hours
@@ -179,7 +181,7 @@ export interface MigrationTotals {
  *   Document:  (avg_mb / mb_hr) × num_projects
  *   Travel:    ba_trips × 40
  *
- * PM Hours per section (all × pm_complexity_factor):
+ * PM II Hours per section (all × pm_complexity_factor):
  *   Workshop:  8 if workshop=Yes, else 0
  *   Core:      PM Oversight hours (if effort=Yes)
  *   Travel:    pm_trips × 40

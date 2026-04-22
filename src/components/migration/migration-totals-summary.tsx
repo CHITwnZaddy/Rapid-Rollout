@@ -23,7 +23,7 @@ import { type MigrationTotals } from "@/lib/calculations/migration-engine";
 interface MigrationTotalsSummaryProps {
   config: DbConfig | null;
   totals: MigrationTotals | null;
-  baRate: number | null;
+  srImRate: number | null;
   pmRate: number | null;
   onUpdate: (field: keyof DbConfig, value: number | boolean | string) => void;
 }
@@ -31,7 +31,7 @@ interface MigrationTotalsSummaryProps {
 export function MigrationTotalsSummary({
   config,
   totals,
-  baRate,
+  srImRate,
   pmRate,
   onUpdate,
 }: MigrationTotalsSummaryProps) {
@@ -47,7 +47,7 @@ export function MigrationTotalsSummary({
             <TableHeader>
               <TableRow>
                 <TableHead>Section</TableHead>
-                <TableHead className="text-right">BA Hours</TableHead>
+                <TableHead className="text-right">Sr. IM Hours</TableHead>
                 <TableHead className="text-right">PM II Hours</TableHead>
               </TableRow>
             </TableHeader>
@@ -138,7 +138,7 @@ export function MigrationTotalsSummary({
             <h4 className="mb-2 text-sm font-medium">Travel</h4>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">BA Trips</Label>
+                <Label className="text-xs">Sr. IM Trips</Label>
                 <Input
                   type="number"
                   min={0}
@@ -172,7 +172,7 @@ export function MigrationTotalsSummary({
             </h4>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">BA Factor</Label>
+                <Label className="text-xs">Sr. IM Factor</Label>
                 <Input
                   type="number"
                   min={0}
@@ -213,8 +213,8 @@ export function MigrationTotalsSummary({
           <div className="space-y-1 text-sm">
             <div className="flex justify-between">
               <span>
-                BA Cost: {(totals?.totalBaHours ?? 0).toFixed(1)} hrs &times;{" "}
-                {formatCurrency(baRate ?? 0)}/hr
+                Sr. IM Cost: {(totals?.totalBaHours ?? 0).toFixed(1)} hrs
+                &times; {formatCurrency(srImRate ?? 0)}/hr
               </span>
               <span className="font-medium tabular-nums">
                 {formatCurrency(totals?.baCost ?? 0)}
@@ -222,7 +222,7 @@ export function MigrationTotalsSummary({
             </div>
             <div className="flex justify-between">
               <span>
-                PM Cost: {(totals?.totalPmHours ?? 0).toFixed(1)} hrs &times;{" "}
+                PM II Cost: {(totals?.totalPmHours ?? 0).toFixed(1)} hrs &times;{" "}
                 {formatCurrency(pmRate ?? 0)}/hr
               </span>
               <span className="font-medium tabular-nums">

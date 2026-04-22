@@ -6,13 +6,25 @@ import {
   type MigrationConfig as EngineMigrationConfig,
 } from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
+import {
+  BA_RATE_KEY,
+  PM_RATE_KEY,
+  SCOPED_KEY_BA,
+  SCOPED_KEY_PM,
+  SCOPED_KEY_SR_IM,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
-export const BA_RATE_KEY = "Master|Business Analyst";
-export const PM_RATE_KEY = "Master|Program Manager";
-export const TRAVEL_RATE_KEY = "Master|Travel Cost/Trip";
-export const SCOPED_KEY_SR_IM = "Master|Sr. Implementation Manager";
-export const SCOPED_KEY_PM = PM_RATE_KEY;
-export const SCOPED_KEY_BA = BA_RATE_KEY;
+export {
+  BA_RATE_KEY,
+  PM_RATE_KEY,
+  SCOPED_KEY_BA,
+  SCOPED_KEY_PM,
+  SCOPED_KEY_SR_IM,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+};
 
 export type ScenarioCostRow = {
   proposal_id: string;
@@ -77,7 +89,7 @@ type ScopedHours = {
 
 type MigrationHours = {
   pm: number;
-  ba: number;
+  srIm: number;
 };
 
 function toEngineConfig(config: MigrationConfigRow): EngineMigrationConfig {
@@ -232,7 +244,7 @@ export function buildMigrationCostMap(
 ): Map<string, number> {
   const groupedLines = groupMigrationLinesByProposal(lines);
   const costMap = new Map<string, number>();
-  const baRate = rates.get(BA_RATE_KEY) ?? 0;
+  const srImRate = rates.get(SR_IM_RATE_KEY) ?? 0;
   const pmRate = rates.get(PM_RATE_KEY) ?? 0;
   const travelRate = rates.get(TRAVEL_RATE_KEY) ?? 0;
 
@@ -249,7 +261,7 @@ export function buildMigrationCostMap(
         projectLines,
         workflowLines,
         costLines,
-        baRate,
+        srImRate,
         pmRate,
         travelRate
       ).salesPrice
@@ -266,7 +278,7 @@ export function buildMigrationHoursMap(
 ): Map<string, MigrationHours> {
   const groupedLines = groupMigrationLinesByProposal(lines);
   const hoursMap = new Map<string, MigrationHours>();
-  const baRate = rates.get(BA_RATE_KEY) ?? 0;
+  const srImRate = rates.get(SR_IM_RATE_KEY) ?? 0;
   const pmRate = rates.get(PM_RATE_KEY) ?? 0;
   const travelRate = rates.get(TRAVEL_RATE_KEY) ?? 0;
 
@@ -281,14 +293,14 @@ export function buildMigrationHoursMap(
       projectLines,
       workflowLines,
       costLines,
-      baRate,
+      srImRate,
       pmRate,
       travelRate
     );
 
     hoursMap.set(config.proposal_id, {
       pm: totals.totalPmHours,
-      ba: totals.totalBaHours,
+      srIm: totals.totalBaHours,
     });
   }
 

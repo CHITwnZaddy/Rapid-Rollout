@@ -30,10 +30,12 @@ import {
   buildMigrationHoursMap,
   buildRateMap,
   buildScopedHoursMap,
-  BA_RATE_KEY,
-  PM_RATE_KEY,
-  TRAVEL_RATE_KEY,
 } from "@/lib/reports/proposal-aggregates";
+import {
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 type Customer = { id: string; company_name: string };
 type OwnerFilter = "all" | "mine";
@@ -145,7 +147,7 @@ export default function ProposalHoursReport() {
       supabase
         .from("rate_cards")
         .select("lookup_key, rate")
-        .in("lookup_key", [BA_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
+        .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
     ]);
 
     const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
@@ -168,8 +170,8 @@ export default function ProposalHoursReport() {
     // Anything that isn't Sr IM / PM / BA is dropped (e.g. Travel Cost).
     const scopedByProposal = buildScopedHoursMap(scopedRes.data ?? []);
 
-    // Migration — run the live engine; it returns totalBaHours + totalPmHours.
-    // Sr IM isn't part of migration labor.
+    // Migration — run the live engine; migration hours roll into the
+    // Sr. IM bucket plus PM II oversight. BA should stay at 0.
     const rateMap = buildRateMap(ratesRes.data ?? []);
     const migrationByProposal = buildMigrationHoursMap(
       migrationRes.data ?? [],
@@ -235,16 +237,16 @@ export default function ProposalHoursReport() {
         });
       }
       const mig = migrationByProposal.get(p.id);
-      if (mig && (mig.pm || mig.ba)) {
+      if (mig && (mig.pm || mig.srIm)) {
         out.push({
           proposalId: p.id,
           proposalName: p.name,
           customerName: cname,
           scenario: "Migration Services",
-          srImHours: 0,
+          srImHours: mig.srIm,
           pmHours: mig.pm,
-          baHours: mig.ba,
-          totalHours: mig.pm + mig.ba,
+          baHours: 0,
+          totalHours: mig.pm + mig.srIm,
         });
       }
     }
