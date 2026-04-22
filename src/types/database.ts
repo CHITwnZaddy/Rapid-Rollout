@@ -459,8 +459,10 @@ export interface Database {
           is_workshop_included: boolean;
           pm_contingency_pct: number;
           ba_complexity_factor: number;
+          sr_im_complexity_factor: number;
           pm_complexity_factor: number;
           ba_trips: number;
+          sr_im_trips: number;
           pm_trips: number;
           doc_avg_mb_per_project: number;
           doc_mb_per_hour: number;
@@ -483,8 +485,10 @@ export interface Database {
           is_workshop_included?: boolean;
           pm_contingency_pct?: number;
           ba_complexity_factor?: number;
+          sr_im_complexity_factor?: number;
           pm_complexity_factor?: number;
           ba_trips?: number;
+          sr_im_trips?: number;
           pm_trips?: number;
           doc_avg_mb_per_project?: number;
           doc_mb_per_hour?: number;
@@ -507,8 +511,10 @@ export interface Database {
           is_workshop_included?: boolean;
           pm_contingency_pct?: number;
           ba_complexity_factor?: number;
+          sr_im_complexity_factor?: number;
           pm_complexity_factor?: number;
           ba_trips?: number;
+          sr_im_trips?: number;
           pm_trips?: number;
           doc_avg_mb_per_project?: number;
           doc_mb_per_hour?: number;
