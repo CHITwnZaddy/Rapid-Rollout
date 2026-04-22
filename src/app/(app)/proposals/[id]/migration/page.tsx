@@ -21,6 +21,8 @@ export default function MigrationPage() {
     srImRate,
     pmRate,
     rateError,
+    saveError,
+    saveStatus,
     loading,
     totals,
     numProjects,
@@ -31,6 +33,8 @@ export default function MigrationPage() {
     updateLine,
     addLine,
     removeLine,
+    retryPendingSaves,
+    clearSaveError,
     retry,
   } = useMigrationConfig(proposalId);
 
@@ -63,6 +67,36 @@ export default function MigrationPage() {
 
   return (
     <div className="space-y-6">
+      {(saveStatus !== "idle" || saveError) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Migration Save Status</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-muted-foreground">
+            {saveStatus === "saving" && (
+              <p>Saving migration changes...</p>
+            )}
+            {saveStatus === "saved" && !saveError && (
+              <p>All migration changes are saved.</p>
+            )}
+            {saveError && (
+              <>
+                <p className="text-destructive">
+                  {saveError}
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => void retryPendingSaves()}>
+                    Retry Save
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={clearSaveError}>
+                    Dismiss
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
       <MigrationConfigForm config={config} totals={totals} onUpdate={updateConfig} />
       <MigrationDetailSection
         title="Project & Schedule Data Migration"
