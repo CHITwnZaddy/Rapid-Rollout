@@ -29,8 +29,8 @@ import {
 import { applyComplexity } from "@/lib/calculations/complexity";
 import {
   allocateAdjustedTotal,
-  calculateBidSheetPricing,
 } from "@/lib/calculations/bid-sheet-pricing";
+import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import { getMarginBadgeClass } from "@/lib/ui/helpers";
 
 function calcMarginPercent(
@@ -228,22 +228,17 @@ export default async function ProposalSummaryPage({
     .map((type) => scenarios.find((s) => s.scenario_type === type))
     .filter(Boolean);
 
-  const scenarioSubtotal = scenarioRows.reduce(
-    (sum, s) =>
-      sum +
-      applyComplexity(
-        Number(s!.summary_total_cost),
-        Number(s!.complexity_factor ?? 1)
-      ),
-    0
-  );
-
-  const proposalSubtotal = scenarioSubtotal + migrationTotal + scopedTotal;
-  const pricing = calculateBidSheetPricing(
-    proposalSubtotal,
-    discountDollars,
-    discountPercent
-  );
+  const { proposalSubtotal, pricing } = calculateProposalPricingSummary({
+    scenarios: scenarioRows.map((scenario) => ({
+      summary_total_cost: scenario!.summary_total_cost,
+      summary_total_hours: scenario!.summary_total_hours,
+      complexity_factor: scenario!.complexity_factor,
+    })),
+    migrationTotal,
+    scopedTotal,
+    credit: discountDollars,
+    discountPercent,
+  });
 
   const allocated = scenarioRows.map((s) => {
     const cf = Number(s!.complexity_factor ?? 1);

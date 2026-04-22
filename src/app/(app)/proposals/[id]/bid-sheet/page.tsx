@@ -40,7 +40,7 @@ import {
   discountPercentSchema,
   discountDollarsSchema,
 } from "@/lib/validation/bid-sheet";
-import { calculateBidSheetPricing } from "@/lib/calculations/bid-sheet-pricing";
+import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import {
   safeParseSupabaseResult,
 } from "@/lib/validation/parse-supabase";
@@ -337,31 +337,17 @@ export default function BidSheetPage() {
   const discountPercent = bidSheet?.discount_percent ?? 0;
   const discountDollars = bidSheet?.discount_dollars ?? 0;
 
-  const scenarioSubtotal = scenarios.reduce(
-    (sum, sc) =>
-      sum +
-      applyComplexity(
-        Number(sc.summary_total_cost),
-        Number(sc.complexity_factor ?? 1)
-      ),
-    0
-  );
-  const totalHours = scenarios.reduce(
-    (sum, sc) =>
-      sum +
-      applyComplexity(
-        Number(sc.summary_total_hours),
-        Number(sc.complexity_factor ?? 1)
-      ),
-    0
-  );
-
-  const proposalSubtotal = scenarioSubtotal + migrationTotal + scopedTotal;
-  const pricing = calculateBidSheetPricing(
+  const {
+    totalHours,
     proposalSubtotal,
-    discountDollars,
-    discountPercent
-  );
+    pricing,
+  } = calculateProposalPricingSummary({
+    scenarios,
+    migrationTotal,
+    scopedTotal,
+    credit: discountDollars,
+    discountPercent,
+  });
   const finalTotal = pricing.finalTotal;
 
   const blendedRate = totalHours > 0 ? finalTotal / totalHours : 0;
