@@ -2,9 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   calculateMigrationTotals,
-  DEFAULT_PROJECT_LINES,
-  DEFAULT_WORKFLOW_LINES,
-  DEFAULT_COST_LINES,
   type MigrationConfig,
   type MigrationTotals,
 } from "@/lib/calculations/migration-engine";
@@ -59,6 +56,7 @@ export type UseMigrationConfigReturn = {
   pmRate: number | null;
   travelRate: number | null;
   rateError: string | null;
+  loadError: string | null;
   saveError: string | null;
   saveStatus: "idle" | "saving" | "saved" | "error";
   loading: boolean;
@@ -137,6 +135,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const [pmRate, setPmRate] = useState<number | null>(null);
   const [travelRate, setTravelRate] = useState<number | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loading, setLoading] = useState(true);
@@ -279,6 +278,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     const load = async () => {
       setLoading(true);
       setRateError(null);
+      setLoadError(null);
       setSaveError(null);
       setSaveStatus("idle");
 
@@ -299,31 +299,23 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       setPmRate(pm);
       setTravelRate(travel);
 
-      let { data: cfg } = await supabase
+      const { data: cfg } = await supabase
         .from("migration_config")
         .select("*")
         .eq("proposal_id", proposalId)
         .single();
 
       if (!cfg) {
-        const { data: newCfg, error: createConfigError } = await supabase
-          .from("migration_config")
-          .insert({ proposal_id: proposalId, doc_avg_mb_per_project: 0 })
-          .select()
-          .single();
-        if (createConfigError || !newCfg) {
-          setRateError(
-            `Unable to initialize migration configuration. ${createConfigError?.message ?? "No row was returned."}`
-          );
-          setLoading(false);
-          return;
-        }
-        cfg = newCfg;
+        setLoadError(
+          "This proposal is missing its migration configuration row. New proposals should no longer enter this state, so this likely indicates legacy bad data."
+        );
+        setLoading(false);
+        return;
       }
 
       if (cfg) setConfig(cfg as DbConfig);
 
-      let { data: existingLines } = await supabase
+      const { data: existingLines } = await supabase
         .from("migration_detail_lines")
         .select("*")
         .eq("proposal_id", proposalId)
@@ -331,25 +323,11 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         .order("row_order");
 
       if (!existingLines || existingLines.length === 0) {
-        const allDefaults = [
-          ...DEFAULT_PROJECT_LINES,
-          ...DEFAULT_WORKFLOW_LINES,
-          ...DEFAULT_COST_LINES,
-        ].map((l) => ({ ...l, proposal_id: proposalId }));
-
-        const { data: newLines, error: createLinesError } = await supabase
-          .from("migration_detail_lines")
-          .insert(allDefaults)
-          .select();
-        if (createLinesError || !newLines) {
-          setRateError(
-            `Unable to initialize migration detail rows. ${createLinesError?.message ?? "No rows were returned."}`
-          );
-          setLoading(false);
-          return;
-        }
-
-        existingLines = newLines;
+        setLoadError(
+          "This proposal is missing its migration detail rows. New proposals should no longer enter this state, so this likely indicates legacy bad data."
+        );
+        setLoading(false);
+        return;
       }
 
       if (existingLines) setLines(existingLines as DbLine[]);
@@ -484,6 +462,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     pmRate,
     travelRate,
     rateError,
+    loadError,
     saveError,
     saveStatus,
     loading,

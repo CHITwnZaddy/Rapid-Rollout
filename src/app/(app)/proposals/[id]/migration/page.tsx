@@ -21,6 +21,7 @@ export default function MigrationPage() {
     srImRate,
     pmRate,
     rateError,
+    loadError,
     saveError,
     saveStatus,
     loading,
@@ -59,6 +60,24 @@ export default function MigrationPage() {
             this page has been blocked from saving or rendering totals.
           </p>
           <p className="font-mono text-xs text-destructive">{rateError}</p>
+          <Button onClick={retry}>Retry</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Migration Services Unavailable</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>{loadError}</p>
+          <p>
+            This page no longer auto-creates missing migration records because
+            that can hide underlying data problems.
+          </p>
           <Button onClick={retry}>Retry</Button>
         </CardContent>
       </Card>
