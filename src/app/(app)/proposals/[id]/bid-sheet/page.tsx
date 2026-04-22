@@ -73,6 +73,11 @@ export default function BidSheetPage() {
   );
   const [migrationTotal, setMigrationTotal] = useState(0);
   const [scopedTotal, setScopedTotal] = useState(0);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [savingDiscountPercent, setSavingDiscountPercent] = useState(false);
+  const [savingDiscountDollars, setSavingDiscountDollars] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -259,6 +264,7 @@ export default function BidSheetPage() {
       }
 
       setBidSheet(bidData);
+      setNotesDraft(bidData?.notes ?? "");
       const scenarioOrder = ["P1", "P2", "Opt1", "Opt2"];
       const orderedScenarios = [...scenarioData].sort(
         (a, b) =>
@@ -284,15 +290,22 @@ export default function BidSheetPage() {
   }, [proposalId, supabase]);
 
   const handleCustomerChange = async (customerId: string | null) => {
-    if (!customerId) return;
+    if (!customerId || !bidSheet) return;
     const customer = customers.find((c) => c.id === customerId) ?? null;
-    setSelectedCustomer(customer);
-    if (bidSheet) {
-      await supabase
-        .from("bid_sheets")
-        .update({ customer_id: customerId })
-        .eq("id", bidSheet.id);
+    setSavingCustomer(true);
+    const { error } = await supabase
+      .from("bid_sheets")
+      .update({ customer_id: customerId })
+      .eq("id", bidSheet.id);
+    setSavingCustomer(false);
+
+    if (error) {
+      toast.error(`Failed to save customer: ${error.message}`);
+      return;
     }
+
+    setSelectedCustomer(customer);
+    setBidSheet({ ...bidSheet, customer_id: customerId });
   };
 
   const handleDiscountPercentChange = async (discountPercent: number) => {
@@ -302,12 +315,19 @@ export default function BidSheetPage() {
       toast.error(parsed.error.issues[0]?.message ?? "Invalid discount %");
       return;
     }
-    setBidSheet({ ...bidSheet, discount_percent: parsed.data });
+    setSavingDiscountPercent(true);
     const { error } = await supabase
       .from("bid_sheets")
       .update({ discount_percent: parsed.data })
       .eq("id", bidSheet.id);
-    if (error) toast.error(`Failed to save discount %: ${error.message}`);
+    setSavingDiscountPercent(false);
+
+    if (error) {
+      toast.error(`Failed to save discount %: ${error.message}`);
+      return;
+    }
+
+    setBidSheet({ ...bidSheet, discount_percent: parsed.data });
   };
 
   const handleDiscountDollarsChange = async (discountDollars: number) => {
@@ -317,22 +337,37 @@ export default function BidSheetPage() {
       toast.error(parsed.error.issues[0]?.message ?? "Invalid discount $");
       return;
     }
-    setBidSheet({ ...bidSheet, discount_dollars: parsed.data });
+    setSavingDiscountDollars(true);
     const { error } = await supabase
       .from("bid_sheets")
       .update({ discount_dollars: parsed.data })
       .eq("id", bidSheet.id);
-    if (error) toast.error(`Failed to save discount $: ${error.message}`);
+    setSavingDiscountDollars(false);
+
+    if (error) {
+      toast.error(`Failed to save credit: ${error.message}`);
+      return;
+    }
+
+    setBidSheet({ ...bidSheet, discount_dollars: parsed.data });
   };
 
-  const handleNotesChange = async (notes: string) => {
-    if (bidSheet) {
-      setBidSheet({ ...bidSheet, notes });
-      await supabase
-        .from("bid_sheets")
-        .update({ notes })
-        .eq("id", bidSheet.id);
+  const handleNotesSave = async () => {
+    if (!bidSheet || notesDraft === (bidSheet.notes ?? "")) return;
+
+    setSavingNotes(true);
+    const { error } = await supabase
+      .from("bid_sheets")
+      .update({ notes: notesDraft })
+      .eq("id", bidSheet.id);
+    setSavingNotes(false);
+
+    if (error) {
+      toast.error(`Failed to save notes: ${error.message}`);
+      return;
     }
+
+    setBidSheet({ ...bidSheet, notes: notesDraft });
   };
 
   const discountPercent = bidSheet?.discount_percent ?? 0;
@@ -368,6 +403,7 @@ export default function BidSheetPage() {
               <Select
                 value={selectedCustomer?.id ?? ""}
                 onValueChange={handleCustomerChange}
+                disabled={savingCustomer}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select customer">
@@ -475,6 +511,7 @@ export default function BidSheetPage() {
                 min={0}
                 step={0.01}
                 value={discountDollars}
+                disabled={savingDiscountDollars}
                 onChange={(e) =>
                   handleDiscountDollarsChange(parseFloat(e.target.value) || 0)
                 }
@@ -492,6 +529,7 @@ export default function BidSheetPage() {
                 max={100}
                 step={0.01}
                 value={discountPercent}
+                disabled={savingDiscountPercent}
                 onChange={(e) =>
                   handleDiscountPercentChange(parseFloat(e.target.value) || 0)
                 }
@@ -518,8 +556,10 @@ export default function BidSheetPage() {
         <CardContent>
           <Textarea
             rows={4}
-            value={bidSheet?.notes ?? ""}
-            onChange={(e) => handleNotesChange(e.target.value)}
+            value={notesDraft}
+            disabled={savingNotes}
+            onChange={(e) => setNotesDraft(e.target.value)}
+            onBlur={handleNotesSave}
             placeholder="Additional notes for the bid..."
           />
         </CardContent>
