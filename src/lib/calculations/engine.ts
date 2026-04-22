@@ -171,6 +171,40 @@ export function calculateScenarioTotals(
 }
 
 /**
+ * Apply a scenario-level complexity factor to a line's role hours first,
+ * then derive the adjusted costs and totals from those adjusted hours.
+ */
+export function applyScenarioComplexityToLine<T extends ScenarioLineOutput>(
+  line: T,
+  factor: number | null | undefined
+): T;
+export function applyScenarioComplexityToLine<T extends ScenarioLineOutput>(
+  line: T,
+  factor: number | null | undefined
+): T {
+  const safeFactor = Number.isFinite(factor) ? Number(factor) : 1;
+
+  const srImHours = line.srImHours * safeFactor;
+  const pmHours = line.pmHours * safeFactor;
+  const baHours = line.baHours * safeFactor;
+  const srImCost = line.srImCost * safeFactor;
+  const pmCost = line.pmCost * safeFactor;
+  const baCost = line.baCost * safeFactor;
+
+  return {
+    ...line,
+    srImHours,
+    srImCost,
+    pmHours,
+    pmCost,
+    baHours,
+    baCost,
+    totalHours: srImHours + pmHours + baHours,
+    totalCost: srImCost + pmCost + baCost,
+  } as T;
+}
+
+/**
  * Compare scenarios and find the lowest cost and lowest hours (replaces Dashboard MIN/INDEX/MATCH)
  */
 export function compareScenarios(

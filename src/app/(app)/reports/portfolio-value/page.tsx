@@ -35,6 +35,11 @@ import {
   buildScenarioTotalByProposal,
   buildScopedCostMap,
 } from "@/lib/reports/proposal-aggregates";
+import {
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 type OwnerFilter = "all" | "mine";
 
@@ -125,11 +130,7 @@ export default function PortfolioValueReport() {
         supabase
           .from("rate_cards")
           .select("lookup_key, rate")
-          .in("lookup_key", [
-            "Master|Business Analyst",
-            "Master|Program Manager",
-            "Master|Travel Cost/Trip",
-          ]),
+          .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
       ]);
 
     const customerMap = new Map(

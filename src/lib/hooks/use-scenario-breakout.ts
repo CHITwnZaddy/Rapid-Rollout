@@ -9,6 +9,15 @@ import { applyComplexity } from "@/lib/calculations/complexity";
 import { NUM } from "@/lib/calculations/num";
 import { toEngineLine } from "@/lib/calculations/adapters";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
+import {
+  buildScenarioBreakoutMigrationRows,
+  type MigrationBreakdownRow,
+} from "@/lib/reports/migration-breakdown";
+import {
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 export type Proposal = {
   id: string;
@@ -61,7 +70,6 @@ export type MigrationLine = {
   total_line_items: number;
 };
 
-
 export function useScenarioBreakout() {
   const supabase = createClient();
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -70,10 +78,13 @@ export function useScenarioBreakout() {
   const [scopedLines, setScopedLines] = useState<ScopedLine[]>([]);
   const [migrationConfig, setMigrationConfig] = useState<MigrationConfig | null>(null);
   const [migrationLines, setMigrationLines] = useState<MigrationLine[]>([]);
+  const [migrationBreakdownRows, setMigrationBreakdownRows] = useState<
+    MigrationBreakdownRow[]
+  >([]);
   // Rates are fail-closed: start as null, require successful fetch
   // before the report can be run. See Phase 1.3 in the remediation
   // plan for rationale.
-  const [baRate, setBaRate] = useState<number | null>(null);
+  const [srImRate, setSrImRate] = useState<number | null>(null);
   const [pmRate, setPmRate] = useState<number | null>(null);
   const [travelRate, setTravelRate] = useState<number | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
@@ -96,9 +107,9 @@ export function useScenarioBreakout() {
   useEffect(() => {
     let cancelled = false;
     fetchRequiredRates(supabase, [
-      "Master|Business Analyst",
-      "Master|Program Manager",
-      "Master|Travel Cost/Trip",
+      SR_IM_RATE_KEY,
+      PM_RATE_KEY,
+      TRAVEL_RATE_KEY,
     ]).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
@@ -106,9 +117,9 @@ export function useScenarioBreakout() {
         return;
       }
       setRateError(null);
-      setBaRate(result.rates.get("Master|Business Analyst")!);
-      setPmRate(result.rates.get("Master|Program Manager")!);
-      setTravelRate(result.rates.get("Master|Travel Cost/Trip")!);
+      setSrImRate(result.rates.get(SR_IM_RATE_KEY)!);
+      setPmRate(result.rates.get(PM_RATE_KEY)!);
+      setTravelRate(result.rates.get(TRAVEL_RATE_KEY)!);
     });
     return () => {
       cancelled = true;
@@ -116,7 +127,7 @@ export function useScenarioBreakout() {
   }, [supabase, rateReloadToken]);
 
   const ratesReady =
-    baRate != null && pmRate != null && travelRate != null && !rateError;
+    srImRate != null && pmRate != null && travelRate != null && !rateError;
 
   const runReport = useCallback(async () => {
     if (!selectedProposal) return;
@@ -218,13 +229,26 @@ export function useScenarioBreakout() {
     // Migration
     if (migCfgRes.data) {
       setMigrationConfig(migCfgRes.data as MigrationConfig);
+      if (srImRate != null && pmRate != null) {
+        setMigrationBreakdownRows(
+          buildScenarioBreakoutMigrationRows(
+            migCfgRes.data as MigrationConfig,
+            (migLinesRes.data ?? []) as MigrationLine[],
+            srImRate,
+            pmRate
+          )
+        );
+      } else {
+        setMigrationBreakdownRows([]);
+      }
     } else {
       setMigrationConfig(null);
+      setMigrationBreakdownRows([]);
     }
     setMigrationLines((migLinesRes.data ?? []) as MigrationLine[]);
 
     setLoading(false);
-  }, [supabase, selectedProposal]);
+  }, [supabase, selectedProposal, srImRate, pmRate]);
 
   // Migration detail helpers (needed for migrationLiveTotal computation)
   const projectLines = migrationLines.filter((l) => l.section === "project");
@@ -240,7 +264,7 @@ export function useScenarioBreakout() {
   // `computed_total_cost` snapshot (which can drift from the live
   // section breakdowns shown above).
   const migrationLiveTotal =
-    migrationConfig && baRate != null && pmRate != null && travelRate != null
+    migrationConfig && srImRate != null && pmRate != null && travelRate != null
       ? (() => {
           const numP = NUM(migrationConfig.num_projects);
           const engineCfg: EngineMigrationConfig = {
@@ -272,7 +296,7 @@ export function useScenarioBreakout() {
             engineProject,
             engineWorkflow,
             engineCost,
-            baRate,
+            srImRate,
             pmRate,
             travelRate
           ).salesPrice;
@@ -286,26 +310,17 @@ export function useScenarioBreakout() {
       proposalName,
       scenarioGroups,
       scopedLines,
-      migrationSummary: migrationConfig
-        ? { total: migrationLiveTotal }
-        : null,
+      migrationRows: migrationBreakdownRows,
+      migrationGrandTotal: migrationLiveTotal,
     });
   }, [
     scenarioGroups,
     scopedLines,
-    migrationConfig,
+    migrationBreakdownRows,
     migrationLiveTotal,
     proposals,
     selectedProposal,
   ]);
-
-  // Core effort hours
-  const coreEffortHours = migrationConfig?.is_effort_included
-    ? NUM(migrationConfig.core_requirements_hrs) +
-      NUM(migrationConfig.core_migration_plan_hrs) +
-      NUM(migrationConfig.core_validation_hrs) +
-      NUM(migrationConfig.core_final_qa_hrs)
-    : 0;
 
   return {
     proposals,
@@ -315,14 +330,14 @@ export function useScenarioBreakout() {
     scopedLines,
     migrationConfig,
     migrationLines,
-    baRate,
+    migrationBreakdownRows,
+    srImRate,
     pmRate,
     rateError,
     loading,
     hasRun,
     ratesReady,
     migrationLiveTotal,
-    coreEffortHours,
     runReport,
     exportXLSX,
     retryRates: () => setRateReloadToken((n) => n + 1),

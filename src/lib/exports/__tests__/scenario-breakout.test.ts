@@ -9,7 +9,8 @@ const baseInput: ScenarioBreakoutExportInput = {
   proposalName: "Acme Corp",
   scenarioGroups: [],
   scopedLines: [],
-  migrationSummary: null,
+  migrationRows: [],
+  migrationGrandTotal: 0,
 };
 
 describe("buildScenarioBreakoutRows", () => {
@@ -69,25 +70,42 @@ describe("buildScenarioBreakoutRows", () => {
     });
   });
 
-  it("appends a migration services total when summary present", () => {
+  it("appends migration service rows", () => {
     const rows = buildScenarioBreakoutRows({
       ...baseInput,
-      migrationSummary: { total: 4200 },
+      migrationRows: [
+        { label: "Core Data Migration Efforts", total: 1200 },
+        { label: "Document Migration", total: 3000 },
+      ],
     });
     expect(rows).toEqual([
       {
         Section: "Migration Services",
-        Item: "Total",
+        Item: "Core Data Migration Efforts",
+        Detail: "",
+        Subtotal: 1200,
+      },
+      {
+        Section: "Migration Services",
+        Item: "Document Migration",
+        Detail: "",
+        Subtotal: 3000,
+      },
+      {
+        Section: "Migration Services Total",
+        Item: "",
         Detail: "",
         Subtotal: 4200,
       },
     ]);
   });
 
-  it("handles non-numeric migration total safely", () => {
+  it("handles non-numeric migration totals safely", () => {
     const rows = buildScenarioBreakoutRows({
       ...baseInput,
-      migrationSummary: { total: NaN as unknown as number },
+      migrationRows: [
+        { label: "Core Data Migration Efforts", total: NaN as unknown as number },
+      ],
     });
     expect(rows[0].Subtotal).toBe(0);
   });

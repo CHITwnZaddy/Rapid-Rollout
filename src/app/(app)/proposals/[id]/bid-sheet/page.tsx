@@ -40,7 +40,7 @@ import {
   discountPercentSchema,
   discountDollarsSchema,
 } from "@/lib/validation/bid-sheet";
-import { calculateBidSheetPricing } from "@/lib/calculations/bid-sheet-pricing";
+import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import {
   safeParseSupabaseResult,
 } from "@/lib/validation/parse-supabase";
@@ -55,6 +55,11 @@ import {
 } from "@/lib/validation/proposal";
 import { z } from "zod";
 import { toast } from "sonner";
+import {
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 export default function BidSheetPage() {
   const { id: proposalId } = useParams<{ id: string }>();
@@ -108,11 +113,7 @@ export default function BidSheetPage() {
           supabase
             .from("rate_cards")
             .select("lookup_key, rate")
-            .in("lookup_key", [
-              "Master|Business Analyst",
-              "Master|Program Manager",
-              "Master|Travel Cost/Trip",
-            ]),
+            .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
           supabase
             .from("scoped_services")
             .select("cost")
@@ -177,9 +178,9 @@ export default function BidSheetPage() {
       const migCfg = !migCfgRes.error ? migCfgRes.data : null;
       const migLines = migLinesRes.data ?? [];
       const rateRows = ratesRes.data ?? [];
-      const baRate = rateRows.find((r) => r.lookup_key === "Master|Business Analyst")?.rate;
-      const pmRate = rateRows.find((r) => r.lookup_key === "Master|Program Manager")?.rate;
-      const travelRate = rateRows.find((r) => r.lookup_key === "Master|Travel Cost/Trip")?.rate;
+      const srImRate = rateRows.find((r) => r.lookup_key === SR_IM_RATE_KEY)?.rate;
+      const pmRate = rateRows.find((r) => r.lookup_key === PM_RATE_KEY)?.rate;
+      const travelRate = rateRows.find((r) => r.lookup_key === TRAVEL_RATE_KEY)?.rate;
 
       // Fail closed on missing rate-card rows. Previously we silently
       // left liveMigrationTotal at 0 — that hid the Sr. IM-class bug
@@ -187,9 +188,9 @@ export default function BidSheetPage() {
       // the bid sheet without any user-visible error.
       let liveMigrationTotal = 0;
       if (migCfg) {
-        if (baRate == null || pmRate == null || travelRate == null) {
+        if (srImRate == null || pmRate == null || travelRate == null) {
           toast.error(
-            "Migration total unavailable: one or more required rate card rows are missing (Business Analyst, Program Manager, Travel Cost/Trip). Ask an admin to seed these."
+            "Migration total unavailable: one or more required rate card rows are missing (Sr. Implementation Manager, Program Manager, Travel Cost/Trip). Ask an admin to seed these."
           );
           return;
         }
@@ -224,7 +225,7 @@ export default function BidSheetPage() {
           migLines
             .filter((l) => l.section === "cost")
             .map((l) => toEngineLine(l)),
-          Number(baRate),
+          Number(srImRate),
           Number(pmRate),
           Number(travelRate)
         ).salesPrice;
@@ -337,31 +338,17 @@ export default function BidSheetPage() {
   const discountPercent = bidSheet?.discount_percent ?? 0;
   const discountDollars = bidSheet?.discount_dollars ?? 0;
 
-  const scenarioSubtotal = scenarios.reduce(
-    (sum, sc) =>
-      sum +
-      applyComplexity(
-        Number(sc.summary_total_cost),
-        Number(sc.complexity_factor ?? 1)
-      ),
-    0
-  );
-  const totalHours = scenarios.reduce(
-    (sum, sc) =>
-      sum +
-      applyComplexity(
-        Number(sc.summary_total_hours),
-        Number(sc.complexity_factor ?? 1)
-      ),
-    0
-  );
-
-  const proposalSubtotal = scenarioSubtotal + migrationTotal + scopedTotal;
-  const pricing = calculateBidSheetPricing(
+  const {
+    totalHours,
     proposalSubtotal,
-    discountDollars,
-    discountPercent
-  );
+    pricing,
+  } = calculateProposalPricingSummary({
+    scenarios,
+    migrationTotal,
+    scopedTotal,
+    credit: discountDollars,
+    discountPercent,
+  });
   const finalTotal = pricing.finalTotal;
 
   const blendedRate = totalHours > 0 ? finalTotal / totalHours : 0;

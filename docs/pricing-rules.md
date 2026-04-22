@@ -66,12 +66,15 @@ Migration pricing should fail closed when required rate-card rows are missing.
 
 Required rate rows currently include:
 
-- `Master|Business Analyst`
+- `Master|Sr. Implementation Manager`
 - `Master|Program Manager`
 - `Master|Travel Cost/Trip`
 
 If one of those rows is missing, the app should surface an error instead of
 silently showing a migration total of `0`.
+
+Most migration labor rolls into the `Sr. IM` bucket, not the `BA` bucket.
+`PM Oversight` remains on the PM side.
 
 ## Scoped Services And Scenario Totals
 

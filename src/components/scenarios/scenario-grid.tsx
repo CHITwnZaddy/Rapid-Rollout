@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  applyScenarioComplexityToLine,
   buildServiceHoursMap,
   buildRateCardMap,
   calculateScenarioLine,
@@ -12,7 +13,6 @@ import {
   type ServiceHoursRow,
   type RateCardRow,
 } from "@/lib/calculations/engine";
-import { applyComplexity } from "@/lib/calculations/complexity";
 import {
   Select,
   SelectContent,
@@ -31,7 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { sortScopeOptions } from "@/lib/ui/scope-option-sort";
 
-interface ScenarioLineRow {
+type ScenarioLineRow = {
   id: string;
   scenario_id: string;
   row_order: number;
@@ -46,7 +46,12 @@ interface ScenarioLineRow {
   total_hours: number;
   total_cost: number;
   is_locked: boolean;
-}
+};
+
+type ScenarioGridLine = {
+  id: string;
+  rowOrder: number;
+} & ReturnType<typeof calculateScenarioLine>;
 
 interface ScenarioGridProps {
   scenarioId: string;
@@ -106,20 +111,28 @@ export function ScenarioGrid({
     [initialLines, serviceHoursMap, rateCardMap]
   );
 
-  const [lines, setLines] = useState(initialOutputs);
+  const [lines, setLines] = useState<ScenarioGridLine[]>(initialOutputs);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
     "saved"
   );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dirtyLinesRef = useRef<Set<string>>(new Set());
-  const linesRef = useRef(initialOutputs);
+  const linesRef = useRef<ScenarioGridLine[]>(initialOutputs);
 
   // Keep linesRef in sync with state
   useEffect(() => {
     linesRef.current = lines;
   }, [lines]);
 
-  const totals = useMemo(() => calculateScenarioTotals(lines), [lines]);
+  const displayLines = useMemo<ScenarioGridLine[]>(
+    () => lines.map((line) => applyScenarioComplexityToLine(line, complexityFactor)),
+    [lines, complexityFactor]
+  );
+
+  const totals = useMemo(
+    () => calculateScenarioTotals(displayLines),
+    [displayLines]
+  );
 
   const doSave = useCallback(async () => {
     const dirtyIds = Array.from(dirtyLinesRef.current);
@@ -262,7 +275,7 @@ export function ScenarioGrid({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {lines.map((line) => {
+            {displayLines.map((line) => {
               const options = scopeOptionsByModule.get(line.module) ?? [];
               return (
                 <TableRow key={line.id}>
@@ -309,14 +322,10 @@ export function ScenarioGrid({
                     {line.baCost > 0 ? formatCurrency(line.baCost) : "-"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {line.totalHours > 0
-                      ? formatHours(applyComplexity(line.totalHours, complexityFactor))
-                      : "-"}
+                    {line.totalHours > 0 ? formatHours(line.totalHours) : "-"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-semibold">
-                    {line.totalCost > 0
-                      ? formatCurrency(applyComplexity(line.totalCost, complexityFactor))
-                      : "-"}
+                    {line.totalCost > 0 ? formatCurrency(line.totalCost) : "-"}
                   </TableCell>
                 </TableRow>
               );
@@ -343,10 +352,10 @@ export function ScenarioGrid({
                 {formatCurrency(totals.totalBaCost)}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatHours(applyComplexity(totals.totalHours, complexityFactor))}
+                {formatHours(totals.totalHours)}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatCurrency(applyComplexity(totals.totalCost, complexityFactor))}
+                {formatCurrency(totals.totalCost)}
               </TableCell>
             </TableRow>
           </TableBody>

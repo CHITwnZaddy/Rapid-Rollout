@@ -40,6 +40,11 @@ import {
   buildScenarioCostMap,
   buildScopedCostMap,
 } from "@/lib/reports/proposal-aggregates";
+import {
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 interface Customer {
   id: string;
@@ -157,11 +162,7 @@ export default function ProposalLogReport() {
         supabase
           .from("rate_cards")
           .select("lookup_key, rate")
-          .in("lookup_key", [
-            "Master|Business Analyst",
-            "Master|Program Manager",
-            "Master|Travel Cost/Trip",
-          ]),
+          .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
         supabase
           .from("proposal_status_history")
           .select("proposal_id, old_status, new_status, changed_at")

@@ -50,6 +50,7 @@ export interface MigrationDetailSectionProps<T extends MigrationSectionRow> {
   /** When provided, overrides per-row quantity (used by the project section
    *  to drive quantity from the global num_projects config). */
   numProjectsOverride?: number;
+  complexityFactor?: number;
   qtyLabel: string;
   itemsLabel: string;
   totalEditable: boolean;
@@ -74,6 +75,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
   lines,
   config,
   numProjectsOverride,
+  complexityFactor = 1,
   qtyLabel,
   itemsLabel,
   totalEditable,
@@ -84,6 +86,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
 }: MigrationDetailSectionProps<T>) {
   const hrsPerImport = NUM(config?.hrs_per_import);
   const linesPerFile = NUM(config?.lines_per_import_file);
+  const adjustedHrsPerImport = hrsPerImport * complexityFactor;
 
   return (
     <Card>
@@ -133,6 +136,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                   lines_per_import_file: linesPerFile,
                   hrs_per_import: hrsPerImport,
                 });
+                const adjustedTotalHours = calc.totalHours * complexityFactor;
                 const isLabelEditable =
                   typeof labelEditable === "function"
                     ? labelEditable(line)
@@ -213,10 +217,10 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                       {calc.numImports}
                     </TableCell>
                     <TableCell className="text-right text-sm tabular-nums">
-                      {hrsPerImport}
+                      {adjustedHrsPerImport.toFixed(2)}
                     </TableCell>
                     <TableCell className="text-right text-sm font-medium tabular-nums">
-                      {calc.totalHours.toFixed(2)}
+                      {adjustedTotalHours.toFixed(2)}
                     </TableCell>
                     <TableCell>
                       <Button
@@ -267,7 +271,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                         lines_per_import_file: linesPerFile,
                         hrs_per_import: hrsPerImport,
                       });
-                      return sum + c.totalHours;
+                      return sum + c.totalHours * complexityFactor;
                     }, 0)
                     .toFixed(2)}
                 </TableCell>

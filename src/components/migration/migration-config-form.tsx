@@ -81,7 +81,7 @@ export function MigrationConfigForm({
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="space-y-1">
               <Label className="text-xs">
                 Is Data Migration Effort Included?
@@ -124,23 +124,6 @@ export function MigrationConfigForm({
                   Both cannot be set to Yes
                 </p>
               )}
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">PM Contingency %</Label>
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                className="h-8"
-                value={Math.round(NUM(config?.pm_contingency_pct) * 100)}
-                onChange={(e) =>
-                  onUpdate(
-                    "pm_contingency_pct",
-                    (parseFloat(e.target.value) || 0) / 100
-                  )
-                }
-              />
             </div>
           </div>
         </CardContent>
@@ -210,9 +193,9 @@ export function MigrationConfigForm({
               </div>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Calculated Hours</Label>
+              <Label className="text-xs">Adjusted Calculated Hours</Label>
               <div className="flex h-8 items-center rounded-md bg-muted px-3 text-sm font-medium tabular-nums">
-                {(totals?.documentRaw ?? 0).toFixed(1)}
+                {(totals?.documentBa ?? 0).toFixed(1)}
               </div>
             </div>
           </div>

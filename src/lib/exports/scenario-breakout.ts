@@ -24,11 +24,8 @@ export interface ScopedServiceExportLine {
   cost: number;
 }
 
-/**
- * The migration grand total is computed live (via `calculateMigrationTotals`)
- * and passed in here — never read from the stored `computed_total_cost` snapshot.
- */
-export interface MigrationExportSummary {
+export interface MigrationExportLine {
+  label: string;
   total: number;
 }
 
@@ -36,7 +33,8 @@ export interface ScenarioBreakoutExportInput {
   proposalName: string;
   scenarioGroups: ScenarioBreakoutGroup[];
   scopedLines: ScopedServiceExportLine[];
-  migrationSummary: MigrationExportSummary | null;
+  migrationRows: MigrationExportLine[];
+  migrationGrandTotal: number;
 }
 
 type Row = Record<string, string | number>;
@@ -48,7 +46,7 @@ type Row = Record<string, string | number>;
 export function buildScenarioBreakoutRows(
   input: ScenarioBreakoutExportInput
 ): Row[] {
-  const { scenarioGroups, scopedLines, migrationSummary } = input;
+  const { scenarioGroups, scopedLines, migrationRows } = input;
   const rows: Row[] = [];
 
   for (const g of scenarioGroups) {
@@ -85,13 +83,20 @@ export function buildScenarioBreakoutRows(
     });
   }
 
-  if (migrationSummary) {
-    const migrationTotal = Number(migrationSummary.total);
+  if (migrationRows.length > 0) {
+    for (const row of migrationRows) {
+      rows.push({
+        Section: "Migration Services",
+        Item: row.label,
+        Detail: "",
+        Subtotal: Number.isFinite(row.total) ? row.total : 0,
+      });
+    }
     rows.push({
-      Section: "Migration Services",
-      Item: "Total",
+      Section: "Migration Services Total",
+      Item: "",
       Detail: "",
-      Subtotal: Number.isFinite(migrationTotal) ? migrationTotal : 0,
+      Subtotal: migrationRows.reduce((sum, row) => sum + row.total, 0),
     });
   }
 
@@ -110,7 +115,13 @@ export function scenarioBreakoutFileName(proposalName: string): string {
 export async function exportScenarioBreakoutXLSX(
   input: ScenarioBreakoutExportInput
 ): Promise<void> {
-  const { proposalName, scenarioGroups, scopedLines, migrationSummary } = input;
+  const {
+    proposalName,
+    scenarioGroups,
+    scopedLines,
+    migrationRows,
+    migrationGrandTotal,
+  } = input;
 
   // Dynamic import — keeps exceljs out of the initial JS bundle.
   const ExcelJS = (await import("exceljs")).default;
@@ -247,17 +258,27 @@ export async function exportScenarioBreakoutXLSX(
   }
 
   // Migration services
-  if (migrationSummary) {
-    const migTotal = Number(migrationSummary.total) || 0;
-    writeDataRow(["Migration Services", "Total", "", migTotal]);
-    dataRowIdx++;
+  if (migrationRows.length > 0) {
+    for (const row of migrationRows) {
+      writeDataRow(["Migration Services", row.label, "", row.total]);
+      dataRowIdx++;
+    }
+    writeDataRow(
+      [
+        "Migration Services Total",
+        "",
+        "",
+        migrationRows.reduce((sum, row) => sum + row.total, 0),
+      ],
+      { bold: true, bg: HEADER_BG }
+    );
   }
 
   // ── Grand Total row ───────────────────────────────────────────────────────────
   const grandTotal =
     scenarioGroups.reduce((sum, g) => sum + g.totalCost, 0) +
     scopedLines.reduce((sum, l) => sum + l.cost, 0) +
-    (migrationSummary ? Number(migrationSummary.total) || 0 : 0);
+    migrationGrandTotal;
 
   // Merge A–C for the label
   sheet.mergeCells(`A${rowNum}:C${rowNum}`);

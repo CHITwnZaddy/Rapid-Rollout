@@ -17,7 +17,7 @@ export function ScenarioComplexityFactor({
   return (
     <ComplexityFactorInput
       initialValue={initialValue}
-      helperText="1.00 = no adjustment; applies to this scenario's Total Hrs & Total Cost."
+      helperText="1.00 = no adjustment; applies to each line's hours and the cost derived from those hours in this scenario."
       onSave={(value) =>
         updateScenarioComplexityFactor(scenarioId, proposalId, value)
       }
