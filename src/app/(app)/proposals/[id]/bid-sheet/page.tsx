@@ -74,6 +74,7 @@ export default function BidSheetPage() {
   const [migrationTotal, setMigrationTotal] = useState(0);
   const [scopedTotal, setScopedTotal] = useState(0);
   const [notesDraft, setNotesDraft] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [savingDiscountPercent, setSavingDiscountPercent] = useState(false);
   const [savingDiscountDollars, setSavingDiscountDollars] = useState(false);
@@ -83,9 +84,6 @@ export default function BidSheetPage() {
     const load = async () => {
       const [bidRes, scenarioRes, customerRes, migCfgRes, migLinesRes, ratesRes, scopedRes, proposalRes] =
         await Promise.all([
-          // maybeSingle() instead of single() so a missing row comes
-          // back as data=null instead of an error — lets us heal the
-          // proposal by creating the row on the fly.
           supabase
             .from("bid_sheets")
             .select("id, customer_id, discount_percent, discount_dollars, notes")
@@ -134,6 +132,7 @@ export default function BidSheetPage() {
         Number(proposalRes.data?.scoped_complexity_factor) || 1;
 
       if (bidRes.error) {
+        setLoadError(`Failed to load bid sheet: ${bidRes.error.message}`);
         toast.error(`Failed to load bid sheet: ${bidRes.error.message}`);
         return;
       }
@@ -143,10 +142,11 @@ export default function BidSheetPage() {
         bidRes
       );
       if (!bidParsed.ok) {
+        setLoadError(`Bid sheet data is malformed: ${bidParsed.error}`);
         toast.error(`Bid sheet data is malformed: ${bidParsed.error}`);
         return;
       }
-      let bidData: BidSheetData | null = bidParsed.data;
+      const bidData: BidSheetData | null = bidParsed.data;
 
       const scenarioParsed = safeParseSupabaseResult(
         z.array(ScenarioDataSchema),
@@ -194,6 +194,9 @@ export default function BidSheetPage() {
       let liveMigrationTotal = 0;
       if (migCfg) {
         if (srImRate == null || pmRate == null || travelRate == null) {
+          setLoadError(
+            "Migration total unavailable: one or more required rate card rows are missing."
+          );
           toast.error(
             "Migration total unavailable: one or more required rate card rows are missing (Sr. Implementation Manager, Program Manager, Travel Cost/Trip). Ask an admin to seed these."
           );
@@ -236,33 +239,15 @@ export default function BidSheetPage() {
         ).salesPrice;
       }
 
-      // Self-heal: if no bid_sheets row exists for this proposal
-      // (e.g. because the new-proposal flow failed silently on
-      // insert), create one now so the form becomes editable
-      // instead of silently refusing every keystroke.
       if (!bidData) {
-        const { data: created, error: insertError } = await supabase
-          .from("bid_sheets")
-          .insert({ proposal_id: proposalId })
-          .select("id, customer_id, discount_percent, discount_dollars, notes")
-          .single();
-        if (insertError || !created) {
-          toast.error(
-            `Unable to initialize bid sheet: ${insertError?.message ?? "unknown error"}`
-          );
-          return;
-        }
-        const selfHealParsed = safeParseSupabaseResult(
-          BidSheetDataSchema,
-          { data: created, error: insertError }
-        );
-        if (!selfHealParsed.ok) {
-          toast.error(`Unable to initialize bid sheet: ${selfHealParsed.error}`);
-          return;
-        }
-        bidData = selfHealParsed.data;
+        const message =
+          "This proposal is missing its bid sheet row. New proposals should no longer enter this state, so this likely indicates legacy bad data. Please contact support before editing this proposal.";
+        setLoadError(message);
+        toast.error(message);
+        return;
       }
 
+      setLoadError(null);
       setBidSheet(bidData);
       setNotesDraft(bidData?.notes ?? "");
       const scenarioOrder = ["P1", "P2", "Opt1", "Opt2"];
@@ -388,6 +373,23 @@ export default function BidSheetPage() {
 
   const blendedRate = totalHours > 0 ? finalTotal / totalHours : 0;
   const blendedRateMeetsTarget = blendedRate >= 225;
+
+  if (loadError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Bid Sheet Unavailable</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>{loadError}</p>
+          <p>
+            This page no longer auto-creates missing bid sheet rows because that
+            can hide underlying data problems.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
