@@ -28,6 +28,7 @@ import {
 } from "@/lib/calculations/engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
 import { ScopedComplexityFactor } from "@/components/proposals/scoped-complexity-factor";
+import { toast } from "sonner";
 
 const SERVICE_TYPES = [
   "01 Data Fix",
@@ -37,7 +38,7 @@ const SERVICE_TYPES = [
   "05 Other",
 ];
 
-interface ScopedServiceLine {
+type ScopedServiceLine = {
   id: string;
   service_type: string;
   description: string | null;
@@ -45,6 +46,17 @@ interface ScopedServiceLine {
   rate_card_lookup_key: string;
   cost: number;
   row_order: number;
+};
+
+function recalculateScopedLine(
+  line: ScopedServiceLine,
+  rateCardMap: Map<string, number>
+): ScopedServiceLine {
+  const rate = rateCardMap.get(line.rate_card_lookup_key) ?? 0;
+  return {
+    ...line,
+    cost: line.hours * rate,
+  };
 }
 
 export default function ScopedServicesPage() {
@@ -54,6 +66,9 @@ export default function ScopedServicesPage() {
   const [lines, setLines] = useState<ScopedServiceLine[]>([]);
   const [rateCards, setRateCards] = useState<RateCardRow[]>([]);
   const [complexityFactor, setComplexityFactor] = useState<number>(1);
+  const [isAdding, setIsAdding] = useState(false);
+  const [savingLineId, setSavingLineId] = useState<string | null>(null);
+  const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
   const rateCardMap = useMemo(() => buildRateCardMap(rateCards), [rateCards]);
 
   useEffect(() => {
@@ -81,8 +96,9 @@ export default function ScopedServicesPage() {
   }, [proposalId, supabase]);
 
   const addLine = useCallback(async () => {
+    setIsAdding(true);
     const defaultLookupKey = rateCards[0]?.lookup_key ?? "Master|Sr. Implementation Manager";
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("scoped_services")
       .insert({
         proposal_id: proposalId,
@@ -96,47 +112,71 @@ export default function ScopedServicesPage() {
       .select()
       .single();
 
-    if (data) setLines((prev) => [...prev, data]);
+    setIsAdding(false);
+
+    if (error || !data) {
+      toast.error(`Couldn't add scoped service line. ${error?.message ?? "No row was returned."}`);
+      return;
+    }
+
+    setLines((prev) => [...prev, data]);
+    toast.success("Scoped service line added.");
   }, [lines.length, proposalId, rateCards, supabase]);
 
   const updateLine = useCallback(
     async (lineId: string, field: string, value: string | number | null) => {
-      setLines((prev) =>
-        prev.map((l) => {
-          if (l.id !== lineId) return l;
-          const updated = { ...l, [field]: value };
-          // Recalculate cost
-          const rate = rateCardMap.get(updated.rate_card_lookup_key) ?? 0;
-          updated.cost = updated.hours * rate;
-          return updated;
-        })
+      const previousLine = lines.find((l) => l.id === lineId);
+      if (!previousLine) return;
+
+      const nextLine = recalculateScopedLine(
+        { ...previousLine, [field]: value },
+        rateCardMap
       );
 
-      // Find updated line for DB save
-      const line = lines.find((l) => l.id === lineId);
-      if (!line) return;
-      const updated = { ...line, [field]: value };
-      const rate = rateCardMap.get(updated.rate_card_lookup_key) ?? 0;
-      updated.cost = updated.hours * rate;
+      setLines((prev) =>
+        prev.map((line) => (line.id === lineId ? nextLine : line))
+      );
+      setSavingLineId(lineId);
 
-      await supabase
+      const { error } = await supabase
         .from("scoped_services")
         .update({
-          service_type: updated.service_type,
-          description: updated.description,
-          hours: updated.hours,
-          rate_card_lookup_key: updated.rate_card_lookup_key,
-          cost: updated.cost,
+          service_type: nextLine.service_type,
+          description: nextLine.description,
+          hours: nextLine.hours,
+          rate_card_lookup_key: nextLine.rate_card_lookup_key,
+          cost: nextLine.cost,
         })
         .eq("id", lineId);
+
+      setSavingLineId((current) => (current === lineId ? null : current));
+
+      if (error) {
+        setLines((prev) =>
+          prev.map((line) => (line.id === lineId ? previousLine : line))
+        );
+        toast.error(`Couldn't save scoped service line. ${error.message}`);
+      }
     },
     [lines, rateCardMap, supabase]
   );
 
   const removeLine = useCallback(
     async (lineId: string) => {
-      await supabase.from("scoped_services").delete().eq("id", lineId);
+      setDeletingLineId(lineId);
+      const { error } = await supabase
+        .from("scoped_services")
+        .delete()
+        .eq("id", lineId);
+      setDeletingLineId((current) => (current === lineId ? null : current));
+
+      if (error) {
+        toast.error(`Couldn't delete scoped service line. ${error.message}`);
+        return;
+      }
+
       setLines((prev) => prev.filter((l) => l.id !== lineId));
+      toast.success("Scoped service line deleted.");
     },
     [supabase]
   );
@@ -157,8 +197,12 @@ export default function ScopedServicesPage() {
       </div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Scoped Services</h2>
-        <Button onClick={addLine} size="sm">
-          Add Line
+        <Button
+          onClick={addLine}
+          size="sm"
+          disabled={isAdding || !!savingLineId || !!deletingLineId}
+        >
+          {isAdding ? "Adding..." : "Add Line"}
         </Button>
       </div>
 
@@ -181,6 +225,7 @@ export default function ScopedServicesPage() {
                 <TableCell>
                   <Select
                     value={line.service_type}
+                    disabled={isAdding || deletingLineId === line.id}
                     onValueChange={(v) => updateLine(line.id, "service_type", v)}
                   >
                     <SelectTrigger className="h-8 text-xs">
@@ -199,6 +244,7 @@ export default function ScopedServicesPage() {
                   <Input
                     className="h-8 text-xs"
                     value={line.description ?? ""}
+                    disabled={isAdding || deletingLineId === line.id}
                     onChange={(e) =>
                       updateLine(line.id, "description", e.target.value)
                     }
@@ -212,6 +258,7 @@ export default function ScopedServicesPage() {
                     min={0}
                     step={0.5}
                     value={line.hours}
+                    disabled={isAdding || deletingLineId === line.id}
                     onChange={(e) =>
                       updateLine(
                         line.id,
@@ -224,6 +271,7 @@ export default function ScopedServicesPage() {
                 <TableCell>
                   <Select
                     value={line.rate_card_lookup_key}
+                    disabled={isAdding || deletingLineId === line.id}
                     onValueChange={(v) =>
                       updateLine(line.id, "rate_card_lookup_key", v)
                     }
@@ -251,9 +299,10 @@ export default function ScopedServicesPage() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs text-destructive"
+                    disabled={isAdding || !!savingLineId || deletingLineId === line.id}
                     onClick={() => removeLine(line.id)}
                   >
-                    Remove
+                    {deletingLineId === line.id ? "Removing..." : "Remove"}
                   </Button>
                 </TableCell>
               </TableRow>
