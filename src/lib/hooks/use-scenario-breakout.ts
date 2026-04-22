@@ -48,9 +48,9 @@ export type MigrationConfig = {
   lines_per_import_file: number;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  ba_complexity_factor: number;
+  sr_im_complexity_factor: number;
   pm_complexity_factor: number;
-  ba_trips: number;
+  sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
   doc_mb_per_hour: number;
@@ -165,7 +165,7 @@ export function useScenarioBreakout() {
       supabase
         .from("migration_config")
         .select(
-          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, ba_complexity_factor, pm_complexity_factor, ba_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs, computed_total_cost"
+          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs, computed_total_cost"
         )
         .eq("proposal_id", selectedProposal)
         .single(),
@@ -274,9 +274,9 @@ export function useScenarioBreakout() {
             is_effort_included: migrationConfig.is_effort_included,
             is_workshop_included: migrationConfig.is_workshop_included,
             pm_contingency_pct: 0,
-            ba_complexity_factor: NUM(migrationConfig.ba_complexity_factor),
+            sr_im_complexity_factor: NUM(migrationConfig.sr_im_complexity_factor),
             pm_complexity_factor: NUM(migrationConfig.pm_complexity_factor),
-            ba_trips: NUM(migrationConfig.ba_trips),
+            sr_im_trips: NUM(migrationConfig.sr_im_trips),
             pm_trips: NUM(migrationConfig.pm_trips),
             doc_avg_mb_per_project: NUM(migrationConfig.doc_avg_mb_per_project),
             doc_mb_per_hour: NUM(migrationConfig.doc_mb_per_hour),

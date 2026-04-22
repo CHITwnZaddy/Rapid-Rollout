@@ -57,9 +57,9 @@ export type MigrationConfigRow = {
   lines_per_import_file: unknown;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  ba_complexity_factor: unknown;
+  sr_im_complexity_factor: unknown;
   pm_complexity_factor: unknown;
-  ba_trips: unknown;
+  sr_im_trips: unknown;
   pm_trips: unknown;
   doc_avg_mb_per_project: unknown;
   doc_mb_per_hour: unknown;
@@ -100,9 +100,9 @@ function toEngineConfig(config: MigrationConfigRow): EngineMigrationConfig {
     is_effort_included: config.is_effort_included,
     is_workshop_included: config.is_workshop_included,
     pm_contingency_pct: 0,
-    ba_complexity_factor: NUM(config.ba_complexity_factor),
+    sr_im_complexity_factor: NUM(config.sr_im_complexity_factor),
     pm_complexity_factor: NUM(config.pm_complexity_factor),
-    ba_trips: NUM(config.ba_trips),
+    sr_im_trips: NUM(config.sr_im_trips),
     pm_trips: NUM(config.pm_trips),
     doc_avg_mb_per_project: NUM(config.doc_avg_mb_per_project),
     doc_mb_per_hour: NUM(config.doc_mb_per_hour),
@@ -300,7 +300,7 @@ export function buildMigrationHoursMap(
 
     hoursMap.set(config.proposal_id, {
       pm: totals.totalPmHours,
-      srIm: totals.totalBaHours,
+      srIm: totals.totalSrImHours,
     });
   }
 

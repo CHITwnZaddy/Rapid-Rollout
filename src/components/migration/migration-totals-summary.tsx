@@ -20,13 +20,13 @@ import { formatCurrency } from "@/lib/calculations/engine";
 import { type DbConfig } from "@/lib/hooks/use-migration-config";
 import { type MigrationTotals } from "@/lib/calculations/migration-engine";
 
-interface MigrationTotalsSummaryProps {
+type MigrationTotalsSummaryProps = {
   config: DbConfig | null;
   totals: MigrationTotals | null;
   srImRate: number | null;
   pmRate: number | null;
   onUpdate: (field: keyof DbConfig, value: number | boolean | string) => void;
-}
+};
 
 export function MigrationTotalsSummary({
   config,
@@ -56,7 +56,7 @@ export function MigrationTotalsSummary({
                 <TableRow>
                   <TableCell>Data Migration Workshop</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {(totals?.workshopBa ?? 0).toFixed(1)}
+                    {(totals?.workshopSrIm ?? 0).toFixed(1)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {(totals?.workshopPm ?? 0).toFixed(1)}
@@ -67,7 +67,7 @@ export function MigrationTotalsSummary({
                 <TableRow>
                   <TableCell>Data Migration Core</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {(totals?.coreBa ?? 0).toFixed(1)}
+                    {(totals?.coreSrIm ?? 0).toFixed(1)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {(totals?.corePm ?? 0).toFixed(1)}
@@ -77,7 +77,7 @@ export function MigrationTotalsSummary({
               <TableRow>
                 <TableCell>Project &amp; Schedule Data</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {(totals?.projectBa ?? 0).toFixed(1)}
+                  {(totals?.projectSrIm ?? 0).toFixed(1)}
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">
                   —
@@ -86,7 +86,7 @@ export function MigrationTotalsSummary({
               <TableRow>
                 <TableCell>Workflow Data</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {(totals?.workflowBa ?? 0).toFixed(1)}
+                  {(totals?.workflowSrIm ?? 0).toFixed(1)}
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">
                   —
@@ -95,7 +95,7 @@ export function MigrationTotalsSummary({
               <TableRow>
                 <TableCell>Cost Data</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {(totals?.costBa ?? 0).toFixed(1)}
+                  {(totals?.costSrIm ?? 0).toFixed(1)}
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">
                   —
@@ -104,7 +104,7 @@ export function MigrationTotalsSummary({
               <TableRow>
                 <TableCell>Document Data</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {(totals?.documentBa ?? 0).toFixed(1)}
+                  {(totals?.documentSrIm ?? 0).toFixed(1)}
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">
                   —
@@ -113,7 +113,7 @@ export function MigrationTotalsSummary({
               <TableRow>
                 <TableCell>Travel</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {(totals?.travelBa ?? 0).toFixed(1)}
+                  {(totals?.travelSrIm ?? 0).toFixed(1)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {(totals?.travelPm ?? 0).toFixed(1)}
@@ -122,7 +122,7 @@ export function MigrationTotalsSummary({
               <TableRow className="bg-muted/50 font-semibold">
                 <TableCell>Total Hours</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {(totals?.totalBaHours ?? 0).toFixed(1)}
+                  {(totals?.totalSrImHours ?? 0).toFixed(1)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {(totals?.totalPmHours ?? 0).toFixed(1)}
@@ -143,9 +143,9 @@ export function MigrationTotalsSummary({
                   type="number"
                   min={0}
                   className="h-8"
-                  value={config?.ba_trips ?? 0}
+                  value={config?.sr_im_trips ?? 0}
                   onChange={(e) =>
-                    onUpdate("ba_trips", parseInt(e.target.value) || 0)
+                    onUpdate("sr_im_trips", parseInt(e.target.value) || 0)
                   }
                 />
               </div>
@@ -178,10 +178,10 @@ export function MigrationTotalsSummary({
                   min={0}
                   step={0.1}
                   className="h-8"
-                  value={config?.ba_complexity_factor ?? 1}
+                  value={config?.sr_im_complexity_factor ?? 1}
                   onChange={(e) =>
                     onUpdate(
-                      "ba_complexity_factor",
+                      "sr_im_complexity_factor",
                       parseFloat(e.target.value) || 1
                     )
                   }
@@ -213,11 +213,11 @@ export function MigrationTotalsSummary({
           <div className="space-y-1 text-sm">
             <div className="flex justify-between">
               <span>
-                Sr. IM Cost: {(totals?.totalBaHours ?? 0).toFixed(1)} hrs
+                Sr. IM Cost: {(totals?.totalSrImHours ?? 0).toFixed(1)} hrs
                 &times; {formatCurrency(srImRate ?? 0)}/hr
               </span>
               <span className="font-medium tabular-nums">
-                {formatCurrency(totals?.baCost ?? 0)}
+                {formatCurrency(totals?.srImCost ?? 0)}
               </span>
             </div>
             <div className="flex justify-between">

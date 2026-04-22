@@ -123,7 +123,7 @@ export default function MigrationPage() {
         lines={projectLines}
         config={config}
         numProjectsOverride={numProjects}
-        complexityFactor={Number(config?.ba_complexity_factor ?? 1)}
+        complexityFactor={Number(config?.sr_im_complexity_factor ?? 1)}
         qtyLabel="# of Projects"
         itemsLabel="Line Items / Object"
         totalEditable={false}
@@ -139,7 +139,7 @@ export default function MigrationPage() {
         section="workflow"
         lines={workflowLines}
         config={config}
-        complexityFactor={Number(config?.ba_complexity_factor ?? 1)}
+        complexityFactor={Number(config?.sr_im_complexity_factor ?? 1)}
         qtyLabel="# of Instances"
         itemsLabel="Line Items / Object"
         totalEditable={false}
@@ -153,7 +153,7 @@ export default function MigrationPage() {
         section="cost"
         lines={costLines}
         config={config}
-        complexityFactor={Number(config?.ba_complexity_factor ?? 1)}
+        complexityFactor={Number(config?.sr_im_complexity_factor ?? 1)}
         qtyLabel="Avg / Project"
         itemsLabel="Line Items / Object"
         totalEditable={false}
