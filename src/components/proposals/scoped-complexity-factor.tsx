@@ -13,7 +13,7 @@ export function ScopedComplexityFactor({ proposalId, initialValue, onChange }: P
   return (
     <ComplexityFactorInput
       initialValue={initialValue}
-      helperText="1.00 = no adjustment; applies to Scoped Services Total Hrs & Cost."
+      helperText="1.00 = no adjustment; applies to each Scoped Services line's hours and the cost derived from those hours."
       onSave={(value) => updateScopedComplexityFactor(proposalId, value)}
       onChange={onChange}
     />

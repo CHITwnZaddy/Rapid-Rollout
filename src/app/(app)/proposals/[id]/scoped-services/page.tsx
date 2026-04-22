@@ -168,8 +168,9 @@ export default function ScopedServicesPage() {
             <TableRow>
               <TableHead className="w-[220px]">Service Type</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead className="w-[100px] text-right">Hours</TableHead>
+              <TableHead className="w-[100px] text-right">Raw Hours</TableHead>
               <TableHead className="w-[200px]">Rate Card</TableHead>
+              <TableHead className="w-[120px] text-right">Adj Hours</TableHead>
               <TableHead className="w-[120px] text-right">Cost</TableHead>
               <TableHead className="w-[60px]" />
             </TableRow>
@@ -239,6 +240,9 @@ export default function ScopedServicesPage() {
                     </SelectContent>
                   </Select>
                 </TableCell>
+                <TableCell className="text-right tabular-nums text-sm">
+                  {formatHours(applyComplexity(line.hours, complexityFactor))}
+                </TableCell>
                 <TableCell className="text-right tabular-nums font-medium">
                   {formatCurrency(applyComplexity(line.cost, complexityFactor))}
                 </TableCell>
@@ -257,7 +261,7 @@ export default function ScopedServicesPage() {
             {lines.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="py-8 text-center text-muted-foreground"
                 >
                   No scoped services. Click &quot;Add Line&quot; to start.
@@ -267,9 +271,12 @@ export default function ScopedServicesPage() {
             <TableRow className="bg-muted/50 font-semibold">
               <TableCell colSpan={2}>Totals</TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatHours(totalHours)}
+                {formatHours(rawTotalHours)}
               </TableCell>
               <TableCell />
+              <TableCell className="text-right tabular-nums">
+                {formatHours(totalHours)}
+              </TableCell>
               <TableCell className="text-right tabular-nums">
                 {formatCurrency(totalCost)}
               </TableCell>

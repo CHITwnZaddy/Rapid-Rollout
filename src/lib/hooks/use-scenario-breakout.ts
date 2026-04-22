@@ -299,14 +299,6 @@ export function useScenarioBreakout() {
     selectedProposal,
   ]);
 
-  // Core effort hours
-  const coreEffortHours = migrationConfig?.is_effort_included
-    ? NUM(migrationConfig.core_requirements_hrs) +
-      NUM(migrationConfig.core_migration_plan_hrs) +
-      NUM(migrationConfig.core_validation_hrs) +
-      NUM(migrationConfig.core_final_qa_hrs)
-    : 0;
-
   return {
     proposals,
     selectedProposal,
@@ -322,7 +314,6 @@ export function useScenarioBreakout() {
     hasRun,
     ratesReady,
     migrationLiveTotal,
-    coreEffortHours,
     runReport,
     exportXLSX,
     retryRates: () => setRateReloadToken((n) => n + 1),

@@ -36,7 +36,6 @@ interface ScenarioBreakoutResultsProps {
   baRate: number | null;
   pmRate: number | null;
   migrationLiveTotal: number;
-  coreEffortHours: number;
 }
 
 export function ScenarioBreakoutResults({
@@ -47,7 +46,6 @@ export function ScenarioBreakoutResults({
   baRate,
   pmRate,
   migrationLiveTotal,
-  coreEffortHours,
 }: ScenarioBreakoutResultsProps) {
   // Compute migration section subtotals
   function migSectionHours(section: string): number {
@@ -110,6 +108,19 @@ export function ScenarioBreakoutResults({
         core_pm_oversight_hrs: 0,
       })
     : 0;
+  const coreBaRaw = migrationConfig?.is_effort_included
+    ? NUM(migrationConfig.core_requirements_hrs) +
+      NUM(migrationConfig.core_migration_plan_hrs) +
+      NUM(migrationConfig.core_validation_hrs) +
+      NUM(migrationConfig.core_final_qa_hrs)
+    : 0;
+  const corePmRaw = migrationConfig?.is_effort_included
+    ? NUM(migrationConfig.core_pm_oversight_hrs)
+    : 0;
+  const coreBaHours = coreBaRaw * NUM(migrationConfig?.ba_complexity_factor);
+  const corePmHours = corePmRaw * NUM(migrationConfig?.pm_complexity_factor);
+  const coreEffortSubtotal =
+    coreBaHours * (baRate ?? 0) + corePmHours * (pmRate ?? 0);
 
   const hasTravelData =
     NUM(migrationConfig?.ba_trips) > 0 || NUM(migrationConfig?.pm_trips) > 0;
@@ -220,7 +231,8 @@ export function ScenarioBreakoutResults({
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Migration Configuration / Core Efforts */}
-            {migrationConfig.is_effort_included && coreEffortHours > 0 && (
+            {migrationConfig.is_effort_included &&
+              (coreBaHours > 0 || corePmHours > 0) && (
               <div>
                 <h4 className="mb-2 text-sm font-semibold">
                   Migration Configuration (Core Efforts)
@@ -237,11 +249,7 @@ export function ScenarioBreakoutResults({
                       <TableRow>
                         <TableCell>Core Data Migration Efforts</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatCurrency(
-                            coreEffortHours *
-                              NUM(migrationConfig.ba_complexity_factor) *
-                              (baRate ?? 0)
-                          )}
+                          {formatCurrency(coreEffortSubtotal)}
                         </TableCell>
                       </TableRow>
                     </TableBody>

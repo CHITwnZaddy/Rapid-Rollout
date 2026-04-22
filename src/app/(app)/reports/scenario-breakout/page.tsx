@@ -34,7 +34,6 @@ export default function ScenarioBreakoutReport() {
     hasRun,
     ratesReady,
     migrationLiveTotal,
-    coreEffortHours,
     runReport,
     exportXLSX,
     retryRates,
@@ -123,7 +122,6 @@ export default function ScenarioBreakoutReport() {
           baRate={baRate}
           pmRate={pmRate}
           migrationLiveTotal={migrationLiveTotal}
-          coreEffortHours={coreEffortHours}
         />
       )}
     </div>
