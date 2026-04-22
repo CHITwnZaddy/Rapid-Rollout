@@ -22,6 +22,8 @@ type CreateMigrationPersistenceControllerOptions<
   saveConfig: (config: TConfig, lines: TLine[]) => Promise<void>;
   saveLine: (line: TLine) => Promise<void>;
   saveComputedTotal: (config: TConfig, lines: TLine[]) => Promise<void>;
+  onStatusChange?: (status: "idle" | "saving" | "saved" | "error") => void;
+  onError?: (error: unknown) => void;
 };
 
 export type MigrationPersistenceController = {
@@ -71,28 +73,42 @@ export function createMigrationPersistenceController<
       return;
     }
 
-    const linesToSave = lineIds
-      .map((lineId) => snapshot.lines.find((line) => line.id === lineId))
-      .filter((line): line is TLine => Boolean(line));
+    try {
+      const linesToSave = lineIds
+        .map((lineId) => snapshot.lines.find((line) => line.id === lineId))
+        .filter((line): line is TLine => Boolean(line));
 
-    if (linesToSave.length > 0) {
-      await Promise.all(linesToSave.map((line) => options.saveLine(line)));
-    }
+      if (linesToSave.length > 0) {
+        await Promise.all(linesToSave.map((line) => options.saveLine(line)));
+      }
 
-    if (shouldSaveConfig) {
-      await options.saveConfig(snapshot.config, snapshot.lines);
-      return;
-    }
+      if (shouldSaveConfig) {
+        await options.saveConfig(snapshot.config, snapshot.lines);
+        return;
+      }
 
-    if (shouldRecomputeTotals || linesToSave.length > 0) {
-      await options.saveComputedTotal(snapshot.config, snapshot.lines);
+      if (shouldRecomputeTotals || linesToSave.length > 0) {
+        await options.saveComputedTotal(snapshot.config, snapshot.lines);
+      }
+    } catch (error) {
+      configDirty = configDirty || shouldSaveConfig;
+      totalsDirty = totalsDirty || shouldRecomputeTotals || lineIds.length > 0;
+      lineIdsDirty = new Set([...lineIdsDirty, ...lineIds]);
+      throw error;
     }
   };
 
   const enqueueRun = () => {
+    options.onStatusChange?.("saving");
     saveQueue = saveQueue
       .then(runPending)
-      .catch(() => undefined);
+      .then(() => {
+        options.onStatusChange?.("saved");
+      })
+      .catch((error) => {
+        options.onStatusChange?.("error");
+        options.onError?.(error);
+      });
     return saveQueue;
   };
 

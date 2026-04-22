@@ -59,6 +59,8 @@ export type UseMigrationConfigReturn = {
   pmRate: number | null;
   travelRate: number | null;
   rateError: string | null;
+  saveError: string | null;
+  saveStatus: "idle" | "saving" | "saved" | "error";
   loading: boolean;
   totals: MigrationTotals | null;
   numProjects: number;
@@ -69,6 +71,8 @@ export type UseMigrationConfigReturn = {
   updateLine: (lineId: string, field: keyof DbLine, value: string | number) => void;
   addLine: (section: "project" | "workflow" | "cost") => Promise<void>;
   removeLine: (lineId: string) => Promise<void>;
+  retryPendingSaves: () => Promise<void>;
+  clearSaveError: () => void;
   retry: () => void;
 };
 
@@ -133,6 +137,8 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const [pmRate, setPmRate] = useState<number | null>(null);
   const [travelRate, setTravelRate] = useState<number | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -173,6 +179,14 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         config: configRef.current,
         lines: linesRef.current,
       }),
+      onStatusChange: (status) => {
+        setSaveStatus(status);
+      },
+      onError: (error) => {
+        const message =
+          error instanceof Error ? error.message : "Unknown migration save error.";
+        setSaveError(message);
+      },
       saveConfig: async (updated, currentLines) => {
         const totals = computeTotalsFromState(
           updated,
@@ -183,7 +197,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         );
         const totalCost = totals?.salesPrice ?? 0;
 
-        await supabase
+        const { error } = await supabase
           .from("migration_config")
           .update({
             num_projects: updated.num_projects,
@@ -207,9 +221,13 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
             updated_at: new Date().toISOString(),
           })
           .eq("id", updated.id);
+
+        if (error) {
+          throw new Error(`Couldn't save migration configuration. ${error.message}`);
+        }
       },
       saveLine: async (line) => {
-        await supabase
+        const { error } = await supabase
           .from("migration_detail_lines")
           .update({
             label: line.label,
@@ -218,6 +236,10 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
             total_line_items: line.total_line_items,
           })
           .eq("id", line.id);
+
+        if (error) {
+          throw new Error(`Couldn't save migration detail row. ${error.message}`);
+        }
       },
       saveComputedTotal: async (updated, currentLines) => {
         const totals = computeTotalsFromState(
@@ -228,13 +250,17 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
           travelRateRef.current
         );
 
-        await supabase
+        const { error } = await supabase
           .from("migration_config")
           .update({
             computed_total_cost: totals?.salesPrice ?? updated.computed_total_cost,
             updated_at: new Date().toISOString(),
           })
           .eq("id", updated.id);
+
+        if (error) {
+          throw new Error(`Couldn't recompute migration totals. ${error.message}`);
+        }
       },
     });
 
@@ -253,6 +279,8 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     const load = async () => {
       setLoading(true);
       setRateError(null);
+      setSaveError(null);
+      setSaveStatus("idle");
 
       const ratesResult = await fetchRequiredRates(supabase, [
         SR_IM_RATE_KEY,
@@ -278,11 +306,18 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         .single();
 
       if (!cfg) {
-        const { data: newCfg } = await supabase
+        const { data: newCfg, error: createConfigError } = await supabase
           .from("migration_config")
           .insert({ proposal_id: proposalId, doc_avg_mb_per_project: 0 })
           .select()
           .single();
+        if (createConfigError || !newCfg) {
+          setRateError(
+            `Unable to initialize migration configuration. ${createConfigError?.message ?? "No row was returned."}`
+          );
+          setLoading(false);
+          return;
+        }
         cfg = newCfg;
       }
 
@@ -302,10 +337,17 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
           ...DEFAULT_COST_LINES,
         ].map((l) => ({ ...l, proposal_id: proposalId }));
 
-        const { data: newLines } = await supabase
+        const { data: newLines, error: createLinesError } = await supabase
           .from("migration_detail_lines")
           .insert(allDefaults)
           .select();
+        if (createLinesError || !newLines) {
+          setRateError(
+            `Unable to initialize migration detail rows. ${createLinesError?.message ?? "No rows were returned."}`
+          );
+          setLoading(false);
+          return;
+        }
 
         existingLines = newLines;
       }
@@ -320,6 +362,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const updateConfig = useCallback(
     (field: keyof DbConfig, value: number | boolean | string) => {
       if (!config) return;
+      setSaveError(null);
       const updated = { ...config, [field]: value };
 
       if (field === "is_effort_included" && value === true) {
@@ -338,6 +381,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
 
   const updateLine = useCallback(
     (lineId: string, field: keyof DbLine, value: string | number) => {
+      setSaveError(null);
       setLines((prev) => {
         const next = prev.map((l) =>
           l.id === lineId ? { ...l, [field]: value } : l
@@ -352,6 +396,8 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
 
   const addLine = useCallback(
     async (section: "project" | "workflow" | "cost") => {
+      setSaveError(null);
+      setSaveStatus("saving");
       const sectionLines = lines.filter((l) => l.section === section);
       const nextOrder = sectionLines.length;
       const label =
@@ -361,7 +407,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
             ? "TBD"
             : "New Item";
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("migration_detail_lines")
         .insert({
           proposal_id: proposalId,
@@ -375,21 +421,39 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         .select()
         .single();
 
-      if (data) {
-        setLines((prev) => {
-          const next = [...prev, data as DbLine];
-          linesRef.current = next;
-          return next;
-        });
-        persistenceControllerRef.current?.scheduleTotalsRecompute();
+      if (error || !data) {
+        setSaveStatus("error");
+        setSaveError(
+          `Couldn't add migration detail row. ${error?.message ?? "No row was returned."}`
+        );
+        return;
       }
+
+      setLines((prev) => {
+        const next = [...prev, data as DbLine];
+        linesRef.current = next;
+        return next;
+      });
+      persistenceControllerRef.current?.scheduleTotalsRecompute();
     },
     [lines, proposalId, supabase]
   );
 
   const removeLine = useCallback(
     async (lineId: string) => {
-      await supabase.from("migration_detail_lines").delete().eq("id", lineId);
+      setSaveError(null);
+      setSaveStatus("saving");
+      const { error } = await supabase
+        .from("migration_detail_lines")
+        .delete()
+        .eq("id", lineId);
+
+      if (error) {
+        setSaveStatus("error");
+        setSaveError(`Couldn't delete migration detail row. ${error.message}`);
+        return;
+      }
+
       setLines((prev) => {
         const next = prev.filter((l) => l.id !== lineId);
         linesRef.current = next;
@@ -420,6 +484,8 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     pmRate,
     travelRate,
     rateError,
+    saveError,
+    saveStatus,
     loading,
     totals,
     numProjects,
@@ -430,6 +496,16 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     updateLine,
     addLine,
     removeLine,
+    retryPendingSaves: async () => {
+      setSaveError(null);
+      await persistenceControllerRef.current?.flushNow();
+    },
+    clearSaveError: () => {
+      setSaveError(null);
+      if (saveStatus === "error") {
+        setSaveStatus("idle");
+      }
+    },
     retry: () => setReloadToken((n) => n + 1),
   };
 }

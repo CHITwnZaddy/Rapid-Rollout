@@ -127,4 +127,71 @@ describe("createMigrationPersistenceController", () => {
       []
     );
   });
+
+  it("reports save status transitions for a successful run", async () => {
+    const statuses: string[] = [];
+    const controller = createMigrationPersistenceController({
+      debounceMs: 50,
+      getSnapshot: () => ({
+        config: { id: "cfg-1", num_projects: 2 },
+        lines: [{ id: "line-1", quantity: 7 }],
+      }),
+      saveConfig: vi.fn(async () => undefined),
+      saveLine: vi.fn(async () => undefined),
+      saveComputedTotal: vi.fn(async () => undefined),
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+    });
+
+    controller.scheduleLineSave("line-1");
+
+    await vi.advanceTimersByTimeAsync(50);
+    await controller.flushNow();
+
+    expect(statuses).toContain("saving");
+    expect(statuses).toContain("saved");
+  });
+
+  it("surfaces errors and keeps failed work retryable", async () => {
+    const statuses: string[] = [];
+    const errors: string[] = [];
+    let shouldFail = true;
+
+    const saveLine = vi.fn(async () => {
+      if (shouldFail) {
+        throw new Error("save line failed");
+      }
+    });
+
+    const controller = createMigrationPersistenceController({
+      debounceMs: 50,
+      getSnapshot: () => ({
+        config: { id: "cfg-1", num_projects: 2 },
+        lines: [{ id: "line-1", quantity: 7 }],
+      }),
+      saveConfig: vi.fn(async () => undefined),
+      saveLine,
+      saveComputedTotal: vi.fn(async () => undefined),
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+      onError: (error) => {
+        errors.push(error instanceof Error ? error.message : String(error));
+      },
+    });
+
+    controller.scheduleLineSave("line-1");
+
+    await vi.advanceTimersByTimeAsync(50);
+    await controller.flushNow();
+
+    shouldFail = false;
+    await controller.flushNow();
+
+    expect(errors).toContain("save line failed");
+    expect(statuses).toContain("error");
+    expect(statuses.at(-1)).toBe("saved");
+    expect(saveLine.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
 });
