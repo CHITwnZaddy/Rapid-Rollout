@@ -161,7 +161,7 @@ export default async function ProposalSummaryPage({
   const migLines = migrationLinesRes.data ?? [];
   let migrationTotal = 0;
   if (migCfg) {
-    // Fail closed on missing BA/PM/Travel rates. Previously the page
+    // Fail closed on missing Sr. IM/PM/Travel rates. Previously the page
     // silently rendered migrationTotal = 0, which is how the Sr. IM
     // bug class (missing lookup_key → $0 cost) stayed invisible.
     if (srImRate === null || pmRate === null || travelRate === null) {

@@ -7,13 +7,13 @@
  * - Workshop hours
  * - Document migration hours
  * - Travel hours
- * - Complexity factors (legacy BA field = Sr. IM / PM)
+ * - Complexity factors (legacy ba_* fields now represent Sr. IM-side effort)
  * - Rate card lookups for final cost
  */
 
 // ─── Types ───────────────────────────────────────────────────────────
 
-export interface MigrationConfig {
+export type MigrationConfig = {
   num_projects: number;
   hrs_per_import: number;
   lines_per_import_file: number;
@@ -31,9 +31,9 @@ export interface MigrationConfig {
   core_validation_hrs: number;
   core_final_qa_hrs: number;
   core_pm_oversight_hrs: number;
-}
+};
 
-export interface MigrationDetailLine {
+export type MigrationDetailLine = {
   id: string;
   section: "project" | "workflow" | "cost";
   label: string;
@@ -41,16 +41,16 @@ export interface MigrationDetailLine {
   items_per_object: number;
   total_line_items: number;
   row_order: number;
-}
+};
 
 // ─── Line-level calculations ─────────────────────────────────────────
 
-export interface LineCalc {
+export type LineCalc = {
   totalLineItems: number;
   numImports: number;
   hrsPerImport: number;
   totalHours: number;
-}
+};
 
 /**
  * For a single detail line, compute # of imports and total hours.
@@ -128,7 +128,7 @@ export function calculateDocumentHours(config: MigrationConfig): number {
 
 // ─── Full migration totals ──────────────────────────────────────────
 
-export interface MigrationTotals {
+export type MigrationTotals = {
   // Raw section hours (before complexity factor). The `*Ba*` fields are
   // legacy names that now represent Sr. IM-side migration labor.
   workshopBaRaw: number;
@@ -161,12 +161,12 @@ export interface MigrationTotals {
   baCost: number;
   pmCost: number;
   travelExpense: number; // trips × travel cost/trip (separate from hourly)
-  salesPrice: number; // BA cost + PM cost (hourly billing)
+  salesPrice: number; // Sr. IM cost + PM cost (hourly billing)
 
   // Summary metrics
   blendedRate: number;
   estimatedMargin: number;
-}
+};
 
 /**
  * Calculate the full migration totals, mirroring the Excel left-panel formulas.
@@ -191,7 +191,7 @@ export function calculateMigrationTotals(
   projectLines: MigrationDetailLine[],
   workflowLines: MigrationDetailLine[],
   costLines: MigrationDetailLine[],
-  baRate: number,
+  srImRate: number,
   pmRate: number,
   travelCostPerTrip: number
 ): MigrationTotals {
@@ -237,7 +237,7 @@ export function calculateMigrationTotals(
   const totalPmHours = workshopPm + corePm + travelPm;
 
   // Costs
-  const baCost = totalBaHours * baRate;
+  const baCost = totalBaHours * srImRate;
   const pmCost = totalPmHours * pmRate;
   const travelExpense =
     (config.ba_trips + config.pm_trips) * travelCostPerTrip;

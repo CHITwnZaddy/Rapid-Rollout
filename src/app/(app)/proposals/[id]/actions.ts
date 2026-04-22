@@ -21,16 +21,13 @@ export type UpdateProposalStatusResult =
  * Commit a status transition for a proposal.
  *
  *  1. Validate the new status against the allow-list.
- *  2. Read the current status so we can record the transition's
- *     old_status honestly (don't trust what the client sent).
+ *  2. Delegate the change to the atomic Postgres RPC so status and
+ *     history are written together.
  *  3. If unchanged → no-op, no history row written.
- *  4. Update proposals.status and insert a history row.
  *
- * Note: Supabase JS can't do a true transaction from client libs,
- * but the ordering here is safe — if the history insert fails, the
- * status update has already happened and we surface the error so
- * the user can retry (the next save will record the transition
- * against the now-current status).
+ * Note: the old implementation did a split write from the app layer.
+ * That was replaced with the transition_proposal_status RPC so the
+ * proposal row and proposal_status_history stay consistent.
  */
 export async function updateProposalStatus(
   proposalId: string,
