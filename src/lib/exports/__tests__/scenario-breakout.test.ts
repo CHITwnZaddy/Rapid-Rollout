@@ -91,6 +91,12 @@ describe("buildScenarioBreakoutRows", () => {
         Detail: "",
         Subtotal: 3000,
       },
+      {
+        Section: "Migration Services Total",
+        Item: "",
+        Detail: "",
+        Subtotal: 4200,
+      },
     ]);
   });
 

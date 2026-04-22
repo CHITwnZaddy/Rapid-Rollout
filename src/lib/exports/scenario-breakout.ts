@@ -92,6 +92,12 @@ export function buildScenarioBreakoutRows(
         Subtotal: Number.isFinite(row.total) ? row.total : 0,
       });
     }
+    rows.push({
+      Section: "Migration Services Total",
+      Item: "",
+      Detail: "",
+      Subtotal: migrationRows.reduce((sum, row) => sum + row.total, 0),
+    });
   }
 
   return rows;
@@ -257,6 +263,15 @@ export async function exportScenarioBreakoutXLSX(
       writeDataRow(["Migration Services", row.label, "", row.total]);
       dataRowIdx++;
     }
+    writeDataRow(
+      [
+        "Migration Services Total",
+        "",
+        "",
+        migrationRows.reduce((sum, row) => sum + row.total, 0),
+      ],
+      { bold: true, bg: HEADER_BG }
+    );
   }
 
   // ── Grand Total row ───────────────────────────────────────────────────────────

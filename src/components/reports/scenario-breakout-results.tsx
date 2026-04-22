@@ -32,6 +32,8 @@ export function ScenarioBreakoutResults({
   scopedLines,
   migrationRows,
 }: ScenarioBreakoutResultsProps) {
+  const migrationTotal = migrationRows.reduce((sum, row) => sum + row.total, 0);
+
   return (
     <div className="space-y-6">
       {scenarioGroups.map((group) => (
@@ -151,6 +153,12 @@ export function ScenarioBreakoutResults({
                       </TableCell>
                     </TableRow>
                   ))}
+                  <TableRow className="bg-muted/50 font-semibold">
+                    <TableCell>Migration Services Total</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCurrency(migrationTotal)}
+                    </TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             </div>
