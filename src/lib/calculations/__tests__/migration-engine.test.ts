@@ -196,7 +196,7 @@ describe("calculateMigrationTotals", () => {
     expect(totals.blendedRate).toBe(0);
   });
 
-  it("workshop toggle adds 132 BA / 8 PM raw hours", () => {
+  it("workshop toggle adds 132 Sr. IM / 8 PM raw hours", () => {
     const withWorkshop = calculateMigrationTotals(
       { ...baseConfig, is_effort_included: false },
       [],
@@ -210,7 +210,7 @@ describe("calculateMigrationTotals", () => {
     expect(withWorkshop.workshopPmRaw).toBe(8);
   });
 
-  it("core effort toggle sums core_*_hrs into BA, PM oversight into PM", () => {
+  it("core effort toggle sums core_*_hrs into Sr. IM, PM oversight into PM", () => {
     const t = calculateMigrationTotals(
       { ...baseConfig, is_workshop_included: false },
       [],
@@ -265,7 +265,7 @@ describe("calculateMigrationTotals", () => {
     expect(t.travelExpense).toBe(3 * 2500);
   });
 
-  it("salesPrice = BA cost + PM cost (hourly only)", () => {
+  it("salesPrice = Sr. IM cost + PM cost (hourly only)", () => {
     const t = calculateMigrationTotals(
       {
         ...baseConfig,
@@ -281,7 +281,7 @@ describe("calculateMigrationTotals", () => {
       300,
       2000
     );
-    // Workshop only: BA 132 * 200 = 26400, PM 8 * 300 = 2400
+    // Workshop only: Sr. IM 132 * 200 = 26400, PM 8 * 300 = 2400
     expect(t.baCost).toBe(26400);
     expect(t.pmCost).toBe(2400);
     expect(t.salesPrice).toBe(28800);
@@ -306,7 +306,7 @@ describe("calculateMigrationTotals", () => {
   });
 
   it("estimatedMargin is positive when blendedRate > 135", () => {
-    // Workshop only: BA 132hrs @ 200 + PM 8hrs @ 300 = 28800 / 140hrs ≈ 205.7/hr
+    // Workshop only: Sr. IM 132hrs @ 200 + PM 8hrs @ 300 = 28800 / 140hrs ≈ 205.7/hr
     // margin = 1 - 135/205.7 ≈ 0.344
     const t = calculateMigrationTotals(
       { ...baseConfig, is_workshop_included: true, is_effort_included: false },
@@ -317,8 +317,8 @@ describe("calculateMigrationTotals", () => {
   });
 
   it("estimatedMargin goes negative when blendedRate < 135", () => {
-    // Use a low BA rate (100) so blendedRate ends up below 135
-    // Workshop: 132 BA hrs @ 100 = 13200, 8 PM hrs @ 100 = 800 → 14000 / 140 = 100/hr
+    // Use a low Sr. IM rate (100) so blendedRate ends up below 135
+    // Workshop: 132 Sr. IM hrs @ 100 = 13200, 8 PM hrs @ 100 = 800 → 14000 / 140 = 100/hr
     const t = calculateMigrationTotals(
       { ...baseConfig, is_workshop_included: true, is_effort_included: false },
       [], [], [], 100, 100, 2000
@@ -366,7 +366,7 @@ describe("calculateMigrationTotals", () => {
       225,
       2000
     );
-    // 1000 lines → 2 imports × 4 hrs = 8 raw BA hours
+    // 1000 lines → 2 imports × 4 hrs = 8 raw Sr. IM hours
     expect(t.projectRaw).toBe(8);
     expect(t.totalBaHours).toBe(8);
   });
