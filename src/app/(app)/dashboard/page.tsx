@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/calculations/engine";
+import { applyComplexity } from "@/lib/calculations/complexity";
 
 interface ProposalRow {
   id: string;
@@ -23,6 +24,7 @@ interface ProposalRow {
     scenario_type: string;
     summary_total_cost: number;
     summary_total_hours: number;
+    complexity_factor?: number;
   }[];
 }
 
@@ -60,7 +62,7 @@ export default async function DashboardPage({
       status,
       created_at,
       customers ( company_name ),
-      scenarios ( scenario_type, summary_total_cost, summary_total_hours )
+      scenarios ( scenario_type, summary_total_cost, summary_total_hours, complexity_factor )
     `
     )
     .order("updated_at", { ascending: false })
@@ -178,10 +180,18 @@ export default async function DashboardPage({
               : proposal.customers;
             const scenarios = proposal.scenarios ?? [];
             const bestCost = scenarios.reduce(
-              (min: number, s: { summary_total_cost: number }) =>
-                s.summary_total_cost > 0 && s.summary_total_cost < min
-                  ? s.summary_total_cost
-                  : min,
+              (
+                min: number,
+                s: { summary_total_cost: number; complexity_factor?: number }
+              ) => {
+                const adjustedCost = applyComplexity(
+                  s.summary_total_cost,
+                  s.complexity_factor ?? 1
+                );
+                return adjustedCost > 0 && adjustedCost < min
+                  ? adjustedCost
+                  : min;
+              },
               Infinity
             );
 

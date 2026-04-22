@@ -60,6 +60,7 @@ export const ProposalListItemSchema = z.object({
         scenario_type: z.string(),
         summary_total_cost: z.number(),
         summary_total_hours: z.number(),
+        complexity_factor: z.number().optional(),
       })
     )
     .default([]),

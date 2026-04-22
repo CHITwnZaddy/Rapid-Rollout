@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  applyScenarioComplexityToLine,
   buildServiceHoursMap,
   buildRateCardMap,
   calculateScenarioLine,
@@ -179,6 +180,54 @@ describe("calculateScenarioTotals", () => {
     expect(totals.totalBaHours).toBe(6);
     expect(totals.totalHours).toBe(20);
     expect(totals.totalCost).toBe(4850);
+  });
+});
+
+describe("applyScenarioComplexityToLine", () => {
+  it("applies complexity to each role's hours and derived costs", () => {
+    const adjusted = applyScenarioComplexityToLine(
+      {
+        module: "Financials",
+        scopeSelection: "Small",
+        scopeLabel: "Small (1 entity)",
+        srImHours: 10,
+        srImCost: 2750,
+        pmHours: 4,
+        pmCost: 900,
+        baHours: 6,
+        baCost: 1200,
+        totalHours: 20,
+        totalCost: 4850,
+      },
+      1.25
+    );
+
+    expect(adjusted.srImHours).toBe(12.5);
+    expect(adjusted.pmHours).toBe(5);
+    expect(adjusted.baHours).toBe(7.5);
+    expect(adjusted.totalHours).toBe(25);
+    expect(adjusted.srImCost).toBe(3437.5);
+    expect(adjusted.pmCost).toBe(1125);
+    expect(adjusted.baCost).toBe(1500);
+    expect(adjusted.totalCost).toBe(6062.5);
+  });
+
+  it("defaults to no adjustment when the factor is missing", () => {
+    const line: ScenarioLineOutput = {
+      module: "Financials",
+      scopeSelection: "Small",
+      scopeLabel: "Small (1 entity)",
+      srImHours: 10,
+      srImCost: 2750,
+      pmHours: 4,
+      pmCost: 900,
+      baHours: 6,
+      baCost: 1200,
+      totalHours: 20,
+      totalCost: 4850,
+    };
+
+    expect(applyScenarioComplexityToLine(line, undefined)).toEqual(line);
   });
 });
 

@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
+import { applyComplexity } from "@/lib/calculations/complexity";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import { ProposalListSchema } from "@/lib/validation/proposal";
 
@@ -32,7 +33,7 @@ export default async function ProposalsPage() {
       created_at,
       updated_at,
       customers ( company_name ),
-      scenarios ( scenario_type, summary_total_cost, summary_total_hours )
+      scenarios ( scenario_type, summary_total_cost, summary_total_hours, complexity_factor )
     `
     )
     .order("updated_at", { ascending: false });
@@ -111,8 +112,20 @@ export default async function ProposalsPage() {
                               <span className="font-medium">
                                 {s.scenario_type}:
                               </span>{" "}
-                              {formatCurrency(s.summary_total_cost)} &middot;{" "}
-                              {formatHours(s.summary_total_hours)} hrs
+                              {formatCurrency(
+                                applyComplexity(
+                                  s.summary_total_cost,
+                                  s.complexity_factor ?? 1
+                                )
+                              )}{" "}
+                              &middot;{" "}
+                              {formatHours(
+                                applyComplexity(
+                                  s.summary_total_hours,
+                                  s.complexity_factor ?? 1
+                                )
+                              )}{" "}
+                              hrs
                             </span>
                           ))}
                       </div>
