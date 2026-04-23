@@ -54,6 +54,7 @@ export default async function ScenarioPage({
         />
       </div>
       <ScenarioGrid
+        proposalId={id}
         scenarioId={scenario.id}
         scenarioType={type}
         initialLines={lines ?? []}
