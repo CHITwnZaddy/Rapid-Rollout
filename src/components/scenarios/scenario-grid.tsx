@@ -14,6 +14,10 @@ import {
   type RateCardRow,
 } from "@/lib/calculations/engine";
 import {
+  buildScenarioGridTotalsUpdate,
+  buildScenarioGridUpsertPayload,
+} from "@/lib/scenarios/persist-scenario-grid";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -30,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { sortScopeOptions } from "@/lib/ui/scope-option-sort";
+import { Button } from "@/components/ui/button";
 
 type ScenarioLineRow = {
   id: string;
@@ -53,14 +58,14 @@ type ScenarioGridLine = {
   rowOrder: number;
 } & ReturnType<typeof calculateScenarioLine>;
 
-interface ScenarioGridProps {
+type ScenarioGridProps = {
   scenarioId: string;
   scenarioType: string;
   initialLines: ScenarioLineRow[];
   serviceHours: ServiceHoursRow[];
   rateCards: RateCardRow[];
   complexityFactor?: number;
-}
+};
 
 export function ScenarioGrid({
   scenarioId,
@@ -112,12 +117,22 @@ export function ScenarioGrid({
   );
 
   const [lines, setLines] = useState<ScenarioGridLine[]>(initialOutputs);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">(
-    "saved"
-  );
+  const [saveStatus, setSaveStatus] = useState<
+    "saved" | "saving" | "unsaved" | "error"
+  >("saved");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dirtyLinesRef = useRef<Set<string>>(new Set());
   const linesRef = useRef<ScenarioGridLine[]>(initialOutputs);
+  const isSavingRef = useRef(false);
+
+  const scheduleSave = useCallback((delayMs = 800) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      void doSave();
+    }, delayMs);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep linesRef in sync with state
   useEffect(() => {
@@ -135,59 +150,64 @@ export function ScenarioGrid({
   );
 
   const doSave = useCallback(async () => {
+    if (isSavingRef.current) {
+      return;
+    }
+
     const dirtyIds = Array.from(dirtyLinesRef.current);
     if (dirtyIds.length === 0) return;
 
+    isSavingRef.current = true;
     setSaveStatus("saving");
+    setSaveError(null);
     dirtyLinesRef.current.clear();
 
-    const currentLines = linesRef.current.filter((l) =>
-      dirtyIds.includes(l.id)
-    );
+    try {
+      const dirtyLines = linesRef.current.filter((line) =>
+        dirtyIds.includes(line.id)
+      );
 
-    // Phase 2.3 — replace N sequential UPDATE calls with a single
-    // upsert keyed on id. Editing 10 lines used to fire 10 serial
-    // PATCH requests; now it's one HTTP round trip. scenario_id,
-    // row_order and module are NOT NULL on the table, so they must
-    // be present in the upsert payload even though they don't
-    // change — the row already exists and will be matched by id.
-    if (currentLines.length > 0) {
-      const payload = currentLines.map((line) => ({
-        id: line.id,
-        scenario_id: scenarioId,
-        row_order: line.rowOrder,
-        module: line.module,
-        scope_selection: line.scopeSelection,
-        sr_im_hours: line.srImHours,
-        sr_im_cost: line.srImCost,
-        pm_hours: line.pmHours,
-        pm_cost: line.pmCost,
-        ba_hours: line.baHours,
-        ba_cost: line.baCost,
-        total_hours: line.totalHours,
-        total_cost: line.totalCost,
-      }));
-      await supabase
-        .from("scenario_lines")
-        .upsert(payload, { onConflict: "id" });
+      if (dirtyLines.length > 0) {
+        const { error: lineError } = await supabase
+          .from("scenario_lines")
+          .upsert(buildScenarioGridUpsertPayload(scenarioId, dirtyLines), {
+            onConflict: "id",
+          });
+
+        if (lineError) {
+          throw new Error(`Couldn't save scenario lines. ${lineError.message}`);
+        }
+      }
+
+      const { error: scenarioError } = await supabase
+        .from("scenarios")
+        .update(buildScenarioGridTotalsUpdate(linesRef.current))
+        .eq("id", scenarioId);
+
+      if (scenarioError) {
+        throw new Error(`Couldn't save scenario totals. ${scenarioError.message}`);
+      }
+
+      if (dirtyLinesRef.current.size > 0) {
+        setSaveStatus("unsaved");
+        scheduleSave(0);
+      } else {
+        setSaveStatus("saved");
+      }
+    } catch (error) {
+      for (const dirtyId of dirtyIds) {
+        dirtyLinesRef.current.add(dirtyId);
+      }
+      setSaveStatus("error");
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Couldn't save scenario changes."
+      );
+    } finally {
+      isSavingRef.current = false;
     }
-
-    // Update scenario totals — fire this in parallel with the line
-    // upsert above would require a Promise.all, but since the
-    // totals need a fresh read of linesRef they're dependent on the
-    // state being stable. Run it immediately after; on HTTP/2 to
-    // Supabase the two calls multiplex so latency is ~1 round trip.
-    const allTotals = calculateScenarioTotals(linesRef.current);
-    await supabase
-      .from("scenarios")
-      .update({
-        summary_total_hours: allTotals.totalHours,
-        summary_total_cost: allTotals.totalCost,
-      })
-      .eq("id", scenarioId);
-
-    setSaveStatus("saved");
-  }, [scenarioId, supabase]);
+  }, [scenarioId, scheduleSave, supabase]);
 
   const handleScopeChange = useCallback(
     (lineId: string, module: string, newScope: string) => {
@@ -212,12 +232,12 @@ export function ScenarioGrid({
 
       dirtyLinesRef.current.add(lineId);
       setSaveStatus("unsaved");
+      setSaveError(null);
 
       // Debounced save
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => doSave(), 800);
+      scheduleSave();
     },
-    [serviceHoursMap, rateCardMap, doSave]
+    [serviceHoursMap, rateCardMap, scheduleSave]
   );
 
   // Save immediately on unmount
@@ -227,7 +247,7 @@ export function ScenarioGrid({
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (dirtyLines.size > 0) {
-        doSave();
+        void doSave();
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -252,9 +272,31 @@ export function ScenarioGrid({
             ? "All changes saved"
             : saveStatus === "saving"
               ? "Saving..."
-              : "Unsaved changes"}
+              : saveStatus === "error"
+                ? "Save failed"
+                : "Unsaved changes"}
         </Badge>
       </div>
+
+      {(saveStatus === "error" || saveError) && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span>
+            {saveError ??
+              "Scenario changes could not be saved. Please retry the save."}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSaveError(null);
+              setSaveStatus("unsaved");
+              scheduleSave(0);
+            }}
+          >
+            Retry Save
+          </Button>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-md border">
         <Table>
