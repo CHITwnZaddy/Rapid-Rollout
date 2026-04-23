@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   applyScenarioComplexityToLine,
   buildServiceHoursMap,
@@ -13,10 +12,8 @@ import {
   type ServiceHoursRow,
   type RateCardRow,
 } from "@/lib/calculations/engine";
-import {
-  buildScenarioGridTotalsUpdate,
-  buildScenarioGridUpsertPayload,
-} from "@/lib/scenarios/persist-scenario-grid";
+import { saveScenarioGridSelections } from "@/app/(app)/proposals/[id]/actions";
+import { type ScenarioGridPersistLine } from "@/lib/scenarios/persist-scenario-grid";
 import {
   Select,
   SelectContent,
@@ -53,12 +50,12 @@ type ScenarioLineRow = {
   is_locked: boolean;
 };
 
-type ScenarioGridLine = {
-  id: string;
-  rowOrder: number;
-} & ReturnType<typeof calculateScenarioLine>;
+type ScenarioGridLine = ScenarioGridPersistLine & {
+  scopeLabel: string;
+};
 
 type ScenarioGridProps = {
+  proposalId: string;
   scenarioId: string;
   scenarioType: string;
   initialLines: ScenarioLineRow[];
@@ -68,6 +65,7 @@ type ScenarioGridProps = {
 };
 
 export function ScenarioGrid({
+  proposalId,
   scenarioId,
   scenarioType,
   initialLines,
@@ -75,7 +73,6 @@ export function ScenarioGrid({
   rateCards,
   complexityFactor = 1,
 }: ScenarioGridProps) {
-  const supabase = createClient();
   const serviceHoursMap = useMemo(
     () => buildServiceHoursMap(serviceHours),
     [serviceHours]
@@ -167,26 +164,36 @@ export function ScenarioGrid({
         dirtyIds.includes(line.id)
       );
 
-      if (dirtyLines.length > 0) {
-        const { error: lineError } = await supabase
-          .from("scenario_lines")
-          .upsert(buildScenarioGridUpsertPayload(scenarioId, dirtyLines), {
-            onConflict: "id",
-          });
+      const result = await saveScenarioGridSelections(
+        proposalId,
+        scenarioId,
+        dirtyLines.map((line) => ({
+          lineId: line.id,
+          scopeSelection: line.scopeSelection,
+        }))
+      );
 
-        if (lineError) {
-          throw new Error(`Couldn't save scenario lines. ${lineError.message}`);
-        }
+      if (!result.ok) {
+        throw new Error(result.error);
       }
 
-      const { error: scenarioError } = await supabase
-        .from("scenarios")
-        .update(buildScenarioGridTotalsUpdate(linesRef.current))
-        .eq("id", scenarioId);
+      const canonicalLines = new Map(
+        result.lines.map((line) => [
+          line.id,
+          {
+            ...line,
+            scopeLabel: "",
+          },
+        ])
+      );
 
-      if (scenarioError) {
-        throw new Error(`Couldn't save scenario totals. ${scenarioError.message}`);
-      }
+      setLines((prev) =>
+        prev.map((line) =>
+          dirtyLinesRef.current.has(line.id)
+            ? line
+            : (canonicalLines.get(line.id) ?? line)
+        )
+      );
 
       if (dirtyLinesRef.current.size > 0) {
         setSaveStatus("unsaved");
@@ -207,7 +214,7 @@ export function ScenarioGrid({
     } finally {
       isSavingRef.current = false;
     }
-  }, [scenarioId, scheduleSave, supabase]);
+  }, [proposalId, scenarioId, scheduleSave]);
 
   const handleScopeChange = useCallback(
     (lineId: string, module: string, newScope: string) => {
