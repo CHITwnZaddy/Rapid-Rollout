@@ -252,12 +252,8 @@ export function useScenarioBreakout() {
 
   // Migration detail helpers (needed for migrationLiveTotal computation)
   const projectLines = migrationLines.filter((l) => l.section === "project");
-  const workflowLines = migrationLines
-    .filter((l) => l.section === "workflow")
-    .filter((l) => l.label && l.label !== "WF Object Name" && l.label.trim() !== "");
-  const costDataLines = migrationLines
-    .filter((l) => l.section === "cost")
-    .filter((l) => l.label && l.label !== "TBD" && l.label.trim() !== "");
+  const workflowLines = migrationLines.filter((l) => l.section === "workflow");
+  const costDataLines = migrationLines.filter((l) => l.section === "cost");
 
   // Compute the migration grand total live from the same data the
   // per-section rows display, instead of trusting the stored

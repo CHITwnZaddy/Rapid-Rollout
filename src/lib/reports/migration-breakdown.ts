@@ -70,22 +70,10 @@ export function buildScenarioBreakoutMigrationRows(
     .filter((line) => line.section === "project")
     .map((line) => toEngineLine(line, { quantityOverride: numProjects }));
   const workflowLines: MigrationDetailLine[] = lines
-    .filter(
-      (line) =>
-        line.section === "workflow" &&
-        line.label &&
-        line.label !== "WF Object Name" &&
-        line.label.trim() !== ""
-    )
+    .filter((line) => line.section === "workflow")
     .map((line) => toEngineLine(line));
   const costLines: MigrationDetailLine[] = lines
-    .filter(
-      (line) =>
-        line.section === "cost" &&
-        line.label &&
-        line.label !== "TBD" &&
-        line.label.trim() !== ""
-    )
+    .filter((line) => line.section === "cost")
     .map((line) => toEngineLine(line));
 
   const totals = calculateMigrationTotals(
@@ -99,6 +87,13 @@ export function buildScenarioBreakoutMigrationRows(
   );
 
   const rows: MigrationBreakdownRow[] = [];
+
+  if (config.is_workshop_included && (totals.workshopSrIm > 0 || totals.workshopPm > 0)) {
+    rows.push({
+      label: "Data Migration Workshop",
+      total: totals.workshopSrIm * srImRate + totals.workshopPm * pmRate,
+    });
+  }
 
   if (config.is_effort_included && (totals.coreSrIm > 0 || totals.corePm > 0)) {
     rows.push({

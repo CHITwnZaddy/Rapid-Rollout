@@ -129,22 +129,10 @@ function buildMigrationLines(
       .filter((line) => line.section === "project")
       .map((line) => toEngineLine(line, { quantityOverride: numProjects })),
     workflowLines: lines
-      .filter(
-        (line) =>
-          line.section === "workflow" &&
-          line.label &&
-          line.label !== "WF Object Name" &&
-          line.label.trim() !== ""
-      )
+      .filter((line) => line.section === "workflow")
       .map((line) => toEngineLine(line)),
     costLines: lines
-      .filter(
-        (line) =>
-          line.section === "cost" &&
-          line.label &&
-          line.label !== "TBD" &&
-          line.label.trim() !== ""
-      )
+      .filter((line) => line.section === "cost")
       .map((line) => toEngineLine(line)),
   };
 }
