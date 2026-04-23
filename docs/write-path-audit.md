@@ -1,7 +1,7 @@
 # Write Path Audit
 
 This document inventories the remaining write paths in Rapid Rollout after the
-Phase 1-5 stabilization work.
+Phase 1-8 stabilization work.
 
 Why this exists:
 
@@ -39,8 +39,8 @@ The write paths we trust most now look like this:
 | File | [src/components/scenarios/scenario-grid.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/components/scenarios/scenario-grid.tsx) |
 | What it writes | `scenario_lines` and `scenarios.summary_total_*` |
 | Write style | Client-side Supabase upsert + update |
-| User feedback | Save badge only |
-| Main risk | No surfaced error handling for failed writes |
+| User feedback | Save badge plus explicit retryable error state |
+| Main risk | Still client-side for a core workflow, even though save honesty is much better now |
 | Risk label | `Behavior-tightening` |
 
 Current behavior:
@@ -48,21 +48,19 @@ Current behavior:
 - The grid updates local state immediately.
 - A debounced save batches changed rows into one `upsert`.
 - Scenario summary totals are saved in a second client-side `update`.
-- There is no visible error path if either request fails.
+- Failed saves now surface an explicit error state and a retry action.
 
 Why this matters:
 
-- This path is better than the original one-row-at-a-time model.
-- It is still weaker than the server-action/RPC paths because the UI can imply
-  "saved" without giving the user a real recovery path when Supabase rejects a
-  write.
+- This path is better than the earlier silent-save model.
+- It is still weaker than the server-action/RPC paths because the browser still
+  owns the persistence contract for one of the most important editing screens.
 
 Recommendation:
 
-- Short term: add explicit error handling and a retry state to the current
-  client flow.
-- Later: consider a server-backed save endpoint if scenario editing needs
-  stronger auditing or cross-table guarantees.
+- Keep the current retry/error handling.
+- Next question is architectural: does Scenario Grid need a server-backed save
+  contract, or is the hardened client path sufficient?
 
 ### 2. Scoped Services
 
@@ -71,31 +69,30 @@ Recommendation:
 | File | [src/app/(app)/proposals/[id]/scoped-services/page.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/[id]/scoped-services/page.tsx) |
 | What it writes | `scoped_services` rows |
 | Write style | Client-side insert / update / delete |
-| User feedback | None on success, none on failure |
-| Main risk | UI state is updated before DB success is confirmed |
+| User feedback | Explicit toasts and rollback on failed writes |
+| Main risk | Still browser-owned persistence on a proposal-editing page |
 | Risk label | `Behavior-tightening` |
 
 Current behavior:
 
-- `addLine()` inserts directly from the browser and appends the returned row if
-  a row comes back.
-- `updateLine()` updates local state first, then writes to Supabase.
-- `removeLine()` deletes from Supabase, then removes the row from state without
-  checking for an error.
+- `addLine()` inserts directly from the browser and only appends the returned
+  row after success.
+- `updateLine()` updates local state optimistically, then rolls back on DB
+  failure.
+- `removeLine()` surfaces delete failures and only removes the row after DB
+  success.
 
 Why this matters:
 
-- This page still uses the older "trust the browser write" pattern.
-- The user can believe a scoped-services edit was accepted even if the DB write
-  failed or partially failed.
+- This page is much safer than it used to be.
+- The remaining question is whether it should stay a hardened client flow or
+  eventually move to a server-side contract for consistency.
 
 Recommendation:
 
-- Move this page toward the admin-table safety model first.
-- Minimum fix: capture and surface `insert/update/delete` errors and stop
-  mutating local state on failed writes.
-- Better fix: use server actions for add/update/remove so the page follows the
-  same save contract as the scenario/scoped CF controls.
+- Keep the current behavior-tightened client flow for now.
+- Revisit server actions only if we decide proposal editing should converge on a
+  single persistence model.
 
 ### 3. Bid Sheet
 
@@ -104,31 +101,28 @@ Recommendation:
 | File | [src/app/(app)/proposals/[id]/bid-sheet/page.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/[id]/bid-sheet/page.tsx) |
 | What it writes | `bid_sheets.customer_id`, `discount_percent`, `discount_dollars`, `notes` |
 | Write style | Client-side update |
-| User feedback | Partial; some errors toast, some do not |
-| Main risk | Inconsistent save contract across fields |
+| User feedback | Explicit field-level saving states and surfaced failures |
+| Main risk | Still browser-owned persistence on a revenue-critical page |
 | Risk label | `Behavior-tightening` |
 
 Current behavior:
 
-- `discount_percent` and `discount_dollars` validate input and toast on DB
+- `discount_percent` and `discount_dollars` validate input and surface DB
   failure.
-- `customer_id` changes do not surface a DB error.
-- `notes` updates do not surface a DB error.
-- The page also contains a self-heal insert when the `bid_sheets` row is
-  missing. That is documented separately in the legacy self-heal review.
+- `customer_id` and `notes` now surface save failures consistently.
+- The page no longer auto-creates missing `bid_sheets` rows on load.
 
 Why this matters:
 
 - This page is revenue-critical.
-- Inconsistent save handling is especially risky here because pricing is
-  already subtle and the page is user-visible.
+- It is much safer now, but still uses browser writes rather than a shared
+  server-side contract.
 
 Recommendation:
 
-- Normalize all bid-sheet field writes to one save contract.
-- Short term: add error handling for customer and notes updates.
-- Medium term: move bid-sheet writes behind a server action so auditability and
-  recovery behavior are consistent.
+- Keep the current normalized save behavior.
+- Later, decide whether bid-sheet writes should move behind a server action or
+  remain a hardened client page.
 
 ### 4. Migration Config And Detail Lines
 
@@ -137,33 +131,29 @@ Recommendation:
 | File | [src/lib/hooks/use-migration-config.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/lib/hooks/use-migration-config.ts) |
 | What it writes | `migration_config`, `migration_detail_lines` |
 | Write style | Client-side queued persistence controller plus direct insert/delete |
-| User feedback | Minimal; no strong surfaced DB failure path |
-| Main risk | The queue is better than before, but add/remove/create flows still rely on browser writes |
+| User feedback | Save status, explicit error text, and retry action |
+| Main risk | Complex but improved client persistence flow still owns config/line writes |
 | Risk label | `Behavior-tightening` |
 
 Current behavior:
 
-- Config updates and line updates now flow through the persistence controller.
-- That removed the earlier "one timer cancels another" bug.
-- But initial config creation, default-line creation, add-line, and remove-line
-  behavior are still direct client writes.
-- The hook does not currently surface a first-class "save failed" state to the
-  UI.
+- Config updates and line updates flow through the persistence controller.
+- The page now surfaces save status, failure text, and retry behavior.
+- Initial self-heal creation paths were removed.
+- Add-line and remove-line are still direct client writes, but they now surface
+  failures.
 
 Why this matters:
 
 - This path is much safer than it was before.
 - It is still one of the most complex client write flows in the repo.
-- Complex client write flows are where subtle Supabase/RLS/network failures are
-  hardest for users to interpret.
+- The main remaining question is architectural consistency, not silent failure.
 
 Recommendation:
 
-- Do not rip out the queue immediately. It solved a real problem.
-- Next tightening step: expose persistence failures and distinguish
-  "editing locally" from "persisted remotely."
-- Longer term: evaluate whether config/line add-remove paths should move to a
-  server action or RPC contract.
+- Keep the queue. It solved a real concurrency bug.
+- If we keep tightening this area, the next decision is whether add/remove
+  should stay client-side or move behind a server action/RPC boundary.
 
 ### 5. Admin Table
 
@@ -192,10 +182,10 @@ Recommendation:
 
 | Priority | Recommendation | Risk label | Why |
 | --- | --- | --- | --- |
-| 1 | Harden Scoped Services and Bid Sheet write error handling | `Behavior-tightening` | These are still direct client writes on important proposal pages |
-| 2 | Expose migration persistence failure state in the UI | `Behavior-tightening` | The queue prevents data loss, but the UX still hides too much about remote save state |
-| 3 | Add explicit scenario-grid error handling | `Behavior-tightening` | Scenario edits are central and currently rely on a silent save badge |
-| 4 | Decide which proposal-page writes should become server actions | `Higher-risk refactor` | This should happen after the audit, not by habit |
+| 1 | Decide whether Scenario Grid should stay a hardened client flow or move server-side | `Higher-risk refactor` | It is now the most important remaining proposal write path still owned by the browser |
+| 2 | Decide whether Bid Sheet and Scoped Services should converge on a server-action contract | `Higher-risk refactor` | The behavior is much safer now; the remaining issue is consistency of architecture |
+| 3 | Decide whether migration add/remove operations should stay client-side | `Higher-risk refactor` | The queue/error state is good, but the flow is still complex |
+| 4 | Keep the admin table as the low-risk client-side reference | `Safe / no behavior change` | It is currently the cleanest browser-write implementation in the repo |
 
 ## What I Would Not Do Next
 
