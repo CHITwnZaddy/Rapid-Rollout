@@ -664,6 +664,15 @@ export interface Database {
         };
         Returns: string;
       };
+      save_scenario_grid: {
+        Args: {
+          p_scenario_id: string;
+          p_lines: Json;
+          p_summary_total_hours: number;
+          p_summary_total_cost: number;
+        };
+        Returns: boolean;
+      };
       transition_proposal_status: {
         Args: {
           p_proposal_id: string;
