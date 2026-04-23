@@ -45,6 +45,7 @@ import {
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
+import { toast } from "sonner";
 
 interface Customer {
   id: string;
@@ -103,121 +104,121 @@ export default function ProposalLogReport() {
   const runReport = useCallback(async () => {
     setLoading(true);
     setHasRun(true);
+    try {
+      let query = supabase
+        .from("proposals")
+        .select(
+          "id, name, status, customer_id, scoped_complexity_factor, created_at"
+        )
+        .order("created_at", { ascending: false });
 
-    // Build proposal query
-    let query = supabase
-      .from("proposals")
-      .select(
-        "id, name, status, customer_id, scoped_complexity_factor, created_at"
-      )
-      .order("created_at", { ascending: false });
+      if (selectedCustomer !== "all") {
+        query = query.eq("customer_id", selectedCustomer);
+      }
+      if (selectedStatus !== "All") {
+        query = query.eq("status", selectedStatus);
+      }
 
-    if (selectedCustomer !== "all") {
-      query = query.eq("customer_id", selectedCustomer);
-    }
-    if (selectedStatus !== "All") {
-      query = query.eq("status", selectedStatus);
-    }
+      const { data: proposals } = await query;
+      if (!proposals || proposals.length === 0) {
+        setRows([]);
+        return;
+      }
 
-    const { data: proposals } = await query;
-    if (!proposals || proposals.length === 0) {
+      const proposalIds = proposals.map((p) => p.id);
+      const [
+        scenarioRes,
+        scopedRes,
+        migrationRes,
+        migLinesRes,
+        ratesRes,
+        historyRes,
+      ] = await Promise.all([
+          supabase
+            .from("scenarios")
+            .select(
+              "proposal_id, scenario_type, summary_total_cost, complexity_factor"
+            )
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("scoped_services")
+            .select("proposal_id, cost")
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("migration_config")
+            .select("proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs")
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("migration_detail_lines")
+            .select(
+              "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order"
+            )
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("rate_cards")
+            .select("lookup_key, rate")
+            .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
+          supabase
+            .from("proposal_status_history")
+            .select("proposal_id, old_status, new_status, changed_at")
+            .in("proposal_id", proposalIds),
+        ]);
+
+      const historyMetrics = buildStatusMetricsMap(
+        (historyRes.data ?? []) as StatusHistoryRow[]
+      );
+      const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
+      const scenarioMap = buildScenarioCostMap(scenarioRes.data ?? []);
+      const scopedMap = buildScopedCostMap(scopedRes.data ?? []);
+      const rateMap = buildRateMap(ratesRes.data ?? []);
+      const migrationMap = buildMigrationCostMap(
+        migrationRes.data ?? [],
+        migLinesRes.data ?? [],
+        rateMap
+      );
+
+      const reportRows: ReportRow[] = proposals.map((p) => {
+        const sc = scenarioMap.get(p.id) ?? {};
+        const scopedFactor = Number(p.scoped_complexity_factor) || 1;
+        const p1 = sc["P1"] ?? 0;
+        const p2 = sc["P2"] ?? 0;
+        const opt1 = sc["Opt1"] ?? 0;
+        const opt2 = sc["Opt2"] ?? 0;
+        const scoped = applyComplexity(scopedMap.get(p.id) ?? 0, scopedFactor);
+        const migration = migrationMap.get(p.id) ?? 0;
+        const metrics = historyMetrics.get(p.id);
+
+        return {
+          proposalId: p.id,
+          proposalName: p.name,
+          customerName: customerMap.get(p.customer_id ?? "") ?? "—",
+          status: p.status,
+          p1Cost: p1,
+          p2Cost: p2,
+          opt1Cost: opt1,
+          opt2Cost: opt2,
+          scopedCost: scoped,
+          migrationCost: migration,
+          grandTotal: p1 + p2 + opt1 + opt2 + scoped + migration,
+          dateCreated: p.created_at,
+          dateProposalSent: metrics?.firstSentAt ?? null,
+          dateWon: metrics?.firstWonAt ?? null,
+          daysInCurrentStatus: metrics?.daysInCurrentStatus ?? null,
+          scopedComplexityFactor: scopedFactor,
+        };
+      });
+
+      setRows(reportRows);
+    } catch (error) {
       setRows([]);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Proposal Log report failed to load."
+      );
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const proposalIds = proposals.map((p) => p.id);
-
-    // Fetch all related data in parallel.
-    // migration_config fetches all fields needed by calculateMigrationTotals
-    // so we can compute a live total instead of reading the stale snapshot.
-    const [
-      scenarioRes,
-      scopedRes,
-      migrationRes,
-      migLinesRes,
-      ratesRes,
-      historyRes,
-    ] = await Promise.all([
-        supabase
-          .from("scenarios")
-          .select(
-            "proposal_id, scenario_type, summary_total_cost, complexity_factor"
-          )
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("scoped_services")
-          .select("proposal_id, cost")
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("migration_config")
-          .select("proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs")
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("migration_detail_lines")
-          .select(
-            "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order"
-          )
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("rate_cards")
-          .select("lookup_key, rate")
-          .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
-        supabase
-          .from("proposal_status_history")
-          .select("proposal_id, old_status, new_status, changed_at")
-          .in("proposal_id", proposalIds),
-      ]);
-
-    const historyMetrics = buildStatusMetricsMap(
-      (historyRes.data ?? []) as StatusHistoryRow[]
-    );
-
-    // Build customer lookup
-    const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
-
-    const scenarioMap = buildScenarioCostMap(scenarioRes.data ?? []);
-    const scopedMap = buildScopedCostMap(scopedRes.data ?? []);
-    const rateMap = buildRateMap(ratesRes.data ?? []);
-    const migrationMap = buildMigrationCostMap(
-      migrationRes.data ?? [],
-      migLinesRes.data ?? [],
-      rateMap
-    );
-
-    const reportRows: ReportRow[] = proposals.map((p) => {
-      const sc = scenarioMap.get(p.id) ?? {};
-      const scopedFactor = Number(p.scoped_complexity_factor) || 1;
-      const p1 = sc["P1"] ?? 0;
-      const p2 = sc["P2"] ?? 0;
-      const opt1 = sc["Opt1"] ?? 0;
-      const opt2 = sc["Opt2"] ?? 0;
-      const scoped = applyComplexity(scopedMap.get(p.id) ?? 0, scopedFactor);
-      const migration = migrationMap.get(p.id) ?? 0;
-      const metrics = historyMetrics.get(p.id);
-
-      return {
-        proposalId: p.id,
-        proposalName: p.name,
-        customerName: customerMap.get(p.customer_id ?? "") ?? "—",
-        status: p.status,
-        p1Cost: p1,
-        p2Cost: p2,
-        opt1Cost: opt1,
-        opt2Cost: opt2,
-        scopedCost: scoped,
-        migrationCost: migration,
-        grandTotal: p1 + p2 + opt1 + opt2 + scoped + migration,
-        dateCreated: p.created_at,
-        dateProposalSent: metrics?.firstSentAt ?? null,
-        dateWon: metrics?.firstWonAt ?? null,
-        daysInCurrentStatus: metrics?.daysInCurrentStatus ?? null,
-        scopedComplexityFactor: scopedFactor,
-      };
-    });
-
-    setRows(reportRows);
-    setLoading(false);
   }, [supabase, selectedCustomer, selectedStatus, customers]);
 
   const exportXLSX = useCallback(async () => {

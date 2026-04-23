@@ -140,4 +140,36 @@ describe("proposal aggregates", () => {
       srIm: 84,
     });
   });
+
+  it("fails closed when required migration rates are missing", () => {
+    const configs: MigrationConfigRow[] = [
+      {
+        proposal_id: "p1",
+        num_projects: 1,
+        hrs_per_import: 1,
+        lines_per_import_file: 1000,
+        is_effort_included: false,
+        is_workshop_included: false,
+        sr_im_complexity_factor: 1,
+        pm_complexity_factor: 1,
+        sr_im_trips: 0,
+        pm_trips: 0,
+        doc_avg_mb_per_project: 0,
+        doc_mb_per_hour: 0,
+        core_requirements_hrs: 0,
+        core_migration_plan_hrs: 0,
+        core_validation_hrs: 0,
+        core_final_qa_hrs: 0,
+        core_pm_oversight_hrs: 0,
+      },
+    ];
+    const rates = buildRateMap([{ lookup_key: SR_IM_RATE_KEY, rate: 275 }]);
+
+    expect(() => buildMigrationCostMap(configs, [], rates)).toThrow(
+      "Migration report totals unavailable: missing required rate cards"
+    );
+    expect(() => buildMigrationHoursMap(configs, [], rates)).toThrow(
+      "Migration report totals unavailable: missing required rate cards"
+    );
+  });
 });

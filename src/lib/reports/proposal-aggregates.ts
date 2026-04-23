@@ -225,6 +225,24 @@ export function buildRateMap(
   return new Map(rows.map((row) => [row.lookup_key, NUM(row.rate)]));
 }
 
+function requireMigrationRates(rates: Map<string, number>): {
+  srImRate: number;
+  pmRate: number;
+  travelRate: number;
+} {
+  const srImRate = rates.get(SR_IM_RATE_KEY);
+  const pmRate = rates.get(PM_RATE_KEY);
+  const travelRate = rates.get(TRAVEL_RATE_KEY);
+
+  if (srImRate == null || pmRate == null || travelRate == null) {
+    throw new Error(
+      "Migration report totals unavailable: missing required rate cards (Sr. Implementation Manager, Program Manager, Travel Cost/Trip)."
+    );
+  }
+
+  return { srImRate, pmRate, travelRate };
+}
+
 export function buildMigrationCostMap(
   configs: MigrationConfigRow[],
   lines: MigrationLineRow[],
@@ -232,9 +250,7 @@ export function buildMigrationCostMap(
 ): Map<string, number> {
   const groupedLines = groupMigrationLinesByProposal(lines);
   const costMap = new Map<string, number>();
-  const srImRate = rates.get(SR_IM_RATE_KEY) ?? 0;
-  const pmRate = rates.get(PM_RATE_KEY) ?? 0;
-  const travelRate = rates.get(TRAVEL_RATE_KEY) ?? 0;
+  const { srImRate, pmRate, travelRate } = requireMigrationRates(rates);
 
   for (const config of configs) {
     const proposalLines = groupedLines.get(config.proposal_id) ?? [];
@@ -266,9 +282,7 @@ export function buildMigrationHoursMap(
 ): Map<string, MigrationHours> {
   const groupedLines = groupMigrationLinesByProposal(lines);
   const hoursMap = new Map<string, MigrationHours>();
-  const srImRate = rates.get(SR_IM_RATE_KEY) ?? 0;
-  const pmRate = rates.get(PM_RATE_KEY) ?? 0;
-  const travelRate = rates.get(TRAVEL_RATE_KEY) ?? 0;
+  const { srImRate, pmRate, travelRate } = requireMigrationRates(rates);
 
   for (const config of configs) {
     const proposalLines = groupedLines.get(config.proposal_id) ?? [];

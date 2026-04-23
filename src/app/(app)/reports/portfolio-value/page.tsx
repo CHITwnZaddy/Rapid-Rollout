@@ -40,6 +40,7 @@ import {
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
+import { toast } from "sonner";
 
 type OwnerFilter = "all" | "mine";
 
@@ -77,114 +78,121 @@ export default function PortfolioValueReport() {
   const runReport = useCallback(async () => {
     setLoading(true);
     setHasRun(true);
+    try {
+      let query = supabase
+        .from("proposals")
+        .select("id, name, status, customer_id, created_by, scoped_complexity_factor");
 
-    let query = supabase
-      .from("proposals")
-      .select("id, name, status, customer_id, created_by, scoped_complexity_factor");
+      if (ownerFilter === "mine" && currentUserId) {
+        query = query.eq("created_by", currentUserId);
+      }
 
-    if (ownerFilter === "mine" && currentUserId) {
-      query = query.eq("created_by", currentUserId);
-    }
+      const { data: proposals } = await query;
+      if (!proposals || proposals.length === 0) {
+        setRows([]);
+        return;
+      }
 
-    const { data: proposals } = await query;
-    if (!proposals || proposals.length === 0) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
+      const filtered = includeLost
+        ? proposals
+        : proposals.filter((p) => !DEFAULT_EXCLUDED_STATUSES.has(p.status));
 
-    const filtered = includeLost
-      ? proposals
-      : proposals.filter((p) => !DEFAULT_EXCLUDED_STATUSES.has(p.status));
+      if (filtered.length === 0) {
+        setRows([]);
+        return;
+      }
 
-    if (filtered.length === 0) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
+      const proposalIds = filtered.map((p) => p.id);
+      const [customerRes, scenarioRes, scopedRes, migrationRes, migLinesRes, ratesRes] =
+        await Promise.all([
+          supabase.from("customers").select("id, company_name"),
+          supabase
+            .from("scenarios")
+            .select("proposal_id, summary_total_cost, complexity_factor")
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("scoped_services")
+            .select("proposal_id, cost")
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("migration_config")
+            .select(
+              "proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
+            )
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("migration_detail_lines")
+            .select(
+              "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order"
+            )
+            .in("proposal_id", proposalIds),
+          supabase
+            .from("rate_cards")
+            .select("lookup_key, rate")
+            .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
+        ]);
 
-    const proposalIds = filtered.map((p) => p.id);
-    const [customerRes, scenarioRes, scopedRes, migrationRes, migLinesRes, ratesRes] =
-      await Promise.all([
-        supabase.from("customers").select("id, company_name"),
-        supabase
-          .from("scenarios")
-          .select("proposal_id, summary_total_cost, complexity_factor")
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("scoped_services")
-          .select("proposal_id, cost")
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("migration_config")
-          .select(
-            "proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
-          )
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("migration_detail_lines")
-          .select(
-            "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order"
-          )
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("rate_cards")
-          .select("lookup_key, rate")
-          .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
-      ]);
+      const customerMap = new Map(
+        (customerRes.data ?? []).map((c) => [c.id, c.company_name])
+      );
+      const scenarioTotalByProposal = buildScenarioTotalByProposal(
+        scenarioRes.data ?? []
+      );
+      const scopedRawByProposal = buildScopedCostMap(scopedRes.data ?? []);
+      const rateMap = buildRateMap(ratesRes.data ?? []);
+      const migrationTotalByProposal = buildMigrationCostMap(
+        migrationRes.data ?? [],
+        migLinesRes.data ?? [],
+        rateMap
+      );
 
-    const customerMap = new Map(
-      (customerRes.data ?? []).map((c) => [c.id, c.company_name])
-    );
-    const scenarioTotalByProposal = buildScenarioTotalByProposal(
-      scenarioRes.data ?? []
-    );
-    const scopedRawByProposal = buildScopedCostMap(scopedRes.data ?? []);
-    const rateMap = buildRateMap(ratesRes.data ?? []);
-    const migrationTotalByProposal = buildMigrationCostMap(
-      migrationRes.data ?? [],
-      migLinesRes.data ?? [],
-      rateMap
-    );
-
-    const portfolio: PortfolioRow[] = filtered
-      .map((p) => {
-        const scopedFactor = Number(p.scoped_complexity_factor) || 1;
-        const scenarioTotal = scenarioTotalByProposal.get(p.id) ?? 0;
-        const scopedTotal = applyComplexity(
-          scopedRawByProposal.get(p.id) ?? 0,
-          scopedFactor
-        );
-        const migrationTotal = migrationTotalByProposal.get(p.id) ?? 0;
-        return {
-          proposalId: p.id,
-          proposalName: p.name,
-          customerName: customerMap.get(p.customer_id ?? "") ?? "—",
-          status: p.status,
-          scenarioTotal,
-          scopedTotal,
-          migrationTotal,
-          grandTotal: scenarioTotal + scopedTotal + migrationTotal,
-        };
-      })
+      const portfolio: PortfolioRow[] = filtered
+        .map((p) => {
+          const scopedFactor = Number(p.scoped_complexity_factor) || 1;
+          const scenarioTotal = scenarioTotalByProposal.get(p.id) ?? 0;
+          const scopedTotal = applyComplexity(
+            scopedRawByProposal.get(p.id) ?? 0,
+            scopedFactor
+          );
+          const migrationTotal = migrationTotalByProposal.get(p.id) ?? 0;
+          return {
+            proposalId: p.id,
+            proposalName: p.name,
+            customerName: customerMap.get(p.customer_id ?? "") ?? "—",
+            status: p.status,
+            scenarioTotal,
+            scopedTotal,
+            migrationTotal,
+            grandTotal: scenarioTotal + scopedTotal + migrationTotal,
+          };
+        })
       // Group order follows PROPOSAL_STATUSES (Draft → Proposal Sent → … → VOID).
       // Within each group, sort by Proposal Name A→Z. Unknown statuses sink to
       // the bottom via a large sentinel index.
-      .sort((a, b) => {
-        const ai = PROPOSAL_STATUSES.indexOf(
-          a.status as (typeof PROPOSAL_STATUSES)[number]
-        );
-        const bi = PROPOSAL_STATUSES.indexOf(
-          b.status as (typeof PROPOSAL_STATUSES)[number]
-        );
-        const aIdx = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-        const bIdx = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
-        if (aIdx !== bIdx) return aIdx - bIdx;
-        return a.proposalName.localeCompare(b.proposalName);
-      });
+        .sort((a, b) => {
+          const ai = PROPOSAL_STATUSES.indexOf(
+            a.status as (typeof PROPOSAL_STATUSES)[number]
+          );
+          const bi = PROPOSAL_STATUSES.indexOf(
+            b.status as (typeof PROPOSAL_STATUSES)[number]
+          );
+          const aIdx = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
+          const bIdx = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+          if (aIdx !== bIdx) return aIdx - bIdx;
+          return a.proposalName.localeCompare(b.proposalName);
+        });
 
-    setRows(portfolio);
-    setLoading(false);
+      setRows(portfolio);
+    } catch (error) {
+      setRows([]);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Portfolio Value report failed to load."
+      );
+    } finally {
+      setLoading(false);
+    }
   }, [supabase, ownerFilter, includeLost, currentUserId]);
 
   // Group by status for the render; keep the original row order (already sorted).
