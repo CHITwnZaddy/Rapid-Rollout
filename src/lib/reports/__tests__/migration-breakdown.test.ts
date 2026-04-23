@@ -114,4 +114,35 @@ describe("migration breakdown", () => {
     ]);
     expect(calculateMigrationBreakdownTotal(rows)).toBe(46400);
   });
+
+  it("includes travel labor in the scenario-breakout migration total", () => {
+    const rows = buildScenarioBreakoutMigrationRows(
+      {
+        num_projects: 0,
+        hrs_per_import: 4,
+        lines_per_import_file: 1000,
+        is_effort_included: false,
+        is_workshop_included: false,
+        sr_im_complexity_factor: 1,
+        pm_complexity_factor: 1,
+        sr_im_trips: 1,
+        pm_trips: 1,
+        doc_avg_mb_per_project: 0,
+        doc_mb_per_hour: 50,
+        core_requirements_hrs: 0,
+        core_migration_plan_hrs: 0,
+        core_validation_hrs: 0,
+        core_final_qa_hrs: 0,
+        core_pm_oversight_hrs: 0,
+      },
+      [],
+      300,
+      250
+    );
+
+    expect(rows).toEqual([
+      { label: "Travel", total: 22000 },
+    ]);
+    expect(calculateMigrationBreakdownTotal(rows)).toBe(22000);
+  });
 });

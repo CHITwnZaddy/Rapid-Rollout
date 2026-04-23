@@ -130,6 +130,13 @@ export function buildScenarioBreakoutMigrationRows(
     });
   }
 
+  if (totals.travelSrIm > 0 || totals.travelPm > 0) {
+    rows.push({
+      label: "Travel",
+      total: totals.travelSrIm * srImRate + totals.travelPm * pmRate,
+    });
+  }
+
   return rows;
 }
 
