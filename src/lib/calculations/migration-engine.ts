@@ -20,9 +20,9 @@ export type MigrationConfig = {
   is_effort_included: boolean;
   is_workshop_included: boolean;
   pm_contingency_pct: number;
-  ba_complexity_factor: number;
+  sr_im_complexity_factor: number;
   pm_complexity_factor: number;
-  ba_trips: number;
+  sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
   doc_mb_per_hour: number;
@@ -129,36 +129,35 @@ export function calculateDocumentHours(config: MigrationConfig): number {
 // ─── Full migration totals ──────────────────────────────────────────
 
 export type MigrationTotals = {
-  // Raw section hours (before complexity factor). The `*Ba*` fields are
-  // legacy names that now represent Sr. IM-side migration labor.
-  workshopBaRaw: number;
+  // Raw section hours (before complexity factor).
+  workshopSrImRaw: number;
   workshopPmRaw: number;
-  coreBaRaw: number;
+  coreSrImRaw: number;
   corePmRaw: number;
   projectRaw: number;
   workflowRaw: number;
   costRaw: number;
   documentRaw: number;
-  travelBaRaw: number;
+  travelSrImRaw: number;
   travelPmRaw: number;
 
   // After complexity factor
-  workshopBa: number;
+  workshopSrIm: number;
   workshopPm: number;
-  coreBa: number;
+  coreSrIm: number;
   corePm: number;
-  projectBa: number;
-  workflowBa: number;
-  costBa: number;
-  documentBa: number;
-  travelBa: number;
+  projectSrIm: number;
+  workflowSrIm: number;
+  costSrIm: number;
+  documentSrIm: number;
+  travelSrIm: number;
   travelPm: number;
 
-  totalBaHours: number;
+  totalSrImHours: number;
   totalPmHours: number;
 
   // Costs
-  baCost: number;
+  srImCost: number;
   pmCost: number;
   travelExpense: number; // trips × travel cost/trip (separate from hourly)
   salesPrice: number; // Sr. IM cost + PM cost (hourly billing)
@@ -171,15 +170,14 @@ export type MigrationTotals = {
 /**
  * Calculate the full migration totals, mirroring the Excel left-panel formulas.
  *
- * Sr. IM hours per section (all × ba_complexity_factor, kept under
- * legacy `ba_*` config names to avoid a schema migration):
+ * Sr. IM hours per section (all × sr_im_complexity_factor):
  *   Workshop:  132 if workshop=Yes, else 0
  *   Core:      Requirements + Migration Plan + Validation + Final QA (if effort=Yes)
  *   Project:   Sum of project detail line hours
  *   Workflow:   Sum of workflow detail line hours
  *   Cost:      Sum of cost detail line hours
  *   Document:  (avg_mb / mb_hr) × num_projects
- *   Travel:    ba_trips × 40
+ *   Travel:    sr_im_trips × 40
  *
  * PM II Hours per section (all × pm_complexity_factor):
  *   Workshop:  8 if workshop=Yes, else 0
@@ -196,10 +194,10 @@ export function calculateMigrationTotals(
   travelCostPerTrip: number
 ): MigrationTotals {
   // Raw hours before complexity
-  const workshopBaRaw = config.is_workshop_included ? 132 : 0;
+  const workshopSrImRaw = config.is_workshop_included ? 132 : 0;
   const workshopPmRaw = config.is_workshop_included ? 8 : 0;
 
-  const coreBaRaw = config.is_effort_included
+  const coreSrImRaw = config.is_effort_included
     ? config.core_requirements_hrs +
       config.core_migration_plan_hrs +
       config.core_validation_hrs +
@@ -214,37 +212,37 @@ export function calculateMigrationTotals(
   const costRaw = calculateSectionHours(costLines, config);
   const documentRaw = calculateDocumentHours(config);
 
-  const travelBaRaw = config.ba_trips * 40;
+  const travelSrImRaw = config.sr_im_trips * 40;
   const travelPmRaw = config.pm_trips * 40;
 
   // Apply complexity factors
-  const baF = config.ba_complexity_factor;
+  const srImFactor = config.sr_im_complexity_factor;
   const pmF = config.pm_complexity_factor;
 
-  const workshopBa = workshopBaRaw * baF;
+  const workshopSrIm = workshopSrImRaw * srImFactor;
   const workshopPm = workshopPmRaw * pmF;
-  const coreBa = coreBaRaw * baF;
+  const coreSrIm = coreSrImRaw * srImFactor;
   const corePm = corePmRaw * pmF;
-  const projectBa = projectRaw * baF;
-  const workflowBa = workflowRaw * baF;
-  const costBa = costRaw * baF;
-  const documentBa = documentRaw * baF;
-  const travelBa = travelBaRaw * baF;
+  const projectSrIm = projectRaw * srImFactor;
+  const workflowSrIm = workflowRaw * srImFactor;
+  const costSrIm = costRaw * srImFactor;
+  const documentSrIm = documentRaw * srImFactor;
+  const travelSrIm = travelSrImRaw * srImFactor;
   const travelPm = travelPmRaw * pmF;
 
-  const totalBaHours =
-    workshopBa + coreBa + projectBa + workflowBa + costBa + documentBa + travelBa;
+  const totalSrImHours =
+    workshopSrIm + coreSrIm + projectSrIm + workflowSrIm + costSrIm + documentSrIm + travelSrIm;
   const totalPmHours = workshopPm + corePm + travelPm;
 
   // Costs
-  const baCost = totalBaHours * srImRate;
+  const srImCost = totalSrImHours * srImRate;
   const pmCost = totalPmHours * pmRate;
   const travelExpense =
-    (config.ba_trips + config.pm_trips) * travelCostPerTrip;
-  const salesPrice = baCost + pmCost;
+    (config.sr_im_trips + config.pm_trips) * travelCostPerTrip;
+  const salesPrice = srImCost + pmCost;
 
   // Summary
-  const totalHours = totalBaHours + totalPmHours;
+  const totalHours = totalSrImHours + totalPmHours;
   const blendedRate = totalHours === 0 ? 0 : salesPrice / totalHours;
   // Cost baseline: internal delivery cost per hour. Margin goes negative
   // when blendedRate falls below this — surface it, don't clamp.
@@ -253,29 +251,29 @@ export function calculateMigrationTotals(
     salesPrice === 0 ? 0 : 1 - INTERNAL_COST_RATE / blendedRate;
 
   return {
-    workshopBaRaw,
+    workshopSrImRaw,
     workshopPmRaw,
-    coreBaRaw,
+    coreSrImRaw,
     corePmRaw,
     projectRaw,
     workflowRaw,
     costRaw,
     documentRaw,
-    travelBaRaw,
+    travelSrImRaw,
     travelPmRaw,
-    workshopBa,
+    workshopSrIm,
     workshopPm,
-    coreBa,
+    coreSrIm,
     corePm,
-    projectBa,
-    workflowBa,
-    costBa,
-    documentBa,
-    travelBa,
+    projectSrIm,
+    workflowSrIm,
+    costSrIm,
+    documentSrIm,
+    travelSrIm,
     travelPm,
-    totalBaHours,
+    totalSrImHours,
     totalPmHours,
-    baCost,
+    srImCost,
     pmCost,
     travelExpense,
     salesPrice,

@@ -195,7 +195,7 @@ export function MigrationConfigForm({
             <div className="space-y-1">
               <Label className="text-xs">Adjusted Calculated Hours</Label>
               <div className="flex h-8 items-center rounded-md bg-muted px-3 text-sm font-medium tabular-nums">
-                {(totals?.documentBa ?? 0).toFixed(1)}
+                {(totals?.documentSrIm ?? 0).toFixed(1)}
               </div>
             </div>
           </div>

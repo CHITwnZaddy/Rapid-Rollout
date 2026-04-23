@@ -20,9 +20,9 @@ const baseConfig: MigrationConfig = {
   is_effort_included: true,
   is_workshop_included: true,
   pm_contingency_pct: 0,
-  ba_complexity_factor: 1,
+  sr_im_complexity_factor: 1,
   pm_complexity_factor: 1,
-  ba_trips: 0,
+  sr_im_trips: 0,
   pm_trips: 0,
   doc_avg_mb_per_project: 0,
   doc_mb_per_hour: 0,
@@ -191,7 +191,7 @@ describe("calculateMigrationTotals", () => {
     };
     const totals = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250);
     expect(totals.salesPrice).toBe(0);
-    expect(totals.totalBaHours).toBe(0);
+    expect(totals.totalSrImHours).toBe(0);
     expect(totals.totalPmHours).toBe(0);
     expect(totals.blendedRate).toBe(0);
   });
@@ -206,7 +206,7 @@ describe("calculateMigrationTotals", () => {
       225,
       2250
     );
-    expect(withWorkshop.workshopBaRaw).toBe(132);
+    expect(withWorkshop.workshopSrImRaw).toBe(132);
     expect(withWorkshop.workshopPmRaw).toBe(8);
   });
 
@@ -220,7 +220,7 @@ describe("calculateMigrationTotals", () => {
       225,
       2000
     );
-    expect(t.coreBaRaw).toBe(20 + 16 + 12 + 8); // 56
+    expect(t.coreSrImRaw).toBe(20 + 16 + 12 + 8); // 56
     expect(t.corePmRaw).toBe(10);
   });
 
@@ -230,7 +230,7 @@ describe("calculateMigrationTotals", () => {
         ...baseConfig,
         is_workshop_included: true,
         is_effort_included: false,
-        ba_complexity_factor: 1.5,
+        sr_im_complexity_factor: 1.5,
         pm_complexity_factor: 1.25,
       },
       [],
@@ -240,17 +240,17 @@ describe("calculateMigrationTotals", () => {
       225,
       2000
     );
-    expect(t.workshopBa).toBe(132 * 1.5);
+    expect(t.workshopSrIm).toBe(132 * 1.5);
     expect(t.workshopPm).toBe(8 * 1.25);
   });
 
-  it("computes travel hours as trips × 40 and travelExpense as (ba_trips + pm_trips) × travelCost", () => {
+  it("computes travel hours as trips × 40 and travelExpense as (sr_im_trips + pm_trips) × travelCost", () => {
     const t = calculateMigrationTotals(
       {
         ...baseConfig,
         is_workshop_included: false,
         is_effort_included: false,
-        ba_trips: 2,
+        sr_im_trips: 2,
         pm_trips: 1,
       },
       [],
@@ -260,7 +260,7 @@ describe("calculateMigrationTotals", () => {
       225,
       2500
     );
-    expect(t.travelBaRaw).toBe(80);
+    expect(t.travelSrImRaw).toBe(80);
     expect(t.travelPmRaw).toBe(40);
     expect(t.travelExpense).toBe(3 * 2500);
   });
@@ -271,7 +271,7 @@ describe("calculateMigrationTotals", () => {
         ...baseConfig,
         is_workshop_included: true,
         is_effort_included: false,
-        ba_complexity_factor: 1,
+        sr_im_complexity_factor: 1,
         pm_complexity_factor: 1,
       },
       [],
@@ -282,7 +282,7 @@ describe("calculateMigrationTotals", () => {
       2000
     );
     // Workshop only: Sr. IM 132 * 200 = 26400, PM 8 * 300 = 2400
-    expect(t.baCost).toBe(26400);
+    expect(t.srImCost).toBe(26400);
     expect(t.pmCost).toBe(2400);
     expect(t.salesPrice).toBe(28800);
   });
@@ -301,7 +301,7 @@ describe("calculateMigrationTotals", () => {
       300,
       2000
     );
-    const totalHours = t.totalBaHours + t.totalPmHours;
+    const totalHours = t.totalSrImHours + t.totalPmHours;
     expect(t.blendedRate).toBeCloseTo(t.salesPrice / totalHours, 6);
   });
 
@@ -368,7 +368,7 @@ describe("calculateMigrationTotals", () => {
     );
     // 1000 lines → 2 imports × 4 hrs = 8 raw Sr. IM hours
     expect(t.projectRaw).toBe(8);
-    expect(t.totalBaHours).toBe(8);
+    expect(t.totalSrImHours).toBe(8);
   });
 });
 

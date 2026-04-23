@@ -12,9 +12,9 @@ export type MigrationBreakdownConfig = {
   lines_per_import_file: number;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  ba_complexity_factor: number;
+  sr_im_complexity_factor: number;
   pm_complexity_factor: number;
-  ba_trips: number;
+  sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
   doc_mb_per_hour: number;
@@ -53,9 +53,9 @@ export function buildScenarioBreakoutMigrationRows(
     is_effort_included: config.is_effort_included,
     is_workshop_included: config.is_workshop_included,
     pm_contingency_pct: 0,
-    ba_complexity_factor: NUM(config.ba_complexity_factor),
+    sr_im_complexity_factor: NUM(config.sr_im_complexity_factor),
     pm_complexity_factor: NUM(config.pm_complexity_factor),
-    ba_trips: NUM(config.ba_trips),
+    sr_im_trips: NUM(config.sr_im_trips),
     pm_trips: NUM(config.pm_trips),
     doc_avg_mb_per_project: NUM(config.doc_avg_mb_per_project),
     doc_mb_per_hour: NUM(config.doc_mb_per_hour),
@@ -70,22 +70,10 @@ export function buildScenarioBreakoutMigrationRows(
     .filter((line) => line.section === "project")
     .map((line) => toEngineLine(line, { quantityOverride: numProjects }));
   const workflowLines: MigrationDetailLine[] = lines
-    .filter(
-      (line) =>
-        line.section === "workflow" &&
-        line.label &&
-        line.label !== "WF Object Name" &&
-        line.label.trim() !== ""
-    )
+    .filter((line) => line.section === "workflow")
     .map((line) => toEngineLine(line));
   const costLines: MigrationDetailLine[] = lines
-    .filter(
-      (line) =>
-        line.section === "cost" &&
-        line.label &&
-        line.label !== "TBD" &&
-        line.label.trim() !== ""
-    )
+    .filter((line) => line.section === "cost")
     .map((line) => toEngineLine(line));
 
   const totals = calculateMigrationTotals(
@@ -100,38 +88,52 @@ export function buildScenarioBreakoutMigrationRows(
 
   const rows: MigrationBreakdownRow[] = [];
 
-  if (config.is_effort_included && (totals.coreBa > 0 || totals.corePm > 0)) {
+  if (config.is_workshop_included && (totals.workshopSrIm > 0 || totals.workshopPm > 0)) {
+    rows.push({
+      label: "Data Migration Workshop",
+      total: totals.workshopSrIm * srImRate + totals.workshopPm * pmRate,
+    });
+  }
+
+  if (config.is_effort_included && (totals.coreSrIm > 0 || totals.corePm > 0)) {
     rows.push({
       label: "Core Data Migration Efforts",
-      total: totals.coreBa * srImRate + totals.corePm * pmRate,
+      total: totals.coreSrIm * srImRate + totals.corePm * pmRate,
     });
   }
 
-  if (totals.documentBa > 0) {
+  if (totals.documentSrIm > 0) {
     rows.push({
       label: "Document Migration",
-      total: totals.documentBa * srImRate,
+      total: totals.documentSrIm * srImRate,
     });
   }
 
-  if (totals.projectBa > 0) {
+  if (totals.projectSrIm > 0) {
     rows.push({
       label: "Project & Schedule Data Migration",
-      total: totals.projectBa * srImRate,
+      total: totals.projectSrIm * srImRate,
     });
   }
 
-  if (totals.workflowBa > 0) {
+  if (totals.workflowSrIm > 0) {
     rows.push({
       label: "Workflow Data Migration",
-      total: totals.workflowBa * srImRate,
+      total: totals.workflowSrIm * srImRate,
     });
   }
 
-  if (totals.costBa > 0) {
+  if (totals.costSrIm > 0) {
     rows.push({
       label: "Cost Data Migration",
-      total: totals.costBa * srImRate,
+      total: totals.costSrIm * srImRate,
+    });
+  }
+
+  if (totals.travelSrIm > 0 || totals.travelPm > 0) {
+    rows.push({
+      label: "Travel",
+      total: totals.travelSrIm * srImRate + totals.travelPm * pmRate,
     });
   }
 

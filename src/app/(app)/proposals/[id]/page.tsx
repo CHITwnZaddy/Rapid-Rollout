@@ -79,7 +79,7 @@ export default async function ProposalSummaryPage({
       supabase
         .from("migration_config")
         .select(
-          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, ba_complexity_factor, pm_complexity_factor, ba_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
+          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
         )
         .eq("proposal_id", id)
         .single(),
@@ -193,9 +193,9 @@ export default async function ProposalSummaryPage({
       is_effort_included: migCfg.is_effort_included,
       is_workshop_included: migCfg.is_workshop_included,
       pm_contingency_pct: 0,
-      ba_complexity_factor: NUM(migCfg.ba_complexity_factor),
+      sr_im_complexity_factor: NUM(migCfg.sr_im_complexity_factor),
       pm_complexity_factor: NUM(migCfg.pm_complexity_factor),
-      ba_trips: NUM(migCfg.ba_trips),
+      sr_im_trips: NUM(migCfg.sr_im_trips),
       pm_trips: NUM(migCfg.pm_trips),
       doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
       doc_mb_per_hour: NUM(migCfg.doc_mb_per_hour),

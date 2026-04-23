@@ -24,9 +24,9 @@ export type DbConfig = {
   is_effort_included: boolean;
   is_workshop_included: boolean;
   pm_contingency_pct: number;
-  ba_complexity_factor: number;
+  sr_im_complexity_factor: number;
   pm_complexity_factor: number;
-  ba_trips: number;
+  sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
   doc_mb_per_hour: number;
@@ -93,9 +93,9 @@ function computeTotalsFromState(
     is_effort_included: cfg.is_effort_included,
     is_workshop_included: cfg.is_workshop_included,
     pm_contingency_pct: NUM(cfg.pm_contingency_pct),
-    ba_complexity_factor: NUM(cfg.ba_complexity_factor),
+    sr_im_complexity_factor: NUM(cfg.sr_im_complexity_factor),
     pm_complexity_factor: NUM(cfg.pm_complexity_factor),
-    ba_trips: NUM(cfg.ba_trips),
+    sr_im_trips: NUM(cfg.sr_im_trips),
     pm_trips: NUM(cfg.pm_trips),
     doc_avg_mb_per_project: NUM(cfg.doc_avg_mb_per_project),
     doc_mb_per_hour: NUM(cfg.doc_mb_per_hour),
@@ -205,9 +205,9 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
             is_effort_included: updated.is_effort_included,
             is_workshop_included: updated.is_workshop_included,
             pm_contingency_pct: updated.pm_contingency_pct,
-            ba_complexity_factor: updated.ba_complexity_factor,
+            sr_im_complexity_factor: updated.sr_im_complexity_factor,
             pm_complexity_factor: updated.pm_complexity_factor,
-            ba_trips: updated.ba_trips,
+            sr_im_trips: updated.sr_im_trips,
             pm_trips: updated.pm_trips,
             doc_avg_mb_per_project: updated.doc_avg_mb_per_project,
             doc_mb_per_hour: updated.doc_mb_per_hour,
