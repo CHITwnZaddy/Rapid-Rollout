@@ -14,6 +14,11 @@ import {
   type MigrationConfigState,
   type MigrationLineState,
 } from "@/lib/migration/compute-totals-from-state";
+import {
+  addMigrationDetailLine,
+  removeMigrationDetailLine,
+} from "@/app/(app)/proposals/[id]/migration/actions";
+import { type MigrationSection } from "@/lib/validation/migration";
 
 export type DbConfig = MigrationConfigState & {
   id: string;
@@ -21,9 +26,7 @@ export type DbConfig = MigrationConfigState & {
   computed_total_cost: number;
 };
 
-export type DbLine = MigrationLineState & {
-  proposal_id: string;
-};
+export type DbLine = MigrationLineState;
 
 export type UseMigrationConfigReturn = {
   config: DbConfig | null;
@@ -41,9 +44,12 @@ export type UseMigrationConfigReturn = {
   projectLines: DbLine[];
   workflowLines: DbLine[];
   costLines: DbLine[];
+  isMutatingRows: boolean;
+  mutatingSection: MigrationSection | null;
+  removingLineId: string | null;
   updateConfig: (field: keyof DbConfig, value: number | boolean | string) => void;
   updateLine: (lineId: string, field: keyof DbLine, value: string | number) => void;
-  addLine: (section: "project" | "workflow" | "cost") => Promise<void>;
+  addLine: (section: MigrationSection) => Promise<void>;
   removeLine: (lineId: string) => Promise<void>;
   retryPendingSaves: () => Promise<void>;
   clearSaveError: () => void;
@@ -64,6 +70,9 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
+  const [isMutatingRows, setIsMutatingRows] = useState(false);
+  const [mutatingSection, setMutatingSection] = useState<MigrationSection | null>(null);
+  const [removingLineId, setRemovingLineId] = useState<string | null>(null);
 
   // Refs for closure-safe access to latest values in callbacks/cleanup
   const configRef = useRef(config);
@@ -301,73 +310,67 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   );
 
   const addLine = useCallback(
-    async (section: "project" | "workflow" | "cost") => {
+    async (section: MigrationSection) => {
       setSaveError(null);
       setSaveStatus("saving");
-      const sectionLines = lines.filter((l) => l.section === section);
-      const nextOrder = sectionLines.length;
-      const label =
-        section === "workflow"
-          ? "WF Object Name"
-          : section === "cost"
-            ? "TBD"
-            : "New Item";
+      setIsMutatingRows(true);
+      setMutatingSection(section);
+      setRemovingLineId(null);
 
-      const { data, error } = await supabase
-        .from("migration_detail_lines")
-        .insert({
-          proposal_id: proposalId,
-          section,
-          label,
-          quantity: 0,
-          items_per_object: 0,
-          total_line_items: 0,
-          row_order: nextOrder,
-        })
-        .select()
-        .single();
+      try {
+        const flushed = (await persistenceControllerRef.current?.flushNow()) ?? true;
+        if (!flushed) {
+          return;
+        }
 
-      if (error || !data) {
-        setSaveStatus("error");
-        setSaveError(
-          `Couldn't add migration detail row. ${error?.message ?? "No row was returned."}`
-        );
-        return;
+        const result = await addMigrationDetailLine(proposalId, section);
+        if (!result.ok) {
+          setSaveStatus("error");
+          setSaveError(result.error);
+          return;
+        }
+
+        setLines(result.lines);
+        linesRef.current = result.lines;
+        setSaveStatus("saved");
+      } finally {
+        setIsMutatingRows(false);
+        setMutatingSection(null);
       }
-
-      setLines((prev) => {
-        const next = [...prev, data as DbLine];
-        linesRef.current = next;
-        return next;
-      });
-      persistenceControllerRef.current?.scheduleTotalsRecompute();
     },
-    [lines, proposalId, supabase]
+    [proposalId]
   );
 
   const removeLine = useCallback(
     async (lineId: string) => {
       setSaveError(null);
       setSaveStatus("saving");
-      const { error } = await supabase
-        .from("migration_detail_lines")
-        .delete()
-        .eq("id", lineId);
+      setIsMutatingRows(true);
+      setMutatingSection(null);
+      setRemovingLineId(lineId);
 
-      if (error) {
-        setSaveStatus("error");
-        setSaveError(`Couldn't delete migration detail row. ${error.message}`);
-        return;
+      try {
+        const flushed = (await persistenceControllerRef.current?.flushNow()) ?? true;
+        if (!flushed) {
+          return;
+        }
+
+        const result = await removeMigrationDetailLine(proposalId, lineId);
+        if (!result.ok) {
+          setSaveStatus("error");
+          setSaveError(result.error);
+          return;
+        }
+
+        setLines(result.lines);
+        linesRef.current = result.lines;
+        setSaveStatus("saved");
+      } finally {
+        setIsMutatingRows(false);
+        setRemovingLineId(null);
       }
-
-      setLines((prev) => {
-        const next = prev.filter((l) => l.id !== lineId);
-        linesRef.current = next;
-        return next;
-      });
-      persistenceControllerRef.current?.scheduleTotalsRecompute();
     },
-    [supabase]
+    [proposalId]
   );
 
   // ─── Derived values ──────────────────────────────────────────────
@@ -401,6 +404,9 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     projectLines,
     workflowLines,
     costLines,
+    isMutatingRows,
+    mutatingSection,
+    removingLineId,
     updateConfig,
     updateLine,
     addLine,

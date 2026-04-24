@@ -30,6 +30,9 @@ export default function MigrationPage() {
     projectLines,
     workflowLines,
     costLines,
+    isMutatingRows,
+    mutatingSection,
+    removingLineId,
     updateConfig,
     updateLine,
     addLine,
@@ -130,6 +133,9 @@ export default function MigrationPage() {
         labelEditable={(row) =>
           row.label !== "Project Info/Detail" && row.label !== "Schedules"
         }
+        isMutatingRows={isMutatingRows}
+        mutatingSection={mutatingSection}
+        removingLineId={removingLineId}
         onUpdateLine={updateLine}
         onAddLine={addLine}
         onRemoveLine={removeLine}
@@ -144,6 +150,9 @@ export default function MigrationPage() {
         itemsLabel="Line Items / Object"
         totalEditable={false}
         labelEditable
+        isMutatingRows={isMutatingRows}
+        mutatingSection={mutatingSection}
+        removingLineId={removingLineId}
         onUpdateLine={updateLine}
         onAddLine={addLine}
         onRemoveLine={removeLine}
@@ -158,6 +167,9 @@ export default function MigrationPage() {
         itemsLabel="Line Items / Object"
         totalEditable={false}
         labelEditable
+        isMutatingRows={isMutatingRows}
+        mutatingSection={mutatingSection}
+        removingLineId={removingLineId}
         onUpdateLine={updateLine}
         onAddLine={addLine}
         onRemoveLine={removeLine}
