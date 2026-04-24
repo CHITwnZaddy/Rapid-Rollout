@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -29,24 +29,20 @@ import {
 import { applyComplexity } from "@/lib/calculations/complexity";
 import { ScopedComplexityFactor } from "@/components/proposals/scoped-complexity-factor";
 import { toast } from "sonner";
+import { SCOPED_SERVICE_TYPES } from "@/lib/validation/scoped-services";
+import {
+  addScopedServiceLine,
+  deleteScopedServiceLine,
+  type ScopedServiceLine,
+  updateScopedServiceLine,
+} from "./actions";
 
-const SERVICE_TYPES = [
-  "01 Data Fix",
-  "02 Mail Merge",
-  "03 Remote Pro Svcs - Design Session(s)",
-  "04 Remote Pro Svcs - Requirements Creation",
-  "05 Other",
-];
-
-type ScopedServiceLine = {
-  id: string;
-  service_type: string;
-  description: string | null;
-  hours: number;
-  rate_card_lookup_key: string;
-  cost: number;
-  row_order: number;
-};
+function sortScopedLines(lines: ScopedServiceLine[]): ScopedServiceLine[] {
+  return [...lines].sort((a, b) => {
+    if (a.row_order !== b.row_order) return a.row_order - b.row_order;
+    return a.id.localeCompare(b.id);
+  });
+}
 
 function recalculateScopedLine(
   line: ScopedServiceLine,
@@ -70,6 +66,13 @@ export default function ScopedServicesPage() {
   const [savingLineId, setSavingLineId] = useState<string | null>(null);
   const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
   const rateCardMap = useMemo(() => buildRateCardMap(rateCards), [rateCards]);
+  const persistedLinesRef = useRef<ScopedServiceLine[]>([]);
+
+  const syncServerLines = useCallback((nextLines: ScopedServiceLine[]) => {
+    const sortedLines = sortScopedLines(nextLines);
+    persistedLinesRef.current = sortedLines;
+    setLines(sortedLines);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -77,7 +80,9 @@ export default function ScopedServicesPage() {
         await Promise.all([
           supabase
             .from("scoped_services")
-            .select("*")
+            .select(
+              "id, service_type, description, hours, rate_card_lookup_key, cost, row_order"
+            )
             .eq("proposal_id", proposalId)
             .order("row_order"),
           supabase.from("rate_cards").select("*").eq("status", "Active"),
@@ -87,102 +92,135 @@ export default function ScopedServicesPage() {
             .eq("id", proposalId)
             .single(),
         ]);
-      if (scopedData) setLines(scopedData);
+      if (scopedData) syncServerLines(scopedData as ScopedServiceLine[]);
       if (rateData) setRateCards(rateData);
-      if (proposalData)
+      if (proposalData) {
         setComplexityFactor(Number(proposalData.scoped_complexity_factor ?? 1));
+      }
     };
-    load();
-  }, [proposalId, supabase]);
+    void load();
+  }, [proposalId, supabase, syncServerLines]);
+
+  const persistLine = useCallback(
+    async (nextLine: ScopedServiceLine): Promise<boolean> => {
+      setSavingLineId(nextLine.id);
+
+      const result = await updateScopedServiceLine(proposalId, nextLine.id, {
+        serviceType: nextLine.service_type,
+        description: nextLine.description ?? "",
+        hours: nextLine.hours,
+        rateCardLookupKey: nextLine.rate_card_lookup_key,
+      });
+
+      setSavingLineId((current) => (current === nextLine.id ? null : current));
+
+      if (!result.ok) {
+        const persistedLine = persistedLinesRef.current.find(
+          (line) => line.id === nextLine.id
+        );
+        if (persistedLine) {
+          setLines((prev) =>
+            prev.map((line) => (line.id === nextLine.id ? persistedLine : line))
+          );
+        }
+        toast.error(`Couldn't save scoped service line. ${result.error}`);
+        return false;
+      }
+
+      syncServerLines(result.lines);
+      return true;
+    },
+    [proposalId, syncServerLines]
+  );
 
   const addLine = useCallback(async () => {
     setIsAdding(true);
-    const defaultLookupKey = rateCards[0]?.lookup_key ?? "Master|Sr. Implementation Manager";
-    const { data, error } = await supabase
-      .from("scoped_services")
-      .insert({
-        proposal_id: proposalId,
-        service_type: SERVICE_TYPES[0],
-        description: "",
-        hours: 0,
-        rate_card_lookup_key: defaultLookupKey,
-        cost: 0,
-        row_order: lines.length,
-      })
-      .select()
-      .single();
-
+    const result = await addScopedServiceLine(proposalId);
     setIsAdding(false);
 
-    if (error || !data) {
-      toast.error(`Couldn't add scoped service line. ${error?.message ?? "No row was returned."}`);
+    if (!result.ok) {
+      toast.error(`Couldn't add scoped service line. ${result.error}`);
       return;
     }
 
-    setLines((prev) => [...prev, data]);
+    syncServerLines(result.lines);
     toast.success("Scoped service line added.");
-  }, [lines.length, proposalId, rateCards, supabase]);
+  }, [proposalId, syncServerLines]);
 
-  const updateLine = useCallback(
-    async (lineId: string, field: string, value: string | number | null) => {
-      const previousLine = lines.find((l) => l.id === lineId);
-      if (!previousLine) return;
-
-      const nextLine = recalculateScopedLine(
-        { ...previousLine, [field]: value },
-        rateCardMap
+  const saveLineOnBlur = useCallback(
+    async (lineId: string) => {
+      const nextLine = lines.find((line) => line.id === lineId);
+      const persistedLine = persistedLinesRef.current.find(
+        (line) => line.id === lineId
       );
+      if (!nextLine || !persistedLine) return;
+
+      if (
+        nextLine.service_type === persistedLine.service_type &&
+        (nextLine.description ?? "") === (persistedLine.description ?? "") &&
+        nextLine.hours === persistedLine.hours &&
+        nextLine.rate_card_lookup_key === persistedLine.rate_card_lookup_key
+      ) {
+        return;
+      }
+
+      await persistLine(nextLine);
+    },
+    [lines, persistLine]
+  );
+
+  const applyLocalLineChange = useCallback(
+    (
+      lineId: string,
+      updater: (line: ScopedServiceLine) => ScopedServiceLine
+    ): ScopedServiceLine | null => {
+      let nextLine: ScopedServiceLine | null = null;
 
       setLines((prev) =>
-        prev.map((line) => (line.id === lineId ? nextLine : line))
-      );
-      setSavingLineId(lineId);
-
-      const { error } = await supabase
-        .from("scoped_services")
-        .update({
-          service_type: nextLine.service_type,
-          description: nextLine.description,
-          hours: nextLine.hours,
-          rate_card_lookup_key: nextLine.rate_card_lookup_key,
-          cost: nextLine.cost,
+        prev.map((line) => {
+          if (line.id !== lineId) return line;
+          nextLine = updater(line);
+          return nextLine;
         })
-        .eq("id", lineId);
+      );
 
-      setSavingLineId((current) => (current === lineId ? null : current));
-
-      if (error) {
-        setLines((prev) =>
-          prev.map((line) => (line.id === lineId ? previousLine : line))
-        );
-        toast.error(`Couldn't save scoped service line. ${error.message}`);
-      }
+      return nextLine;
     },
-    [lines, rateCardMap, supabase]
+    []
+  );
+
+  const updateLineImmediately = useCallback(
+    async (
+      lineId: string,
+      updater: (line: ScopedServiceLine) => ScopedServiceLine
+    ) => {
+      const nextLine = applyLocalLineChange(lineId, updater);
+      if (!nextLine) return;
+      await persistLine(nextLine);
+    },
+    [applyLocalLineChange, persistLine]
   );
 
   const removeLine = useCallback(
     async (lineId: string) => {
       setDeletingLineId(lineId);
-      const { error } = await supabase
-        .from("scoped_services")
-        .delete()
-        .eq("id", lineId);
+      const result = await deleteScopedServiceLine(proposalId, lineId);
       setDeletingLineId((current) => (current === lineId ? null : current));
 
-      if (error) {
-        toast.error(`Couldn't delete scoped service line. ${error.message}`);
+      if (!result.ok) {
+        toast.error(`Couldn't delete scoped service line. ${result.error}`);
         return;
       }
 
-      setLines((prev) => prev.filter((l) => l.id !== lineId));
+      syncServerLines(result.lines);
       toast.success("Scoped service line deleted.");
     },
-    [supabase]
+    [proposalId, syncServerLines]
   );
 
-  const rawTotalCost = lines.reduce((sum, l) => sum + l.cost, 0);
-  const rawTotalHours = lines.reduce((sum, l) => sum + l.hours, 0);
+  const isMutating = isAdding || !!savingLineId || !!deletingLineId;
+  const rawTotalCost = lines.reduce((sum, line) => sum + line.cost, 0);
+  const rawTotalHours = lines.reduce((sum, line) => sum + line.hours, 0);
   const totalCost = applyComplexity(rawTotalCost, complexityFactor);
   const totalHours = applyComplexity(rawTotalHours, complexityFactor);
 
@@ -197,11 +235,7 @@ export default function ScopedServicesPage() {
       </div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Scoped Services</h2>
-        <Button
-          onClick={addLine}
-          size="sm"
-          disabled={isAdding || !!savingLineId || !!deletingLineId}
-        >
+        <Button onClick={addLine} size="sm" disabled={isMutating}>
           {isAdding ? "Adding..." : "Add Line"}
         </Button>
       </div>
@@ -225,16 +259,23 @@ export default function ScopedServicesPage() {
                 <TableCell>
                   <Select
                     value={line.service_type}
-                    disabled={isAdding || deletingLineId === line.id}
-                    onValueChange={(v) => updateLine(line.id, "service_type", v)}
+                    disabled={isMutating}
+                    onValueChange={(value) =>
+                      void updateLineImmediately(line.id, (currentLine) =>
+                        recalculateScopedLine(
+                          { ...currentLine, service_type: String(value) },
+                          rateCardMap
+                        )
+                      )
+                    }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {SERVICE_TYPES.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
+                      {SCOPED_SERVICE_TYPES.map((serviceType) => (
+                        <SelectItem key={serviceType} value={serviceType}>
+                          {serviceType}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -244,10 +285,14 @@ export default function ScopedServicesPage() {
                   <Input
                     className="h-8 text-xs"
                     value={line.description ?? ""}
-                    disabled={isAdding || deletingLineId === line.id}
-                    onChange={(e) =>
-                      updateLine(line.id, "description", e.target.value)
+                    disabled={isMutating}
+                    onChange={(event) =>
+                      void applyLocalLineChange(line.id, (currentLine) => ({
+                        ...currentLine,
+                        description: event.target.value,
+                      }))
                     }
+                    onBlur={() => void saveLineOnBlur(line.id)}
                     placeholder="Description"
                   />
                 </TableCell>
@@ -258,31 +303,49 @@ export default function ScopedServicesPage() {
                     min={0}
                     step={0.5}
                     value={line.hours}
-                    disabled={isAdding || deletingLineId === line.id}
-                    onChange={(e) =>
-                      updateLine(
-                        line.id,
-                        "hours",
-                        parseFloat(e.target.value) || 0
-                      )
-                    }
+                    disabled={isMutating}
+                    onChange={(event) => {
+                      const nextHours =
+                        event.target.value === ""
+                          ? 0
+                          : Number(event.target.value);
+                      if (Number.isNaN(nextHours)) return;
+                      void applyLocalLineChange(line.id, (currentLine) =>
+                        recalculateScopedLine(
+                          { ...currentLine, hours: nextHours },
+                          rateCardMap
+                        )
+                      );
+                    }}
+                    onBlur={() => void saveLineOnBlur(line.id)}
                   />
                 </TableCell>
                 <TableCell>
                   <Select
                     value={line.rate_card_lookup_key}
-                    disabled={isAdding || deletingLineId === line.id}
-                    onValueChange={(v) =>
-                      updateLine(line.id, "rate_card_lookup_key", v)
+                    disabled={isMutating}
+                    onValueChange={(value) =>
+                      void updateLineImmediately(line.id, (currentLine) =>
+                        recalculateScopedLine(
+                          {
+                            ...currentLine,
+                            rate_card_lookup_key: String(value),
+                          },
+                          rateCardMap
+                        )
+                      )
                     }
                   >
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {rateCards.map((rc) => (
-                        <SelectItem key={rc.lookup_key} value={rc.lookup_key}>
-                          {rc.activity} ({formatCurrency(rc.rate)}/hr)
+                      {rateCards.map((rateCard) => (
+                        <SelectItem
+                          key={rateCard.lookup_key}
+                          value={rateCard.lookup_key}
+                        >
+                          {rateCard.activity} ({formatCurrency(rateCard.rate)}/hr)
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -299,8 +362,8 @@ export default function ScopedServicesPage() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs text-destructive"
-                    disabled={isAdding || !!savingLineId || deletingLineId === line.id}
-                    onClick={() => removeLine(line.id)}
+                    disabled={isMutating}
+                    onClick={() => void removeLine(line.id)}
                   >
                     {deletingLineId === line.id ? "Removing..." : "Remove"}
                   </Button>
