@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,30 +13,33 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  buildNewRow,
   normalizeEditableValue,
   type ColumnDef,
 } from "./data-table-utils";
+import {
+  addAdminTableRow,
+  deleteAdminTableRow,
+  updateAdminTableCell,
+} from "./actions";
+import {
+  type AdminRow,
+  type AdminTableName,
+} from "./data-table-config";
 export type { ColumnDef } from "./data-table-utils";
-
-type AdminTableName = "customers" | "rate_cards" | "service_hours";
-export type AdminRow = Record<string, unknown> & { id: string };
+export type { AdminRow } from "./data-table-config";
 type ActiveCell = { rowId: string; key: string };
 
 type AdminDataTableProps = {
   tableName: AdminTableName;
   columns: ColumnDef[];
   initialData: AdminRow[];
-  createDefaults?: Record<string, unknown>;
 };
 
 export function AdminDataTable({
   tableName,
   columns,
   initialData,
-  createDefaults = {},
 }: AdminDataTableProps) {
-  const supabase = createClient();
   const [data, setData] = useState(initialData);
   const [search, setSearch] = useState("");
   const [editingCell, setEditingCell] = useState<ActiveCell | null>(null);
@@ -76,52 +78,49 @@ export function AdminDataTable({
     }
 
     setSavingCell({ rowId, key });
-    const { error } = await supabase
-      .from(tableName)
-      .update({ [key]: parsed.value } as never)
-      .eq("id", rowId);
+    const result = await updateAdminTableCell(tableName, rowId, key, editValue);
     setSavingCell(null);
 
-    if (error) {
-      toast.error(`Couldn't save ${column.label}. ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Couldn't save ${column.label}. ${result.error}`);
       return;
     }
 
     setData((previous) =>
       previous.map((row) =>
-        row.id === rowId ? { ...row, [key]: parsed.value } : row
+        row.id === rowId ? { ...row, ...(result.row ?? {}), [key]: parsed.value } : row
       )
     );
     setEditingCell(null);
-  }, [columns, editValue, editingCell, savingCell, supabase, tableName]);
+  }, [columns, editValue, editingCell, savingCell, tableName]);
 
   const addRow = useCallback(async () => {
     setIsAdding(true);
-    const newRow = buildNewRow(columns, createDefaults, Date.now());
-    const { data: inserted, error } = await supabase
-      .from(tableName)
-      .insert(newRow as never)
-      .select()
-      .single();
+    const result = await addAdminTableRow(tableName);
     setIsAdding(false);
 
-    if (error || !inserted) {
-      toast.error(`Couldn't add row. ${error?.message ?? "No row was returned."}`);
+    if (!result.ok) {
+      toast.error(`Couldn't add row. ${result.error}`);
       return;
     }
 
-    setData((previous) => [...previous, inserted as AdminRow]);
+    if (!result.row) {
+      toast.error("Couldn't add row. No row was returned.");
+      return;
+    }
+
+    setData((previous) => [...previous, result.row as AdminRow]);
     toast.success("Row added.");
-  }, [columns, createDefaults, supabase, tableName]);
+  }, [tableName]);
 
   const deleteRow = useCallback(
     async (rowId: string) => {
       setDeletingRowId(rowId);
-      const { error } = await supabase.from(tableName).delete().eq("id", rowId);
+      const result = await deleteAdminTableRow(tableName, rowId);
       setDeletingRowId(null);
 
-      if (error) {
-        toast.error(`Couldn't delete row. ${error.message}`);
+      if (!result.ok) {
+        toast.error(`Couldn't delete row. ${result.error}`);
         return;
       }
 
@@ -131,7 +130,7 @@ export function AdminDataTable({
       }
       toast.success("Row deleted.");
     },
-    [editingCell?.rowId, supabase, tableName]
+    [editingCell?.rowId, tableName]
   );
 
   const busyMessage = isAdding
