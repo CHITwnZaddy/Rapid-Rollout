@@ -8,6 +8,7 @@ import {
 import { NUM } from "@/lib/calculations/num";
 import {
   BA_RATE_KEY,
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SCOPED_KEY_BA,
   SCOPED_KEY_PM,
@@ -18,6 +19,7 @@ import {
 
 export {
   BA_RATE_KEY,
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SCOPED_KEY_BA,
   SCOPED_KEY_PM,
@@ -229,18 +231,25 @@ function requireMigrationRates(rates: Map<string, number>): {
   srImRate: number;
   pmRate: number;
   travelRate: number;
+  internalCostRate: number;
 } {
   const srImRate = rates.get(SR_IM_RATE_KEY);
   const pmRate = rates.get(PM_RATE_KEY);
   const travelRate = rates.get(TRAVEL_RATE_KEY);
+  const internalCostRate = rates.get(INTERNAL_COST_RATE_KEY);
 
-  if (srImRate == null || pmRate == null || travelRate == null) {
+  if (
+    srImRate == null ||
+    pmRate == null ||
+    travelRate == null ||
+    internalCostRate == null
+  ) {
     throw new Error(
-      "Migration report totals unavailable: missing required rate cards (Sr. Implementation Manager, Program Manager, Travel Cost/Trip)."
+      "Migration report totals unavailable: missing required rate cards (Sr. Implementation Manager, Program Manager, Travel Cost/Trip, Internal Cost Rate)."
     );
   }
 
-  return { srImRate, pmRate, travelRate };
+  return { srImRate, pmRate, travelRate, internalCostRate };
 }
 
 export function buildMigrationCostMap(
@@ -250,7 +259,8 @@ export function buildMigrationCostMap(
 ): Map<string, number> {
   const groupedLines = groupMigrationLinesByProposal(lines);
   const costMap = new Map<string, number>();
-  const { srImRate, pmRate, travelRate } = requireMigrationRates(rates);
+  const { srImRate, pmRate, travelRate, internalCostRate } =
+    requireMigrationRates(rates);
 
   for (const config of configs) {
     const proposalLines = groupedLines.get(config.proposal_id) ?? [];
@@ -267,7 +277,8 @@ export function buildMigrationCostMap(
         costLines,
         srImRate,
         pmRate,
-        travelRate
+        travelRate,
+        internalCostRate
       ).salesPrice
     );
   }
@@ -282,7 +293,8 @@ export function buildMigrationHoursMap(
 ): Map<string, MigrationHours> {
   const groupedLines = groupMigrationLinesByProposal(lines);
   const hoursMap = new Map<string, MigrationHours>();
-  const { srImRate, pmRate, travelRate } = requireMigrationRates(rates);
+  const { srImRate, pmRate, travelRate, internalCostRate } =
+    requireMigrationRates(rates);
 
   for (const config of configs) {
     const proposalLines = groupedLines.get(config.proposal_id) ?? [];
@@ -297,7 +309,8 @@ export function buildMigrationHoursMap(
       costLines,
       srImRate,
       pmRate,
-      travelRate
+      travelRate,
+      internalCostRate
     );
 
     hoursMap.set(config.proposal_id, {

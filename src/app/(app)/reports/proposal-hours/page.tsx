@@ -32,6 +32,7 @@ import {
   buildScopedHoursMap,
 } from "@/lib/reports/proposal-aggregates";
 import {
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
@@ -144,7 +145,7 @@ export default function ProposalHoursReport() {
         supabase
           .from("rate_cards")
           .select("lookup_key, rate")
-          .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
+          .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY, INTERNAL_COST_RATE_KEY]),
       ]);
 
       const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));

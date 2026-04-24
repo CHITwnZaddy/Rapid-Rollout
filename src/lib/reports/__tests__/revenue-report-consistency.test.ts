@@ -9,6 +9,7 @@ import {
 } from "../proposal-aggregates";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import {
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
@@ -92,6 +93,7 @@ describe("revenue report consistency", () => {
       { lookup_key: SR_IM_RATE_KEY, rate: 275 },
       { lookup_key: PM_RATE_KEY, rate: 250 },
       { lookup_key: TRAVEL_RATE_KEY, rate: 1000 },
+      { lookup_key: INTERNAL_COST_RATE_KEY, rate: 135 },
     ]);
 
     const scenarioTotals = buildScenarioTotalByProposal(scenarioRows);

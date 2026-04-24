@@ -71,6 +71,7 @@ describe("computeMigrationTotalsFromState", () => {
         srImRate: 100,
         pmRate: 150,
         travelRate: 1000,
+        internalCostRate: 135,
       })
     ).toBeNull();
   });
@@ -81,6 +82,7 @@ describe("computeMigrationTotalsFromState", () => {
         srImRate: 100,
         pmRate: null,
         travelRate: 1000,
+        internalCostRate: 135,
       })
     ).toBeNull();
   });
@@ -90,6 +92,7 @@ describe("computeMigrationTotalsFromState", () => {
       srImRate: 100,
       pmRate: 150,
       travelRate: 1000,
+      internalCostRate: 135,
     });
 
     expect(totals).not.toBeNull();

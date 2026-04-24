@@ -62,6 +62,7 @@ import {
 import { z } from "zod";
 import { toast } from "sonner";
 import {
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
@@ -124,7 +125,12 @@ export default function BidSheetPage() {
           supabase
             .from("rate_cards")
             .select("lookup_key, rate")
-            .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY]),
+            .in("lookup_key", [
+              SR_IM_RATE_KEY,
+              PM_RATE_KEY,
+              TRAVEL_RATE_KEY,
+              INTERNAL_COST_RATE_KEY,
+            ]),
           supabase
             .from("scoped_services")
             .select("cost")
@@ -194,6 +200,9 @@ export default function BidSheetPage() {
       const srImRate = rateRows.find((r) => r.lookup_key === SR_IM_RATE_KEY)?.rate;
       const pmRate = rateRows.find((r) => r.lookup_key === PM_RATE_KEY)?.rate;
       const travelRate = rateRows.find((r) => r.lookup_key === TRAVEL_RATE_KEY)?.rate;
+      const internalCostRate = rateRows.find(
+        (r) => r.lookup_key === INTERNAL_COST_RATE_KEY
+      )?.rate;
 
       // Fail closed on missing rate-card rows. Previously we silently
       // left liveMigrationTotal at 0 — that hid the Sr. IM-class bug
@@ -201,12 +210,17 @@ export default function BidSheetPage() {
       // the bid sheet without any user-visible error.
       let liveMigrationTotal = 0;
       if (migCfg) {
-        if (srImRate == null || pmRate == null || travelRate == null) {
+        if (
+          srImRate == null ||
+          pmRate == null ||
+          travelRate == null ||
+          internalCostRate == null
+        ) {
           setLoadError(
             "Migration total unavailable: one or more required rate card rows are missing."
           );
           toast.error(
-            "Migration total unavailable: one or more required rate card rows are missing (Sr. Implementation Manager, Program Manager, Travel Cost/Trip). Ask an admin to seed these."
+            "Migration total unavailable: one or more required rate card rows are missing (Sr. Implementation Manager, Program Manager, Travel Cost/Trip, Internal Cost Rate). Ask an admin to seed these."
           );
           return;
         }
@@ -243,7 +257,8 @@ export default function BidSheetPage() {
             .map((l) => toEngineLine(l)),
           Number(srImRate),
           Number(pmRate),
-          Number(travelRate)
+          Number(travelRate),
+          Number(internalCostRate)
         ).salesPrice;
       }
 

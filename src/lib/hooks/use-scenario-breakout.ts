@@ -14,6 +14,7 @@ import {
   type MigrationBreakdownRow,
 } from "@/lib/reports/migration-breakdown";
 import {
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
@@ -87,6 +88,7 @@ export function useScenarioBreakout() {
   const [srImRate, setSrImRate] = useState<number | null>(null);
   const [pmRate, setPmRate] = useState<number | null>(null);
   const [travelRate, setTravelRate] = useState<number | null>(null);
+  const [internalCostRate, setInternalCostRate] = useState<number | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
@@ -110,6 +112,7 @@ export function useScenarioBreakout() {
       SR_IM_RATE_KEY,
       PM_RATE_KEY,
       TRAVEL_RATE_KEY,
+      INTERNAL_COST_RATE_KEY,
     ]).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
@@ -120,6 +123,7 @@ export function useScenarioBreakout() {
       setSrImRate(result.rates.get(SR_IM_RATE_KEY)!);
       setPmRate(result.rates.get(PM_RATE_KEY)!);
       setTravelRate(result.rates.get(TRAVEL_RATE_KEY)!);
+      setInternalCostRate(result.rates.get(INTERNAL_COST_RATE_KEY)!);
     });
     return () => {
       cancelled = true;
@@ -127,7 +131,11 @@ export function useScenarioBreakout() {
   }, [supabase, rateReloadToken]);
 
   const ratesReady =
-    srImRate != null && pmRate != null && travelRate != null && !rateError;
+    srImRate != null &&
+    pmRate != null &&
+    travelRate != null &&
+    internalCostRate != null &&
+    !rateError;
 
   const runReport = useCallback(async () => {
     if (!selectedProposal) return;
@@ -260,7 +268,11 @@ export function useScenarioBreakout() {
   // `computed_total_cost` snapshot (which can drift from the live
   // section breakdowns shown above).
   const migrationLiveTotal =
-    migrationConfig && srImRate != null && pmRate != null && travelRate != null
+    migrationConfig &&
+    srImRate != null &&
+    pmRate != null &&
+    travelRate != null &&
+    internalCostRate != null
       ? (() => {
           const numP = NUM(migrationConfig.num_projects);
           const engineCfg: EngineMigrationConfig = {
@@ -294,7 +306,8 @@ export function useScenarioBreakout() {
             engineCost,
             srImRate,
             pmRate,
-            travelRate
+            travelRate,
+            internalCostRate
           ).salesPrice;
         })()
       : 0;

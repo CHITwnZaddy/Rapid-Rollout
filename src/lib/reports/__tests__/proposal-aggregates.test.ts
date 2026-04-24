@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BA_RATE_KEY,
+  INTERNAL_COST_RATE_KEY,
   buildMigrationCostMap,
   buildMigrationHoursMap,
   buildRateMap,
@@ -129,6 +130,7 @@ describe("proposal aggregates", () => {
       { lookup_key: SR_IM_RATE_KEY, rate: 275 },
       { lookup_key: PM_RATE_KEY, rate: 250 },
       { lookup_key: TRAVEL_RATE_KEY, rate: 1000 },
+      { lookup_key: INTERNAL_COST_RATE_KEY, rate: 135 },
     ]);
 
     const costMap = buildMigrationCostMap(configs, lines, rates);

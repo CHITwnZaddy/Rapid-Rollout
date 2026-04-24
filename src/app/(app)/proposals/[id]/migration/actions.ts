@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { AuthError, assertAuthenticated } from "@/lib/auth/require-admin";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 import {
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
@@ -131,6 +132,7 @@ async function loadMigrationRates(
     SR_IM_RATE_KEY,
     PM_RATE_KEY,
     TRAVEL_RATE_KEY,
+    INTERNAL_COST_RATE_KEY,
   ]);
 
   if (!result.ok) {
@@ -143,6 +145,7 @@ async function loadMigrationRates(
       srImRate: result.rates.get(SR_IM_RATE_KEY) ?? null,
       pmRate: result.rates.get(PM_RATE_KEY) ?? null,
       travelRate: result.rates.get(TRAVEL_RATE_KEY) ?? null,
+      internalCostRate: result.rates.get(INTERNAL_COST_RATE_KEY) ?? null,
     },
   };
 }
