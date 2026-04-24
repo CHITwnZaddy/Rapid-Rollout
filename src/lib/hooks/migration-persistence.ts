@@ -30,7 +30,7 @@ export type MigrationPersistenceController = {
   scheduleConfigSave: () => void;
   scheduleLineSave: (lineId: string) => void;
   scheduleTotalsRecompute: () => void;
-  flushNow: () => Promise<void>;
+  flushNow: () => Promise<boolean>;
   dispose: () => void;
 };
 
@@ -46,7 +46,7 @@ export function createMigrationPersistenceController<
   let configDirty = false;
   let totalsDirty = false;
   let lineIdsDirty = new Set<string>();
-  let saveQueue = Promise.resolve();
+  let saveQueue = Promise.resolve(true);
 
   const clearTimer = () => {
     if (timer) {
@@ -101,13 +101,15 @@ export function createMigrationPersistenceController<
   const enqueueRun = () => {
     options.onStatusChange?.("saving");
     saveQueue = saveQueue
-      .then(runPending)
-      .then(() => {
+      .then(async () => {
+        await runPending();
         options.onStatusChange?.("saved");
+        return true;
       })
       .catch((error) => {
         options.onStatusChange?.("error");
         options.onError?.(error);
+        return false;
       });
     return saveQueue;
   };
@@ -135,7 +137,7 @@ export function createMigrationPersistenceController<
     },
     async flushNow() {
       clearTimer();
-      await enqueueRun();
+      return enqueueRun();
     },
     dispose() {
       clearTimer();

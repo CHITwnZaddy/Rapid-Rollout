@@ -21,13 +21,14 @@ import {
   type MigrationDetailLine,
 } from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
+import { type MigrationSection } from "@/lib/validation/migration";
 
 /**
  * Shared row shape for the Project / Workflow / Cost migration tables.
  * Kept local to this module so the migration page can stay free of the
  * "DbLine" type leakage while still reusing the component.
  */
-export interface MigrationSectionRow {
+export type MigrationSectionRow = {
   id: string;
   section: string;
   label: string;
@@ -35,16 +36,16 @@ export interface MigrationSectionRow {
   items_per_object: number;
   total_line_items: number;
   row_order: number;
-}
+};
 
-export interface MigrationSectionConfig {
+export type MigrationSectionConfig = {
   hrs_per_import: number;
   lines_per_import_file: number;
-}
+};
 
-export interface MigrationDetailSectionProps<T extends MigrationSectionRow> {
+export type MigrationDetailSectionProps<T extends MigrationSectionRow> = {
   title: string;
-  section: "project" | "workflow" | "cost";
+  section: MigrationSection;
   lines: T[];
   config: MigrationSectionConfig | null;
   /** When provided, overrides per-row quantity (used by the project section
@@ -60,14 +61,17 @@ export interface MigrationDetailSectionProps<T extends MigrationSectionRow> {
    * Project & Schedule rows but allow editing labels on user-added rows).
    */
   labelEditable?: boolean | ((row: T) => boolean);
+  isMutatingRows?: boolean;
+  mutatingSection?: MigrationSection | null;
+  removingLineId?: string | null;
   onUpdateLine: (
     id: string,
     field: "label" | "quantity" | "items_per_object" | "total_line_items",
     value: string | number
   ) => void;
-  onAddLine: (section: "project" | "workflow" | "cost") => void;
+  onAddLine: (section: MigrationSection) => void;
   onRemoveLine: (id: string) => void;
-}
+};
 
 export function MigrationDetailSection<T extends MigrationSectionRow>({
   title,
@@ -80,6 +84,9 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
   itemsLabel,
   totalEditable,
   labelEditable,
+  isMutatingRows = false,
+  mutatingSection = null,
+  removingLineId = null,
   onUpdateLine,
   onAddLine,
   onRemoveLine,
@@ -92,8 +99,13 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-base">{title}</CardTitle>
-        <Button size="sm" variant="outline" onClick={() => onAddLine(section)}>
-          + Add Row
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isMutatingRows}
+          onClick={() => onAddLine(section)}
+        >
+          {isMutatingRows && mutatingSection === section ? "Adding..." : "+ Add Row"}
         </Button>
       </CardHeader>
       <CardContent>
@@ -147,6 +159,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                       {isLabelEditable ? (
                         <Input
                           className="h-7 text-xs"
+                          disabled={isMutatingRows}
                           value={line.label}
                           onChange={(e) =>
                             onUpdateLine(line.id, "label", e.target.value)
@@ -164,6 +177,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                       ) : (
                         <Input
                           className="h-7 text-right text-xs"
+                          disabled={isMutatingRows}
                           type="number"
                           min={0}
                           value={NUM(line.quantity)}
@@ -180,6 +194,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                     <TableCell>
                       <Input
                         className="h-7 text-right text-xs"
+                        disabled={isMutatingRows}
                         type="number"
                         min={0}
                         value={NUM(line.items_per_object)}
@@ -196,6 +211,7 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                       {totalEditable ? (
                         <Input
                           className="h-7 text-right text-xs"
+                          disabled={isMutatingRows}
                           type="number"
                           min={0}
                           value={NUM(line.total_line_items)}
@@ -226,10 +242,11 @@ export function MigrationDetailSection<T extends MigrationSectionRow>({
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={isMutatingRows}
                         className="h-6 text-xs text-destructive"
                         onClick={() => onRemoveLine(line.id)}
                       >
-                        ×
+                        {isMutatingRows && removingLineId === line.id ? "..." : "×"}
                       </Button>
                     </TableCell>
                   </TableRow>
