@@ -94,6 +94,7 @@ function createTableApi(tableName: string) {
               : "33333333-3333-4333-8333-333333333333",
         ...payload,
       };
+      // @ts-expect-error QA-01: pre-existing CustomerRow union-narrowing error — out of scope (see ticket QA-01)
       setRows([...getRows(), newRow]);
       return {
         select() {
@@ -109,6 +110,7 @@ function createTableApi(tableName: string) {
       return {
         async eq(_column: string, value: string) {
           setRows(
+            // @ts-expect-error QA-01: pre-existing CustomerRow union-narrowing error — out of scope (see ticket QA-01)
             getRows().map((row) =>
               row.id === value ? { ...row, ...payload } : row
             )
@@ -120,6 +122,7 @@ function createTableApi(tableName: string) {
     delete() {
       return {
         async eq(_column: string, value: string) {
+          // @ts-expect-error QA-01: pre-existing CustomerRow union-narrowing error — out of scope (see ticket QA-01)
           setRows(getRows().filter((row) => row.id !== value));
           return { error: null };
         },

@@ -189,7 +189,7 @@ describe("calculateMigrationTotals", () => {
       core_final_qa_hrs: 0,
       core_pm_oversight_hrs: 0,
     };
-    const totals = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250);
+    const totals = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250, 135);
     expect(totals.salesPrice).toBe(0);
     expect(totals.totalSrImHours).toBe(0);
     expect(totals.totalPmHours).toBe(0);
@@ -204,7 +204,8 @@ describe("calculateMigrationTotals", () => {
       [],
       225,
       225,
-      2250
+      2250,
+      135
     );
     expect(withWorkshop.workshopSrImRaw).toBe(132);
     expect(withWorkshop.workshopPmRaw).toBe(8);
@@ -218,7 +219,8 @@ describe("calculateMigrationTotals", () => {
       [],
       200,
       225,
-      2000
+      2000,
+      135
     );
     expect(t.coreSrImRaw).toBe(20 + 16 + 12 + 8); // 56
     expect(t.corePmRaw).toBe(10);
@@ -238,7 +240,8 @@ describe("calculateMigrationTotals", () => {
       [],
       200,
       225,
-      2000
+      2000,
+      135
     );
     expect(t.workshopSrIm).toBe(132 * 1.5);
     expect(t.workshopPm).toBe(8 * 1.25);
@@ -258,7 +261,8 @@ describe("calculateMigrationTotals", () => {
       [],
       200,
       225,
-      2500
+      2500,
+      135
     );
     expect(t.travelSrImRaw).toBe(80);
     expect(t.travelPmRaw).toBe(40);
@@ -279,7 +283,8 @@ describe("calculateMigrationTotals", () => {
       [],
       200,
       300,
-      2000
+      2000,
+      135
     );
     // Workshop only: Sr. IM 132 * 200 = 26400, PM 8 * 300 = 2400
     expect(t.srImCost).toBe(26400);
@@ -299,7 +304,8 @@ describe("calculateMigrationTotals", () => {
       [],
       200,
       300,
-      2000
+      2000,
+      135
     );
     const totalHours = t.totalSrImHours + t.totalPmHours;
     expect(t.blendedRate).toBeCloseTo(t.salesPrice / totalHours, 6);
@@ -310,7 +316,7 @@ describe("calculateMigrationTotals", () => {
     // margin = 1 - 135/205.7 ≈ 0.344
     const t = calculateMigrationTotals(
       { ...baseConfig, is_workshop_included: true, is_effort_included: false },
-      [], [], [], 200, 300, 2000
+      [], [], [], 200, 300, 2000, 135
     );
     expect(t.estimatedMargin).toBeGreaterThan(0);
     expect(t.estimatedMargin).toBeCloseTo(1 - 135 / t.blendedRate, 6);
@@ -321,7 +327,7 @@ describe("calculateMigrationTotals", () => {
     // Workshop: 132 Sr. IM hrs @ 100 = 13200, 8 PM hrs @ 100 = 800 → 14000 / 140 = 100/hr
     const t = calculateMigrationTotals(
       { ...baseConfig, is_workshop_included: true, is_effort_included: false },
-      [], [], [], 100, 100, 2000
+      [], [], [], 100, 100, 2000, 135
     );
     expect(t.blendedRate).toBeCloseTo(100, 6);
     expect(t.estimatedMargin).toBeLessThan(0); // surfaced, not clamped
@@ -338,7 +344,7 @@ describe("calculateMigrationTotals", () => {
       core_final_qa_hrs: 0,
       core_pm_oversight_hrs: 0,
     };
-    const t = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250);
+    const t = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250, 135);
     expect(t.salesPrice).toBe(0);
     expect(t.estimatedMargin).toBe(0);
   });
@@ -364,7 +370,8 @@ describe("calculateMigrationTotals", () => {
       [],
       200,
       225,
-      2000
+      2000,
+      135
     );
     // 1000 lines → 2 imports × 4 hrs = 8 raw Sr. IM hours
     expect(t.projectRaw).toBe(8);

@@ -5,6 +5,7 @@ import { NUM } from "@/lib/calculations/num";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 import { createMigrationPersistenceController } from "./migration-persistence";
 import {
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
@@ -34,6 +35,7 @@ export type UseMigrationConfigReturn = {
   srImRate: number | null;
   pmRate: number | null;
   travelRate: number | null;
+  internalCostRate: number | null;
   rateError: string | null;
   loadError: string | null;
   saveError: string | null;
@@ -64,6 +66,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const [srImRate, setSrImRate] = useState<number | null>(null);
   const [pmRate, setPmRate] = useState<number | null>(null);
   const [travelRate, setTravelRate] = useState<number | null>(null);
+  const [internalCostRate, setInternalCostRate] = useState<number | null>(null);
   const [rateError, setRateError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -80,6 +83,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const srImRateRef = useRef(srImRate);
   const pmRateRef = useRef(pmRate);
   const travelRateRef = useRef(travelRate);
+  const internalCostRateRef = useRef(internalCostRate);
   const persistenceControllerRef =
     useRef<ReturnType<typeof createMigrationPersistenceController<DbConfig, DbLine>> | null>(
       null
@@ -105,10 +109,15 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     travelRateRef.current = travelRate;
   }, [travelRate]);
 
+  useEffect(() => {
+    internalCostRateRef.current = internalCostRate;
+  }, [internalCostRate]);
+
   const getCurrentRateSnapshot = useCallback(() => ({
     srImRate: srImRateRef.current,
     pmRate: pmRateRef.current,
     travelRate: travelRateRef.current,
+    internalCostRate: internalCostRateRef.current,
   }), []);
 
   const syncCanonicalLines = useCallback((nextLines: DbLine[]) => {
@@ -226,6 +235,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         SR_IM_RATE_KEY,
         PM_RATE_KEY,
         TRAVEL_RATE_KEY,
+        INTERNAL_COST_RATE_KEY,
       ]);
       if (!ratesResult.ok) {
         setRateError(ratesResult.error);
@@ -235,9 +245,11 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       const srIm = ratesResult.rates.get(SR_IM_RATE_KEY)!;
       const pm = ratesResult.rates.get(PM_RATE_KEY)!;
       const travel = ratesResult.rates.get(TRAVEL_RATE_KEY)!;
+      const internalCost = ratesResult.rates.get(INTERNAL_COST_RATE_KEY)!;
       setSrImRate(srIm);
       setPmRate(pm);
       setTravelRate(travel);
+      setInternalCostRate(internalCost);
 
       const { data: cfg } = await supabase
         .from("migration_config")
@@ -379,6 +391,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       srImRate,
       pmRate,
       travelRate,
+      internalCostRate,
     }
   );
   const numProjects = NUM(config?.num_projects);
@@ -392,6 +405,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     srImRate,
     pmRate,
     travelRate,
+    internalCostRate,
     rateError,
     loadError,
     saveError,

@@ -15,6 +15,7 @@ import {
   calculateMigrationBreakdownTotal,
 } from "@/lib/reports/migration-breakdown";
 import {
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SCOPED_KEY_BA,
   SCOPED_KEY_PM,
@@ -262,6 +263,7 @@ describe("proposal lifecycle actions", () => {
       { lookup_key: SR_IM_RATE_KEY, rate: 275 },
       { lookup_key: PM_RATE_KEY, rate: 225 },
       { lookup_key: TRAVEL_RATE_KEY, rate: 1000 },
+      { lookup_key: INTERNAL_COST_RATE_KEY, rate: 135 },
     ]);
 
     const scenarioTotals = buildScenarioTotalByProposal(scenarioRows);
@@ -279,6 +281,7 @@ describe("proposal lifecycle actions", () => {
     );
 
     const migrationBreakdownRows = buildScenarioBreakoutMigrationRows(
+      // @ts-expect-error QA-01: pre-existing MigrationConfigRow.num_projects unknown-vs-number mismatch — out of scope (see ticket QA-01)
       migrationConfigs[0],
       migrationLines.map((line) => ({
         section: line.section,

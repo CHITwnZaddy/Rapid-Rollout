@@ -76,6 +76,12 @@ export function buildScenarioBreakoutMigrationRows(
     .filter((line) => line.section === "cost")
     .map((line) => toEngineLine(line));
 
+  // travelCostPerTrip and internalCostRate are both passed as 0 here
+  // because this function only reads hour-based fields off `totals`
+  // (workshopSrIm, coreSrIm, projectSrIm, …). Those fields are not
+  // affected by travelCostPerTrip (which only feeds travelExpense) or
+  // internalCostRate (which only feeds estimatedMargin). Using 0
+  // avoids dragging a rate-card fetch into the breakout report path.
   const totals = calculateMigrationTotals(
     engineConfig,
     projectLines,
@@ -83,6 +89,7 @@ export function buildScenarioBreakoutMigrationRows(
     costLines,
     srImRate,
     pmRate,
+    0,
     0
   );
 

@@ -326,47 +326,6 @@ export interface Database {
           },
         ];
       };
-      migration_services: {
-        Row: {
-          id: string;
-          proposal_id: string;
-          line_label: string;
-          sales_price: number;
-          migration_detail: Json | null;
-          row_order: number;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          proposal_id: string;
-          line_label: string;
-          sales_price?: number;
-          migration_detail?: Json | null;
-          row_order?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          proposal_id?: string;
-          line_label?: string;
-          sales_price?: number;
-          migration_detail?: Json | null;
-          row_order?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "migration_services_proposal_id_fkey";
-            columns: ["proposal_id"];
-            isOneToOne: false;
-            referencedRelation: "proposals";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       bid_sheets: {
         Row: {
           id: string;

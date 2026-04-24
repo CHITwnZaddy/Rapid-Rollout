@@ -40,6 +40,7 @@ export type MigrationRateInputs = {
   srImRate: number | null;
   pmRate: number | null;
   travelRate: number | null;
+  internalCostRate: number | null;
 };
 
 export function computeMigrationTotalsFromState(
@@ -51,7 +52,8 @@ export function computeMigrationTotalsFromState(
     !config ||
     rates.srImRate == null ||
     rates.pmRate == null ||
-    rates.travelRate == null
+    rates.travelRate == null ||
+    rates.internalCostRate == null
   ) {
     return null;
   }
@@ -94,6 +96,7 @@ export function computeMigrationTotalsFromState(
     costLines,
     rates.srImRate,
     rates.pmRate,
-    rates.travelRate
+    rates.travelRate,
+    rates.internalCostRate
   );
 }

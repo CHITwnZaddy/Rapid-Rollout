@@ -34,6 +34,7 @@ import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pri
 import { getMarginBadgeClass } from "@/lib/ui/helpers";
 import {
   BURDEN_RATE_KEY,
+  INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
@@ -98,6 +99,7 @@ export default async function ProposalSummaryPage({
         .select("lookup_key, rate")
         .in("lookup_key", [
           BURDEN_RATE_KEY,
+          INTERNAL_COST_RATE_KEY,
           SR_IM_RATE_KEY,
           PM_RATE_KEY,
           TRAVEL_RATE_KEY,
@@ -106,11 +108,19 @@ export default async function ProposalSummaryPage({
 
   const rateRows = ratesRes.data ?? [];
   const burdenRateRow = rateRows.find((r) => r.lookup_key === BURDEN_RATE_KEY);
+  const internalCostRateRow = rateRows.find(
+    (r) => r.lookup_key === INTERNAL_COST_RATE_KEY
+  );
 
   // Fail closed: margins are pricing-critical. If we can't read the
-  // burden rate, refuse to render margins rather than silently use a
-  // stale default. See migration 007 for the seed row.
-  if (ratesRes.error || !burdenRateRow) {
+  // burden rate or internal cost rate, refuse to render margins
+  // rather than silently use a stale default. See migrations 007 and
+  // 022 for the seed rows.
+  if (ratesRes.error || !burdenRateRow || !internalCostRateRow) {
+    const missing = [
+      !burdenRateRow ? BURDEN_RATE_KEY : null,
+      !internalCostRateRow ? INTERNAL_COST_RATE_KEY : null,
+    ].filter(Boolean) as string[];
     return (
       <Card>
         <CardHeader>
@@ -118,21 +128,28 @@ export default async function ProposalSummaryPage({
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            The burden rate (<code>{BURDEN_RATE_KEY}</code>) could not be read
-            from <code>rate_cards</code>. Margin calculations depend on this
-            value, so the proposal summary has been blocked to prevent
-            incorrect pricing being shown.
+            One or more pricing-critical rate card rows could not be read
+            from <code>rate_cards</code>:{" "}
+            {missing.map((k, i) => (
+              <span key={k}>
+                {i > 0 ? ", " : ""}
+                <code>{k}</code>
+              </span>
+            ))}
+            . Margin calculations depend on these values, so the proposal
+            summary has been blocked to prevent incorrect pricing being
+            shown.
           </p>
           <p>
             Refresh the page to retry. If the problem persists, an admin should
-            verify the <code>{BURDEN_RATE_KEY}</code> row exists in the rate
-            card table.
+            verify the missing row(s) exist in the rate card table.
           </p>
         </CardContent>
       </Card>
     );
   }
   const burdenRate = Number(burdenRateRow.rate);
+  const internalCostRate = Number(internalCostRateRow.rate);
 
   const srImRateRow = rateRows.find((r) => r.lookup_key === SR_IM_RATE_KEY);
   const pmRateRow = rateRows.find((r) => r.lookup_key === PM_RATE_KEY);
@@ -221,7 +238,8 @@ export default async function ProposalSummaryPage({
       costLines,
       srImRate,
       pmRate,
-      travelRate
+      travelRate,
+      internalCostRate
     ).salesPrice;
   }
 

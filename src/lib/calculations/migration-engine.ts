@@ -191,7 +191,8 @@ export function calculateMigrationTotals(
   costLines: MigrationDetailLine[],
   srImRate: number,
   pmRate: number,
-  travelCostPerTrip: number
+  travelCostPerTrip: number,
+  internalCostRate: number
 ): MigrationTotals {
   // Raw hours before complexity
   const workshopSrImRaw = config.is_workshop_included ? 132 : 0;
@@ -246,9 +247,14 @@ export function calculateMigrationTotals(
   const blendedRate = totalHours === 0 ? 0 : salesPrice / totalHours;
   // Cost baseline: internal delivery cost per hour. Margin goes negative
   // when blendedRate falls below this — surface it, don't clamp.
-  const INTERNAL_COST_RATE = 135;
+  //
+  // APP-01: internalCostRate is sourced from rate_cards
+  // (lookup_key = 'Master|Internal Cost Rate', seeded by migration
+  // 022). Callers must fetch it and pass it in; there is no default.
+  // This matches the fail-closed pattern established by migration 007
+  // for the burden rate.
   const estimatedMargin =
-    salesPrice === 0 ? 0 : 1 - INTERNAL_COST_RATE / blendedRate;
+    salesPrice === 0 ? 0 : 1 - internalCostRate / blendedRate;
 
   return {
     workshopSrImRaw,
