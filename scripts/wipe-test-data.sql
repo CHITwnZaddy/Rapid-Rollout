@@ -18,8 +18,6 @@ SELECT 'scenario_lines',                 COUNT(*) FROM scenario_lines
 UNION ALL
 SELECT 'scoped_services',                COUNT(*) FROM scoped_services
 UNION ALL
-SELECT 'migration_services',             COUNT(*) FROM migration_services
-UNION ALL
 SELECT 'migration_config',               COUNT(*) FROM migration_config
 UNION ALL
 SELECT 'migration_detail_lines',         COUNT(*) FROM migration_detail_lines
@@ -39,7 +37,6 @@ TRUNCATE
   bid_sheets,
   migration_detail_lines,
   migration_config,
-  migration_services,
   scoped_services,
   scenario_lines,
   scenarios,
@@ -59,8 +56,6 @@ UNION ALL
 SELECT 'scenario_lines',                 COUNT(*) FROM scenario_lines
 UNION ALL
 SELECT 'scoped_services',                COUNT(*) FROM scoped_services
-UNION ALL
-SELECT 'migration_services',             COUNT(*) FROM migration_services
 UNION ALL
 SELECT 'migration_config',               COUNT(*) FROM migration_config
 UNION ALL
