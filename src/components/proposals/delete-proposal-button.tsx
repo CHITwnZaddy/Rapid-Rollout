@@ -11,15 +11,23 @@
  *
  * Non-draft proposals ("in flight"):
  *   Click → Step 1: "In flight" warning → Yes, continue / Cancel
- *         → Step 2: Justification text + password re-entry → Delete / Cancel
+ *         → Step 2: Justification + typed confirmation → Delete / Cancel
  *
  * On success the user is redirected to /proposals.
  * On failure an inline error message is shown inside the dialog.
  *
  * The server action handles:
- *   - Password re-authentication via supabase.auth.signInWithPassword
+ *   - assertAuthenticated() session check
+ *   - Typed-confirmation match against the live proposal.name
  *   - Audit log write to change_log before deletion
  *   - The actual delete (child rows cascade)
+ *
+ * Why typed-confirmation instead of a password re-auth: the server action
+ * used to call supabase.auth.signInWithPassword() as the friction gate,
+ * which issues a new session on every attempt and pushes the plaintext
+ * password through the action pipeline. The typed-confirmation is purely a
+ * UX friction gate — the real auth boundary is assertAuthenticated() + RLS
+ * on the server.
  */
 
 import { useState } from "react";
@@ -38,6 +46,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { deleteProposal } from "@/app/(app)/proposals/[id]/actions";
+import { buildDeleteConfirmationPhrase } from "@/lib/proposals/delete-confirmation";
 
 // Statuses that are considered "in flight" and require the extra friction step.
 const IN_FLIGHT_STATUSES = new Set([
@@ -63,10 +72,11 @@ export function DeleteProposalButton({
 }: DeleteProposalButtonProps) {
   const router = useRouter();
   const isInFlight = IN_FLIGHT_STATUSES.has(status);
+  const expectedPhrase = buildDeleteConfirmationPhrase(proposalName);
 
   const [step, setStep] = useState<Step>("idle");
   const [justification, setJustification] = useState("");
-  const [password, setPassword] = useState("");
+  const [confirmationText, setConfirmationText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -75,7 +85,7 @@ export function DeleteProposalButton({
   function openDialog() {
     setError(null);
     setJustification("");
-    setPassword("");
+    setConfirmationText("");
     setStep(isInFlight ? "warn" : "confirm");
   }
 
@@ -83,20 +93,17 @@ export function DeleteProposalButton({
     setStep("idle");
     setError(null);
     setJustification("");
-    setPassword("");
+    setConfirmationText("");
   }
 
-  // ── Draft deletion (single confirmation) ───────────────────────────────────
+  // ── Draft deletion (single confirmation → justify) ─────────────────────────
+  //
+  // Drafts use the same justify step as in-flight deletions for consistency:
+  // the audit log expects a justification on every delete.
 
-  async function handleDraftDelete() {
-    setLoading(true);
+  function handleDraftConfirm() {
     setError(null);
-    // Draft deletions still re-auth — we pass an empty string and the server
-    // action uses the session token check only.  Actually for drafts we still
-    // want the password gate so the flow is consistent.  Use the justify step.
-    // Redirect the draft confirm straight to justify instead.
     setStep("justify");
-    setLoading(false);
   }
 
   // ── In-flight step 1: acknowledge warning ──────────────────────────────────
@@ -113,15 +120,15 @@ export function DeleteProposalButton({
       setError("Please enter a justification before deleting.");
       return;
     }
-    if (!password) {
-      setError("Please enter your password before deleting.");
+    if (confirmationText.trim() !== expectedPhrase) {
+      setError(`Type "${expectedPhrase}" exactly to confirm.`);
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    const result = await deleteProposal(proposalId, justification, password);
+    const result = await deleteProposal(proposalId, justification, confirmationText);
 
     if (!result.ok) {
       setError(result.error);
@@ -135,8 +142,9 @@ export function DeleteProposalButton({
 
   // ── Derived UI state ───────────────────────────────────────────────────────
 
+  const confirmationMatches = confirmationText.trim() === expectedPhrase;
   const canSubmit =
-    justification.trim().length > 0 && password.length > 0 && !loading;
+    justification.trim().length > 0 && confirmationMatches && !loading;
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -177,10 +185,10 @@ export function DeleteProposalButton({
             </Button>
             <Button
               variant="destructive"
-              onClick={handleDraftDelete}
+              onClick={handleDraftConfirm}
               disabled={loading}
             >
-              {loading ? "Deleting…" : "Delete"}
+              Continue
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -209,7 +217,7 @@ export function DeleteProposalButton({
         </DialogContent>
       </Dialog>
 
-      {/* ── Justification + password dialog (step 2 / draft final step) ──── */}
+      {/* ── Justification + typed confirmation dialog (final step) ───────── */}
       <Dialog open={step === "justify"} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent showCloseButton={false} className="sm:max-w-md">
           <DialogHeader>
@@ -223,7 +231,7 @@ export function DeleteProposalButton({
             {/* Justification */}
             <div className="space-y-1.5">
               <Label htmlFor="delete-justification">
-                To delete this proposal, provide a justification below.
+                Reason for deletion
               </Label>
               <Textarea
                 id="delete-justification"
@@ -235,17 +243,22 @@ export function DeleteProposalButton({
               />
             </div>
 
-            {/* Password */}
+            {/* Typed confirmation */}
             <div className="space-y-1.5">
-              <Label htmlFor="delete-password">
-                To confirm, enter your Rapid Rollout password below.
+              <Label htmlFor="delete-confirmation">
+                Type{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                  {expectedPhrase}
+                </code>{" "}
+                to confirm
               </Label>
               <Input
-                id="delete-password"
-                type="password"
-                placeholder="Your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                id="delete-confirmation"
+                type="text"
+                placeholder={expectedPhrase}
+                autoComplete="off"
+                value={confirmationText}
+                onChange={(e) => setConfirmationText(e.target.value)}
                 disabled={loading}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && canSubmit) handleFinalDelete();
