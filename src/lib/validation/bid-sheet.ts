@@ -3,11 +3,10 @@ import { z } from "zod";
 // ─────────────────────────────────────────────────────────────
 // Bid-sheet validation schemas
 // ─────────────────────────────────────────────────────────────
-// Phase 1.4 — bid-sheet inputs go straight to Supabase today,
-// which means users can submit NaN, Infinity, or out-of-range
-// values that silently corrupt downstream pricing calculations.
-// These schemas gate every save at the client boundary; the
-// database-side CHECK constraint in migration 008 is the
+// Bid Sheet inputs now flow through server actions, but they still
+// enter the system from user-controlled client fields. These schemas
+// keep invalid values from reaching the mutation layer, and the
+// database-side CHECK constraint in migration 008 remains the
 // defense in depth behind them.
 //
 // Business rules (confirmed with the user):

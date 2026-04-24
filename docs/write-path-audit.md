@@ -1,16 +1,16 @@
 # Write Path Audit
 
-This document inventories the remaining write paths in Rapid Rollout after the
-Phase 1-10 stabilization work.
+This document inventories the current write paths in Rapid Rollout after the
+proposal write-path stabilization work through PR 47.
 
 Why this exists:
 
 - The repo now has a mixed write model.
 - Some high-risk flows already use server actions or Postgres RPCs.
-- Other pages still write directly from the browser with lighter error
-  handling.
-- The risk is no longer "pricing math is obviously wrong." The risk is "a save
-  path behaves differently from the others and drifts silently."
+- A few lower-risk admin paths still write directly from the browser.
+- The main risk is no longer "pricing math is obviously wrong."
+- The remaining risk is mostly "repo guidance or lower-priority paths drift
+  away from the stabilized server-backed patterns."
 
 ## Risk Labels
 
@@ -63,7 +63,7 @@ Recommendation:
 - Keep the current retry/error handling and server-backed contract.
 - Do not regress this back to browser-owned persistence.
 
-## Remaining Write Paths
+## Stabilized Proposal Write Paths
 
 ### 2. Scoped Services
 
@@ -71,31 +71,30 @@ Recommendation:
 | --- | --- |
 | File | [src/app/(app)/proposals/[id]/scoped-services/page.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/[id]/scoped-services/page.tsx) |
 | What it writes | `scoped_services` rows |
-| Write style | Client-side insert / update / delete |
-| User feedback | Explicit toasts and rollback on failed writes |
-| Main risk | Still browser-owned persistence on a proposal-editing page |
-| Risk label | `Behavior-tightening` |
+| Write style | Client -> server actions |
+| User feedback | Explicit toasts, local draft editing, canonical server rows |
+| Main risk | No longer a top open risk; now server-backed |
+| Risk label | `Stabilized` |
 
 Current behavior:
 
-- `addLine()` inserts directly from the browser and only appends the returned
-  row after success.
-- `updateLine()` updates local state optimistically, then rolls back on DB
-  failure.
-- `removeLine()` surfaces delete failures and only removes the row after DB
-  success.
+- Add, update, and delete all run through page-local server actions.
+- The page keeps local draft editing for description and hours, then saves on
+  blur.
+- The server recalculates `cost` from `hours * rate` and returns canonical
+  rows.
+- Delete resequences `row_order` densely before returning the updated line set.
 
 Why this matters:
 
-- This page is much safer than it used to be.
-- The remaining question is whether it should stay a hardened client flow or
-  eventually move to a server-side contract for consistency.
+- This used to be one of the main browser-owned proposal editing flows.
+- It now follows the same server-backed direction as Scenario Grid and Bid
+  Sheet, while keeping the UI behavior stable.
 
 Recommendation:
 
-- Keep the current behavior-tightened client flow for now.
-- Revisit server actions only if we decide proposal editing should converge on a
-  single persistence model.
+- Keep the current server-backed contract.
+- Do not move `cost` recomputation back into the browser.
 
 ### 3. Bid Sheet
 
@@ -103,29 +102,30 @@ Recommendation:
 | --- | --- |
 | File | [src/app/(app)/proposals/[id]/bid-sheet/page.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/[id]/bid-sheet/page.tsx) |
 | What it writes | `bid_sheets.customer_id`, `discount_percent`, `discount_dollars`, `notes` |
-| Write style | Client-side update |
+| Write style | Client -> server actions |
 | User feedback | Explicit field-level saving states and surfaced failures |
-| Main risk | Still browser-owned persistence on a revenue-critical page |
-| Risk label | `Behavior-tightening` |
+| Main risk | No longer a top open risk; now server-backed |
+| Risk label | `Stabilized` |
 
 Current behavior:
 
-- `discount_percent` and `discount_dollars` validate input and surface DB
-  failure.
-- `customer_id` and `notes` now surface save failures consistently.
-- The page no longer auto-creates missing `bid_sheets` rows on load.
+- `customer_id`, `discount_percent`, `discount_dollars`, and `notes` all save
+  through page-local server actions.
+- `discount_percent` and `discount_dollars` use local draft state while typing
+  and persist on blur.
+- The page still surfaces save failures clearly and no longer auto-creates
+  missing `bid_sheets` rows on load.
 
 Why this matters:
 
 - This page is revenue-critical.
-- It is much safer now, but still uses browser writes rather than a shared
-  server-side contract.
+- It is now server-backed, which removes the last major revenue-critical
+  browser-owned write path from the proposal flow.
 
 Recommendation:
 
-- Keep the current normalized save behavior.
-- Later, decide whether bid-sheet writes should move behind a server action or
-  remain a hardened client page.
+- Keep the current normalized save behavior and server-backed contract.
+- Do not regress these writes back to direct client persistence.
 
 ### 4. Migration Config And Detail Lines
 
@@ -160,6 +160,8 @@ Recommendation:
 - Only revisit this area if we choose a broader “all proposal writes converge
   on server actions” architecture phase.
 
+## Remaining Lower-Priority Write Paths
+
 ### 5. Admin Table
 
 | Item | Value |
@@ -187,10 +189,10 @@ Recommendation:
 
 | Priority | Recommendation | Risk label | Why |
 | --- | --- | --- | --- |
-| 1 | Decide whether Bid Sheet should converge on a server-action contract | `Higher-risk refactor` | It is now the highest-priority remaining browser-owned revenue write path |
-| 2 | Decide whether Scoped Services should converge on a server-action contract | `Higher-risk refactor` | It is stable, but still browser-owned and recalculates cost client-side |
+| 1 | Refresh docs/comments whenever write-path work lands | `Safe / no behavior change` | The main drift right now is documentation lag, not active proposal-write bugs |
+| 2 | Decide whether the admin table should converge on server actions | `Higher-risk refactor` | It is now the clearest remaining client-write path, but lower urgency than prior proposal flows |
 | 3 | Keep migration config/inline edits on the queue unless broader convergence is explicitly prioritized | `Safe / no behavior change` | The queue is solving a real problem and row mutations are already server-backed |
-| 4 | Keep the admin table as the low-risk client-side reference | `Safe / no behavior change` | It remains a low-risk browser-write implementation |
+| 4 | Reassess only if a new concrete write failure appears | `Safe / no behavior change` | The main proposal flows are now in a much healthier state |
 
 ## What I Would Not Do Next
 
@@ -199,4 +201,6 @@ Recommendation:
   client-side; it fixed a real concurrency bug.
 - I would not re-open Scenario Grid or migration add/remove unless we find a
   new concrete failure mode there.
+- I would not treat Bid Sheet or Scoped Services as open architecture problems
+  anymore; those decisions are already implemented.
 - I would not touch schema/storage names as part of this audit PR.
