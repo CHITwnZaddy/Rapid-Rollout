@@ -105,6 +105,17 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     travelRateRef.current = travelRate;
   }, [travelRate]);
 
+  const getCurrentRateSnapshot = useCallback(() => ({
+    srImRate: srImRateRef.current,
+    pmRate: pmRateRef.current,
+    travelRate: travelRateRef.current,
+  }), []);
+
+  const syncCanonicalLines = useCallback((nextLines: DbLine[]) => {
+    setLines(nextLines);
+    linesRef.current = nextLines;
+  }, []);
+
   useEffect(() => {
     persistenceControllerRef.current = createMigrationPersistenceController({
       getSnapshot: () => ({
@@ -123,11 +134,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         const totals = computeMigrationTotalsFromState(
           updated,
           currentLines,
-          {
-            srImRate: srImRateRef.current,
-            pmRate: pmRateRef.current,
-            travelRate: travelRateRef.current,
-          }
+          getCurrentRateSnapshot()
         );
         const totalCost = totals?.salesPrice ?? 0;
 
@@ -179,11 +186,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         const totals = computeMigrationTotalsFromState(
           updated,
           currentLines,
-          {
-            srImRate: srImRateRef.current,
-            pmRate: pmRateRef.current,
-            travelRate: travelRateRef.current,
-          }
+          getCurrentRateSnapshot()
         );
 
         const { error } = await supabase
@@ -208,7 +211,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         controller.dispose();
       }
     };
-  }, [supabase]);
+  }, [getCurrentRateSnapshot, supabase]);
 
   // ─── Load ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -267,11 +270,11 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         return;
       }
 
-      if (existingLines) setLines(existingLines as DbLine[]);
+      if (existingLines) syncCanonicalLines(existingLines as DbLine[]);
       setLoading(false);
     };
     load();
-  }, [proposalId, supabase, reloadToken]);
+  }, [proposalId, supabase, reloadToken, syncCanonicalLines]);
 
   // ─── Update helpers ──────────────────────────────────────────────
   const updateConfig = useCallback(
@@ -309,13 +312,23 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     []
   );
 
-  const addLine = useCallback(
-    async (section: MigrationSection) => {
+  const runRowMutation = useCallback(
+    async (
+      options:
+        | {
+            kind: "add";
+            section: MigrationSection;
+          }
+        | {
+            kind: "remove";
+            lineId: string;
+          }
+    ) => {
       setSaveError(null);
       setSaveStatus("saving");
       setIsMutatingRows(true);
-      setMutatingSection(section);
-      setRemovingLineId(null);
+      setMutatingSection(options.kind === "add" ? options.section : null);
+      setRemovingLineId(options.kind === "remove" ? options.lineId : null);
 
       try {
         const flushed = (await persistenceControllerRef.current?.flushNow()) ?? true;
@@ -323,54 +336,39 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
           return;
         }
 
-        const result = await addMigrationDetailLine(proposalId, section);
+        const result =
+          options.kind === "add"
+            ? await addMigrationDetailLine(proposalId, options.section)
+            : await removeMigrationDetailLine(proposalId, options.lineId);
         if (!result.ok) {
           setSaveStatus("error");
           setSaveError(result.error);
           return;
         }
 
-        setLines(result.lines);
-        linesRef.current = result.lines;
+        syncCanonicalLines(result.lines);
         setSaveStatus("saved");
       } finally {
         setIsMutatingRows(false);
         setMutatingSection(null);
+        setRemovingLineId(null);
       }
     },
-    [proposalId]
+    [proposalId, syncCanonicalLines]
+  );
+
+  const addLine = useCallback(
+    async (section: MigrationSection) => {
+      await runRowMutation({ kind: "add", section });
+    },
+    [runRowMutation]
   );
 
   const removeLine = useCallback(
     async (lineId: string) => {
-      setSaveError(null);
-      setSaveStatus("saving");
-      setIsMutatingRows(true);
-      setMutatingSection(null);
-      setRemovingLineId(lineId);
-
-      try {
-        const flushed = (await persistenceControllerRef.current?.flushNow()) ?? true;
-        if (!flushed) {
-          return;
-        }
-
-        const result = await removeMigrationDetailLine(proposalId, lineId);
-        if (!result.ok) {
-          setSaveStatus("error");
-          setSaveError(result.error);
-          return;
-        }
-
-        setLines(result.lines);
-        linesRef.current = result.lines;
-        setSaveStatus("saved");
-      } finally {
-        setIsMutatingRows(false);
-        setRemovingLineId(null);
-      }
+      await runRowMutation({ kind: "remove", lineId });
     },
-    [proposalId]
+    [runRowMutation]
   );
 
   // ─── Derived values ──────────────────────────────────────────────
@@ -413,7 +411,10 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     removeLine,
     retryPendingSaves: async () => {
       setSaveError(null);
-      await persistenceControllerRef.current?.flushNow();
+      const flushed = (await persistenceControllerRef.current?.flushNow()) ?? true;
+      if (flushed && saveStatus === "error") {
+        setSaveStatus("idle");
+      }
     },
     clearSaveError: () => {
       setSaveError(null);

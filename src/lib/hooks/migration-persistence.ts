@@ -55,6 +55,9 @@ export function createMigrationPersistenceController<
     }
   };
 
+  const hasPendingWork = () =>
+    configDirty || totalsDirty || lineIdsDirty.size > 0;
+
   const runPending = async () => {
     const lineIds = [...lineIdsDirty];
     const shouldSaveConfig = configDirty;
@@ -99,6 +102,10 @@ export function createMigrationPersistenceController<
   };
 
   const enqueueRun = () => {
+    if (!hasPendingWork()) {
+      return saveQueue;
+    }
+
     options.onStatusChange?.("saving");
     saveQueue = saveQueue
       .then(async () => {
