@@ -28,6 +28,17 @@ type PgModule = {
   Client: new (config: { connectionString: string }) => PgClient;
 };
 
+// Documented drift exceptions from OPS-01: prod tracking was backfilled for
+// these 5 migrations under their legacy unprefixed names; renaming tracking
+// to match the repo was explicitly rejected. Repo remains source of truth.
+const KNOWN_DRIFT_PAIRS: ReadonlyArray<{ repo: string; db: string }> = [
+  { repo: "006a_add_customer_ownership_and_fix_rls", db: "add_customer_ownership_and_fix_rls" },
+  { repo: "021_fix_trigger_search_path", db: "fix_trigger_search_path" },
+  { repo: "022_internal_cost_rate_config", db: "internal_cost_rate_config" },
+  { repo: "023_rls_perf_and_indexes", db: "rls_perf_and_indexes" },
+  { repo: "024_service_hours_sort_order", db: "service_hours_sort_order" },
+];
+
 async function main(): Promise<void> {
   const dbUrl = process.env.SUPABASE_DB_URL;
   if (!dbUrl) {
@@ -64,8 +75,19 @@ async function main(): Promise<void> {
 
   const repoSet = new Set(repoNames);
   const dbSet = new Set(dbNames);
-  const repoOnly = repoNames.filter((n) => !dbSet.has(n));
-  const dbOnly = dbNames.filter((n) => !repoSet.has(n));
+
+  for (const pair of KNOWN_DRIFT_PAIRS) {
+    if (repoSet.has(pair.repo) && dbSet.has(pair.db)) {
+      repoSet.delete(pair.repo);
+      dbSet.delete(pair.db);
+      console.log(
+        `migration drift check: accepting documented exception: ${pair.repo} <-> ${pair.db}`
+      );
+    }
+  }
+
+  const repoOnly = repoNames.filter((n) => repoSet.has(n) && !dbSet.has(n));
+  const dbOnly = dbNames.filter((n) => dbSet.has(n) && !repoSet.has(n));
 
   if (repoOnly.length === 0 && dbOnly.length === 0) {
     console.log(
