@@ -38,3 +38,34 @@ export const bidSheetDiscountSchema = z.object({
 });
 
 export type BidSheetDiscount = z.infer<typeof bidSheetDiscountSchema>;
+
+export const bidSheetCustomerInputSchema = z.object({
+  proposalId: z.uuid("Invalid proposal id"),
+  customerId: z.uuid("Invalid customer id"),
+});
+
+export const bidSheetDiscountPercentInputSchema = z.object({
+  proposalId: z.uuid("Invalid proposal id"),
+  discountPercent: discountPercentSchema,
+});
+
+export const bidSheetDiscountDollarsInputSchema = z.object({
+  proposalId: z.uuid("Invalid proposal id"),
+  discountDollars: discountDollarsSchema,
+});
+
+export const bidSheetNotesInputSchema = z.object({
+  proposalId: z.uuid("Invalid proposal id"),
+  notes: z
+    .string({ error: "Notes must be text" })
+    .max(5000, "Notes cannot exceed 5000 characters"),
+});
+
+export type BidSheetCustomerInput = z.infer<typeof bidSheetCustomerInputSchema>;
+export type BidSheetDiscountPercentInput = z.infer<
+  typeof bidSheetDiscountPercentInputSchema
+>;
+export type BidSheetDiscountDollarsInput = z.infer<
+  typeof bidSheetDiscountDollarsInputSchema
+>;
+export type BidSheetNotesInput = z.infer<typeof bidSheetNotesInputSchema>;

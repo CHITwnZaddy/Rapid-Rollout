@@ -40,6 +40,12 @@ import {
   discountPercentSchema,
   discountDollarsSchema,
 } from "@/lib/validation/bid-sheet";
+import {
+  updateBidSheetCredit,
+  updateBidSheetCustomer,
+  updateBidSheetDiscountPercent,
+  updateBidSheetNotes,
+} from "./actions";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import {
   safeParseSupabaseResult,
@@ -73,6 +79,8 @@ export default function BidSheetPage() {
   );
   const [migrationTotal, setMigrationTotal] = useState(0);
   const [scopedTotal, setScopedTotal] = useState(0);
+  const [discountPercentDraft, setDiscountPercentDraft] = useState("0");
+  const [discountDollarsDraft, setDiscountDollarsDraft] = useState("0");
   const [notesDraft, setNotesDraft] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingCustomer, setSavingCustomer] = useState(false);
@@ -249,6 +257,8 @@ export default function BidSheetPage() {
 
       setLoadError(null);
       setBidSheet(bidData);
+      setDiscountPercentDraft(String(bidData?.discount_percent ?? 0));
+      setDiscountDollarsDraft(String(bidData?.discount_dollars ?? 0));
       setNotesDraft(bidData?.notes ?? "");
       const scenarioOrder = ["P1", "P2", "Opt1", "Opt2"];
       const orderedScenarios = [...scenarioData].sort(
@@ -278,14 +288,11 @@ export default function BidSheetPage() {
     if (!customerId || !bidSheet) return;
     const customer = customers.find((c) => c.id === customerId) ?? null;
     setSavingCustomer(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ customer_id: customerId })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetCustomer(proposalId, customerId);
     setSavingCustomer(false);
 
-    if (error) {
-      toast.error(`Failed to save customer: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save customer: ${result.error}`);
       return;
     }
 
@@ -293,62 +300,76 @@ export default function BidSheetPage() {
     setBidSheet({ ...bidSheet, customer_id: customerId });
   };
 
-  const handleDiscountPercentChange = async (discountPercent: number) => {
+  const handleDiscountPercentSave = async () => {
     if (!bidSheet) return;
+    const discountPercent = parseFloat(discountPercentDraft);
+    const normalizedDiscountPercent = Number.isFinite(discountPercent)
+      ? discountPercent
+      : 0;
+    if (normalizedDiscountPercent === (bidSheet.discount_percent ?? 0)) {
+      setDiscountPercentDraft(String(bidSheet.discount_percent ?? 0));
+      return;
+    }
     const parsed = discountPercentSchema.safeParse(discountPercent);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Invalid discount %");
+      setDiscountPercentDraft(String(bidSheet.discount_percent ?? 0));
       return;
     }
     setSavingDiscountPercent(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ discount_percent: parsed.data })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetDiscountPercent(
+      proposalId,
+      parsed.data
+    );
     setSavingDiscountPercent(false);
 
-    if (error) {
-      toast.error(`Failed to save discount %: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save discount %: ${result.error}`);
       return;
     }
 
     setBidSheet({ ...bidSheet, discount_percent: parsed.data });
+    setDiscountPercentDraft(String(parsed.data));
   };
 
-  const handleDiscountDollarsChange = async (discountDollars: number) => {
+  const handleDiscountDollarsSave = async () => {
     if (!bidSheet) return;
+    const discountDollars = parseFloat(discountDollarsDraft);
+    const normalizedDiscountDollars = Number.isFinite(discountDollars)
+      ? discountDollars
+      : 0;
+    if (normalizedDiscountDollars === (bidSheet.discount_dollars ?? 0)) {
+      setDiscountDollarsDraft(String(bidSheet.discount_dollars ?? 0));
+      return;
+    }
     const parsed = discountDollarsSchema.safeParse(discountDollars);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Invalid discount $");
+      setDiscountDollarsDraft(String(bidSheet.discount_dollars ?? 0));
       return;
     }
     setSavingDiscountDollars(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ discount_dollars: parsed.data })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetCredit(proposalId, parsed.data);
     setSavingDiscountDollars(false);
 
-    if (error) {
-      toast.error(`Failed to save credit: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save credit: ${result.error}`);
       return;
     }
 
     setBidSheet({ ...bidSheet, discount_dollars: parsed.data });
+    setDiscountDollarsDraft(String(parsed.data));
   };
 
   const handleNotesSave = async () => {
     if (!bidSheet || notesDraft === (bidSheet.notes ?? "")) return;
 
     setSavingNotes(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ notes: notesDraft })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetNotes(proposalId, notesDraft);
     setSavingNotes(false);
 
-    if (error) {
-      toast.error(`Failed to save notes: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save notes: ${result.error}`);
       return;
     }
 
@@ -512,11 +533,15 @@ export default function BidSheetPage() {
                 type="number"
                 min={0}
                 step={0.01}
-                value={discountDollars}
+                value={discountDollarsDraft}
                 disabled={savingDiscountDollars}
-                onChange={(e) =>
-                  handleDiscountDollarsChange(parseFloat(e.target.value) || 0)
-                }
+                onChange={(e) => setDiscountDollarsDraft(e.target.value)}
+                onBlur={handleDiscountDollarsSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
               />
               <p className="text-xs text-muted-foreground">
                 Deducts from total. Use for negotiated credits or from the LoE.
@@ -530,11 +555,15 @@ export default function BidSheetPage() {
                 min={0}
                 max={100}
                 step={0.01}
-                value={discountPercent}
+                value={discountPercentDraft}
                 disabled={savingDiscountPercent}
-                onChange={(e) =>
-                  handleDiscountPercentChange(parseFloat(e.target.value) || 0)
-                }
+                onChange={(e) => setDiscountPercentDraft(e.target.value)}
+                onBlur={handleDiscountPercentSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
               />
             </div>
             <span className="text-lg font-bold">
