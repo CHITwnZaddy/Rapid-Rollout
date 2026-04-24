@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import {
-  calculateMigrationTotals,
-  type MigrationConfig,
-  type MigrationTotals,
-} from "@/lib/calculations/migration-engine";
+import { type MigrationTotals } from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
-import { toEngineLine } from "@/lib/calculations/adapters";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 import { createMigrationPersistenceController } from "./migration-persistence";
 import {
@@ -14,39 +9,20 @@ import {
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
+import {
+  computeMigrationTotalsFromState,
+  type MigrationConfigState,
+  type MigrationLineState,
+} from "@/lib/migration/compute-totals-from-state";
 
-export type DbConfig = {
+export type DbConfig = MigrationConfigState & {
   id: string;
   proposal_id: string;
-  num_projects: number;
-  hrs_per_import: number;
-  lines_per_import_file: number;
-  is_effort_included: boolean;
-  is_workshop_included: boolean;
-  pm_contingency_pct: number;
-  sr_im_complexity_factor: number;
-  pm_complexity_factor: number;
-  sr_im_trips: number;
-  pm_trips: number;
-  doc_avg_mb_per_project: number;
-  doc_mb_per_hour: number;
-  core_requirements_hrs: number;
-  core_migration_plan_hrs: number;
-  core_validation_hrs: number;
-  core_final_qa_hrs: number;
-  core_pm_oversight_hrs: number;
   computed_total_cost: number;
 };
 
-export type DbLine = {
-  id: string;
+export type DbLine = MigrationLineState & {
   proposal_id: string;
-  section: string;
-  label: string;
-  quantity: number;
-  items_per_object: number;
-  total_line_items: number;
-  row_order: number;
 };
 
 export type UseMigrationConfigReturn = {
@@ -73,58 +49,6 @@ export type UseMigrationConfigReturn = {
   clearSaveError: () => void;
   retry: () => void;
 };
-
-function computeTotalsFromState(
-  cfg: DbConfig | null,
-  allLines: DbLine[],
-  srImRate: number | null,
-  pmRate: number | null,
-  travelRate: number | null
-): MigrationTotals | null {
-  if (!cfg || srImRate == null || pmRate == null || travelRate == null) {
-    return null;
-  }
-
-  const numProjects = NUM(cfg.num_projects);
-  const migrationConfig: MigrationConfig = {
-    num_projects: numProjects,
-    hrs_per_import: NUM(cfg.hrs_per_import),
-    lines_per_import_file: NUM(cfg.lines_per_import_file),
-    is_effort_included: cfg.is_effort_included,
-    is_workshop_included: cfg.is_workshop_included,
-    pm_contingency_pct: NUM(cfg.pm_contingency_pct),
-    sr_im_complexity_factor: NUM(cfg.sr_im_complexity_factor),
-    pm_complexity_factor: NUM(cfg.pm_complexity_factor),
-    sr_im_trips: NUM(cfg.sr_im_trips),
-    pm_trips: NUM(cfg.pm_trips),
-    doc_avg_mb_per_project: NUM(cfg.doc_avg_mb_per_project),
-    doc_mb_per_hour: NUM(cfg.doc_mb_per_hour),
-    core_requirements_hrs: NUM(cfg.core_requirements_hrs),
-    core_migration_plan_hrs: NUM(cfg.core_migration_plan_hrs),
-    core_validation_hrs: NUM(cfg.core_validation_hrs),
-    core_final_qa_hrs: NUM(cfg.core_final_qa_hrs),
-    core_pm_oversight_hrs: NUM(cfg.core_pm_oversight_hrs),
-  };
-  const projectLines = allLines
-    .filter((line) => line.section === "project")
-    .map((line) => toEngineLine(line, { quantityOverride: numProjects }));
-  const workflowLines = allLines
-    .filter((line) => line.section === "workflow")
-    .map((line) => toEngineLine(line));
-  const costLines = allLines
-    .filter((line) => line.section === "cost")
-    .map((line) => toEngineLine(line));
-
-  return calculateMigrationTotals(
-    migrationConfig,
-    projectLines,
-    workflowLines,
-    costLines,
-    srImRate,
-    pmRate,
-    travelRate
-  );
-}
 
 export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn {
   const supabase = createClient();
@@ -187,12 +111,14 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         setSaveError(message);
       },
       saveConfig: async (updated, currentLines) => {
-        const totals = computeTotalsFromState(
+        const totals = computeMigrationTotalsFromState(
           updated,
           currentLines,
-          srImRateRef.current,
-          pmRateRef.current,
-          travelRateRef.current
+          {
+            srImRate: srImRateRef.current,
+            pmRate: pmRateRef.current,
+            travelRate: travelRateRef.current,
+          }
         );
         const totalCost = totals?.salesPrice ?? 0;
 
@@ -241,12 +167,14 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         }
       },
       saveComputedTotal: async (updated, currentLines) => {
-        const totals = computeTotalsFromState(
+        const totals = computeMigrationTotalsFromState(
           updated,
           currentLines,
-          srImRateRef.current,
-          pmRateRef.current,
-          travelRateRef.current
+          {
+            srImRate: srImRateRef.current,
+            pmRate: pmRateRef.current,
+            travelRate: travelRateRef.current,
+          }
         );
 
         const { error } = await supabase
@@ -443,12 +371,14 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   );
 
   // ─── Derived values ──────────────────────────────────────────────
-  const totals = computeTotalsFromState(
+  const totals = computeMigrationTotalsFromState(
     config,
     lines,
-    srImRate,
-    pmRate,
-    travelRate
+    {
+      srImRate,
+      pmRate,
+      travelRate,
+    }
   );
   const numProjects = NUM(config?.num_projects);
   const projectLines = lines.filter((l) => l.section === "project");
