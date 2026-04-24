@@ -281,6 +281,7 @@ describe("proposal lifecycle actions", () => {
     );
 
     const migrationBreakdownRows = buildScenarioBreakoutMigrationRows(
+      // @ts-expect-error QA-01: pre-existing MigrationConfigRow.num_projects unknown-vs-number mismatch — out of scope (see ticket QA-01)
       migrationConfigs[0],
       migrationLines.map((line) => ({
         section: line.section,
