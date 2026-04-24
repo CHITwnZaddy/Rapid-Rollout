@@ -153,6 +153,27 @@ describe("createMigrationPersistenceController", () => {
     expect(statuses).toContain("saved");
   });
 
+  it("does not emit save status transitions when nothing is pending", async () => {
+    const statuses: string[] = [];
+    const controller = createMigrationPersistenceController({
+      debounceMs: 50,
+      getSnapshot: () => ({
+        config: { id: "cfg-1", num_projects: 2 },
+        lines: [{ id: "line-1", quantity: 7 }],
+      }),
+      saveConfig: vi.fn(async () => undefined),
+      saveLine: vi.fn(async () => undefined),
+      saveComputedTotal: vi.fn(async () => undefined),
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+    });
+
+    await controller.flushNow();
+
+    expect(statuses).toEqual([]);
+  });
+
   it("surfaces errors and keeps failed work retryable", async () => {
     const statuses: string[] = [];
     const errors: string[] = [];
