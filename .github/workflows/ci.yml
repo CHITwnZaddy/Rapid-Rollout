@@ -1,0 +1,79 @@
+# QA-01 — CI pipeline. Runs on every PR and on push to main.
+# Four independent jobs: lint-and-typecheck, test, build, migrations-drift-check.
+# Rationale: each job fails fast on its own signal so PR authors see
+# category-specific failures instead of one merged log.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel stale runs on the same ref (e.g. PR force-push).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+
+  test:
+    name: Vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run
+
+  build:
+    name: Next build
+    runs-on: ubuntu-latest
+    # @supabase/ssr reads these at module load, even though the build never
+    # calls Supabase. Placeholders keep the build self-contained — no secrets
+    # required.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx next build
+
+  migrations-drift-check:
+    name: Migrations drift
+    runs-on: ubuntu-latest
+    # Strict on the canonical repo (OPS-01 follow-up). Forks do not have
+    # access to repo secrets, so the script detects missing SUPABASE_DB_URL
+    # and exits 0 with a skip message.
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # `pg` is only needed for this job — installed ad-hoc (no-save) to
+      # avoid bloating repo-wide dependencies for a single CI task.
+      - run: npm install --no-save pg@^8
+      - run: npx tsx scripts/check-migration-drift.ts
