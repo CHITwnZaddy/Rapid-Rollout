@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/hooks/use-auth";
+import { useRequireAdmin } from "@/lib/hooks/use-require-admin";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
@@ -25,7 +26,11 @@ const adminItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const { user, loading, isAdmin, signOut } = useAuth();
+  // useAuth() is used only for user/signOut here — NEVER read `isAdmin`
+  // directly to gate UI; use the discriminated `useRequireAdmin()` status
+  // so the loading branch doesn't flash the non-admin layout at real admins.
+  const { user, signOut } = useAuth();
+  const adminStatus = useRequireAdmin();
 
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -53,13 +58,13 @@ export function AppSidebar() {
           ))}
         </div>
 
-        {loading ? (
+        {adminStatus.status === "loading" ? (
           <div className="mt-4 space-y-2 px-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-8 rounded-md bg-sidebar-accent/30 animate-pulse" />
             ))}
           </div>
-        ) : isAdmin && (
+        ) : adminStatus.status === "admin" && (
           <>
             <Separator className="my-4" />
             <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50">
