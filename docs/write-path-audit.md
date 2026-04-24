@@ -1,7 +1,7 @@
 # Write Path Audit
 
 This document inventories the remaining write paths in Rapid Rollout after the
-Phase 1-8 stabilization work.
+Phase 1-10 stabilization work.
 
 Why this exists:
 
@@ -30,7 +30,7 @@ The write paths we trust most now look like this:
 | Postgres RPC | Atomic multi-write behavior, especially when reporting truth depends on it | [src/app/(app)/proposals/[id]/actions.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/[id]/actions.ts) status transition, [src/app/(app)/proposals/new/actions.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/new/actions.ts) proposal creation |
 | Client write with explicit error handling and delayed local state update | Lower drift risk when a save fails | [src/components/admin/data-table.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/components/admin/data-table.tsx) |
 
-## Remaining Write Paths
+## Stabilized Write Paths
 
 ### 1. Scenario Grid
 
@@ -38,29 +38,32 @@ The write paths we trust most now look like this:
 | --- | --- |
 | File | [src/components/scenarios/scenario-grid.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/components/scenarios/scenario-grid.tsx) |
 | What it writes | `scenario_lines` and `scenarios.summary_total_*` |
-| Write style | Client-side Supabase upsert + update |
+| Write style | Client -> server action -> RPC |
 | User feedback | Save badge plus explicit retryable error state |
-| Main risk | Still client-side for a core workflow, even though save honesty is much better now |
-| Risk label | `Behavior-tightening` |
+| Main risk | No longer a top open risk; now server-backed and atomic |
+| Risk label | `Stabilized` |
 
 Current behavior:
 
 - The grid updates local state immediately.
-- A debounced save batches changed rows into one `upsert`.
-- Scenario summary totals are saved in a second client-side `update`.
+- A debounced save batches changed scope selections and sends them to the
+  server action.
+- The server recomputes the full canonical line set and persists it through the
+  `save_scenario_grid(...)` RPC.
 - Failed saves now surface an explicit error state and a retry action.
 
 Why this matters:
 
-- This path is better than the earlier silent-save model.
-- It is still weaker than the server-action/RPC paths because the browser still
-  owns the persistence contract for one of the most important editing screens.
+- This used to be the highest-risk browser-owned proposal editing flow.
+- It is now the reference implementation for a server-backed core proposal
+  mutation path.
 
 Recommendation:
 
-- Keep the current retry/error handling.
-- Next question is architectural: does Scenario Grid need a server-backed save
-  contract, or is the hardened client path sufficient?
+- Keep the current retry/error handling and server-backed contract.
+- Do not regress this back to browser-owned persistence.
+
+## Remaining Write Paths
 
 ### 2. Scoped Services
 
@@ -130,9 +133,9 @@ Recommendation:
 | --- | --- |
 | File | [src/lib/hooks/use-migration-config.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/lib/hooks/use-migration-config.ts) |
 | What it writes | `migration_config`, `migration_detail_lines` |
-| Write style | Client-side queued persistence controller plus direct insert/delete |
+| Write style | Client-side queue for config/inline edits plus server actions for add/remove |
 | User feedback | Save status, explicit error text, and retry action |
-| Main risk | Complex but improved client persistence flow still owns config/line writes |
+| Main risk | Config and inline edits are still client-queued, but the highest-risk row mutations are now server-backed |
 | Risk label | `Behavior-tightening` |
 
 Current behavior:
@@ -140,20 +143,22 @@ Current behavior:
 - Config updates and line updates flow through the persistence controller.
 - The page now surfaces save status, failure text, and retry behavior.
 - Initial self-heal creation paths were removed.
-- Add-line and remove-line are still direct client writes, but they now surface
-  failures.
+- Add-line and remove-line flush queued edits first, then run through server
+  actions that recompute `computed_total_cost` and return canonical rows.
 
 Why this matters:
 
 - This path is much safer than it was before.
-- It is still one of the most complex client write flows in the repo.
-- The main remaining question is architectural consistency, not silent failure.
+- The main remaining question is whether config/inline edits ever need the same
+  server-backed treatment, not whether row mutations are still dangerously
+  browser-owned.
 
 Recommendation:
 
 - Keep the queue. It solved a real concurrency bug.
-- If we keep tightening this area, the next decision is whether add/remove
-  should stay client-side or move behind a server action/RPC boundary.
+- Do not move add/remove back into the browser.
+- Only revisit this area if we choose a broader “all proposal writes converge
+  on server actions” architecture phase.
 
 ### 5. Admin Table
 
@@ -164,7 +169,7 @@ Recommendation:
 | Write style | Client-side insert / update / delete |
 | User feedback | Explicit toasts and local state updates only after success |
 | Main risk | Still client-side, but much safer than before |
-| Risk label | `Monitor only` |
+| Risk label | `Low urgency` |
 
 Why this is lower risk now:
 
@@ -182,14 +187,16 @@ Recommendation:
 
 | Priority | Recommendation | Risk label | Why |
 | --- | --- | --- | --- |
-| 1 | Decide whether Scenario Grid should stay a hardened client flow or move server-side | `Higher-risk refactor` | It is now the most important remaining proposal write path still owned by the browser |
-| 2 | Decide whether Bid Sheet and Scoped Services should converge on a server-action contract | `Higher-risk refactor` | The behavior is much safer now; the remaining issue is consistency of architecture |
-| 3 | Decide whether migration add/remove operations should stay client-side | `Higher-risk refactor` | The queue/error state is good, but the flow is still complex |
-| 4 | Keep the admin table as the low-risk client-side reference | `Safe / no behavior change` | It is currently the cleanest browser-write implementation in the repo |
+| 1 | Decide whether Bid Sheet should converge on a server-action contract | `Higher-risk refactor` | It is now the highest-priority remaining browser-owned revenue write path |
+| 2 | Decide whether Scoped Services should converge on a server-action contract | `Higher-risk refactor` | It is stable, but still browser-owned and recalculates cost client-side |
+| 3 | Keep migration config/inline edits on the queue unless broader convergence is explicitly prioritized | `Safe / no behavior change` | The queue is solving a real problem and row mutations are already server-backed |
+| 4 | Keep the admin table as the low-risk client-side reference | `Safe / no behavior change` | It remains a low-risk browser-write implementation |
 
 ## What I Would Not Do Next
 
 - I would not move every client-side write to a server action all at once.
 - I would not remove the migration persistence controller just because it is
   client-side; it fixed a real concurrency bug.
+- I would not re-open Scenario Grid or migration add/remove unless we find a
+  new concrete failure mode there.
 - I would not touch schema/storage names as part of this audit PR.
