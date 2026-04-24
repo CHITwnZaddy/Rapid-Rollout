@@ -1,13 +1,14 @@
 # Write Path Audit
 
 This document inventories the current write paths in Rapid Rollout after the
-proposal write-path stabilization work through PR 47.
+proposal write-path stabilization work through PR 50.
 
 Why this exists:
 
 - The repo now has a mixed write model.
 - Some high-risk flows already use server actions or Postgres RPCs.
-- A few lower-risk admin paths still write directly from the browser.
+- The main proposal and admin write paths now run through server actions or
+  Postgres RPCs, with one deliberate migration queue asymmetry remaining.
 - The main risk is no longer "pricing math is obviously wrong."
 - The remaining risk is mostly "repo guidance or lower-priority paths drift
   away from the stabilized server-backed patterns."
@@ -28,7 +29,7 @@ The write paths we trust most now look like this:
 | --- | --- | --- |
 | Server action | Centralized auth checks, clearer error contract, easier revalidation | [src/app/(app)/proposals/[id]/actions.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/[id]/actions.ts) complexity-factor updates and delete flow |
 | Postgres RPC | Atomic multi-write behavior, especially when reporting truth depends on it | [src/app/(app)/proposals/[id]/actions.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/[id]/actions.ts) status transition, [src/app/(app)/proposals/new/actions.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/app/(app)/proposals/new/actions.ts) proposal creation |
-| Client write with explicit error handling and delayed local state update | Lower drift risk when a save fails | [src/components/admin/data-table.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/components/admin/data-table.tsx) |
+| Client queue with explicit error handling and server-backed row mutations | Preserves a proven concurrency fix while still moving the riskiest row mutations to the server | [src/lib/hooks/use-migration-config.ts](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/lib/hooks/use-migration-config.ts) |
 
 ## Stabilized Write Paths
 
@@ -168,31 +169,32 @@ Recommendation:
 | --- | --- |
 | File | [src/components/admin/data-table.tsx](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/src/components/admin/data-table.tsx) |
 | What it writes | `customers`, `rate_cards`, `service_hours` |
-| Write style | Client-side insert / update / delete |
+| Write style | Client -> server actions |
 | User feedback | Explicit toasts and local state updates only after success |
-| Main risk | Still client-side, but much safer than before |
-| Risk label | `Low urgency` |
+| Main risk | No longer a top open risk; now server-backed |
+| Risk label | `Stabilized` |
 
-Why this is lower risk now:
+Current behavior:
 
-- The page no longer fakes successful writes.
-- It blocks overlapping edits.
-- It validates editable values before saving.
+- Add, update, and delete all run through shared server actions.
+- The shared config now defines editable columns, create defaults, auth policy,
+  and revalidation paths in one place.
+- The client still waits for success before updating local state and still
+  blocks overlapping edits.
 
 Recommendation:
 
-- Keep this as the current client-side reference implementation.
-- Only move it server-side if broader audit or permissions needs justify that
-  extra complexity.
+- Keep the current shared server-action contract and centralized table config.
+- Do not fork the admin pages back into page-specific direct writes.
 
 ## Prioritized Recommendations
 
 | Priority | Recommendation | Risk label | Why |
 | --- | --- | --- | --- |
 | 1 | Refresh docs/comments whenever write-path work lands | `Safe / no behavior change` | The main drift right now is documentation lag, not active proposal-write bugs |
-| 2 | Decide whether the admin table should converge on server actions | `Higher-risk refactor` | It is now the clearest remaining client-write path, but lower urgency than prior proposal flows |
-| 3 | Keep migration config/inline edits on the queue unless broader convergence is explicitly prioritized | `Safe / no behavior change` | The queue is solving a real problem and row mutations are already server-backed |
-| 4 | Reassess only if a new concrete write failure appears | `Safe / no behavior change` | The main proposal flows are now in a much healthier state |
+| 2 | Keep migration config/inline edits on the queue unless broader convergence is explicitly prioritized | `Safe / no behavior change` | The queue is solving a real problem and row mutations are already server-backed |
+| 3 | Reassess only if a new concrete write failure appears | `Safe / no behavior change` | The main proposal flows are now in a much healthier state |
+| 4 | Treat further write-path work as optional consistency work, not active risk triage | `Safe / no behavior change` | The major correctness and architecture seams are already addressed |
 
 ## What I Would Not Do Next
 
