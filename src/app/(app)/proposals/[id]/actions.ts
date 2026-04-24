@@ -17,6 +17,7 @@ import {
   type ScenarioGridPersistLine,
 } from "@/lib/scenarios/persist-scenario-grid";
 import { saveScenarioGridSchema } from "@/lib/validation/scenario-grid";
+import { buildDeleteConfirmationPhrase } from "@/lib/proposals/delete-confirmation";
 import type { Database } from "@/types/database";
 
 export type DeleteProposalResult =
@@ -314,24 +315,41 @@ export async function saveScenarioGridSelections(
 }
 
 /**
- * Deletes a proposal after re-authenticating the user and writing an audit
+ * Deletes a proposal after confirming user intent and writing an audit
  * record to change_log. All child records cascade via FK ON DELETE CASCADE.
  *
  * Guards:
- *  - User must be authenticated.
- *  - Password must match (re-auth via signInWithPassword).
+ *  - User must be authenticated (assertAuthenticated + getUser).
+ *  - Caller must submit a typed-confirmation string matching the proposal
+ *    name exactly — this is a friction gate, not an auth boundary.
  *  - RLS on proposals enforces created_by = auth.uid() — the delete will
  *    silently no-op if the row isn't owned by this user, so we check the
  *    delete count explicitly and surface a clean error.
+ *
+ * Why no password re-auth: the previous implementation called
+ * supabase.auth.signInWithPassword() as a friction gate. That issued a new
+ * session/refresh token on every delete attempt (potentially invalidating
+ * the active session) and pushed the plaintext password through the server
+ * action pipeline. The server-side auth boundary is assertAuthenticated()
+ * + RLS; the typed-confirmation string replaces only the UX friction.
  */
 export async function deleteProposal(
   proposalId: string,
   justification: string,
-  password: string
+  confirmationText: string
 ): Promise<DeleteProposalResult> {
+  try {
+    await assertAuthenticated();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return { ok: false, error: "You must be signed in to delete a proposal." };
+    }
+    throw e;
+  }
+
   const supabase = await createClient();
 
-  // 1. Identify the current user
+  // 1. Identify the current user (for the audit log payload).
   const {
     data: { user },
     error: userError,
@@ -341,18 +359,8 @@ export async function deleteProposal(
     return { ok: false, error: "You must be signed in to delete a proposal." };
   }
 
-  // 2. Re-authenticate — this is the friction gate for non-draft proposals.
-  //    We call signInWithPassword silently; if it fails the password is wrong.
-  const { error: authError } = await supabase.auth.signInWithPassword({
-    email: user.email!,
-    password,
-  });
-
-  if (authError) {
-    return { ok: false, error: "Incorrect password. Deletion cancelled." };
-  }
-
-  // 3. Fetch minimal proposal data so we can record it in the audit log.
+  // 2. Fetch minimal proposal data so we can record it in the audit log
+  //    AND validate the typed confirmation against the current name.
   const { data: proposal, error: fetchError } = await supabase
     .from("proposals")
     .select("id, name, status, created_by")
@@ -363,6 +371,16 @@ export async function deleteProposal(
     return {
       ok: false,
       error: "Proposal not found or you do not have permission to delete it.",
+    };
+  }
+
+  // 3. Typed-confirmation friction gate. Compare trimmed strings so trailing
+  //    whitespace from the textbox doesn't cause confusing false negatives.
+  const expectedPhrase = buildDeleteConfirmationPhrase(proposal.name);
+  if (confirmationText.trim() !== expectedPhrase) {
+    return {
+      ok: false,
+      error: `Confirmation text did not match. Type "${expectedPhrase}" exactly to delete.`,
     };
   }
 
