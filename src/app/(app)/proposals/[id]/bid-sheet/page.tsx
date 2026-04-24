@@ -40,6 +40,12 @@ import {
   discountPercentSchema,
   discountDollarsSchema,
 } from "@/lib/validation/bid-sheet";
+import {
+  updateBidSheetCredit,
+  updateBidSheetCustomer,
+  updateBidSheetDiscountPercent,
+  updateBidSheetNotes,
+} from "./actions";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import {
   safeParseSupabaseResult,
@@ -278,14 +284,11 @@ export default function BidSheetPage() {
     if (!customerId || !bidSheet) return;
     const customer = customers.find((c) => c.id === customerId) ?? null;
     setSavingCustomer(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ customer_id: customerId })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetCustomer(proposalId, customerId);
     setSavingCustomer(false);
 
-    if (error) {
-      toast.error(`Failed to save customer: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save customer: ${result.error}`);
       return;
     }
 
@@ -301,14 +304,14 @@ export default function BidSheetPage() {
       return;
     }
     setSavingDiscountPercent(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ discount_percent: parsed.data })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetDiscountPercent(
+      proposalId,
+      parsed.data
+    );
     setSavingDiscountPercent(false);
 
-    if (error) {
-      toast.error(`Failed to save discount %: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save discount %: ${result.error}`);
       return;
     }
 
@@ -323,14 +326,11 @@ export default function BidSheetPage() {
       return;
     }
     setSavingDiscountDollars(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ discount_dollars: parsed.data })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetCredit(proposalId, parsed.data);
     setSavingDiscountDollars(false);
 
-    if (error) {
-      toast.error(`Failed to save credit: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save credit: ${result.error}`);
       return;
     }
 
@@ -341,14 +341,11 @@ export default function BidSheetPage() {
     if (!bidSheet || notesDraft === (bidSheet.notes ?? "")) return;
 
     setSavingNotes(true);
-    const { error } = await supabase
-      .from("bid_sheets")
-      .update({ notes: notesDraft })
-      .eq("id", bidSheet.id);
+    const result = await updateBidSheetNotes(proposalId, notesDraft);
     setSavingNotes(false);
 
-    if (error) {
-      toast.error(`Failed to save notes: ${error.message}`);
+    if (!result.ok) {
+      toast.error(`Failed to save notes: ${result.error}`);
       return;
     }
 
