@@ -1,122 +1,127 @@
 # Self-Heal Audit
 
-This audit is the evidence-gathering step before we remove any self-heal logic.
+This document is the historical evidence pack that justified removing the old
+self-heal logic.
 
-What we are auditing:
+What we audited:
 
 - proposals missing `bid_sheets`
 - proposals missing `migration_config`
 - proposals missing `migration_detail_lines`
 
-Why this matters:
+Why this mattered:
 
 - Before `create_proposal_bundle(...)`, proposal creation could leave child
   records missing.
 - After `create_proposal_bundle(...)`, new proposals should be created
   atomically.
-- If missing-child rows still appear on newly created proposals, that is a new
-  regression.
-- If they only appear on older proposals, the self-heal logic is still acting
+- If missing-child rows still appeared on newly created proposals, that would
+  indicate a current regression.
+- If they only appeared on older proposals, self-heal would have been acting
   as legacy-data protection.
 
 ## Files Related To This Audit
 
 | File | Why it matters |
 | --- | --- |
-| [legacy-self-heal-review.md](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/docs/legacy-self-heal-review.md) | documents the current self-heal behaviors and why we have not removed them yet |
-| [017_atomic_proposal_bootstrap.sql](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/supabase/migrations/017_atomic_proposal_bootstrap.sql) | establishes the atomic create path that should have made the legacy rescue paths mostly obsolete for new proposals |
-| [self-heal-audit.sql](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/docs/self-heal-audit.sql) | the SQL audit script to run in Supabase |
+| [legacy-self-heal-review.md](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/docs/legacy-self-heal-review.md) | records the historical self-heal paths and why they were removed |
+| [017_atomic_proposal_bootstrap.sql](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/supabase/migrations/017_atomic_proposal_bootstrap.sql) | established the atomic create path that made the older rescue logic obsolete for new proposals |
+| [self-heal-audit.sql](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/docs/self-heal-audit.sql) | the SQL audit script that was run in Supabase |
 
-## What You Need To Do
+## What We Did
 
-1. Open Supabase for the target project.
-2. Open `SQL Editor`.
-3. Open [self-heal-audit.sql](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/docs/self-heal-audit.sql).
-4. Replace the placeholder bootstrap cutoff timestamp with the date/time when
-   the atomic proposal bootstrap reached the target environment.
-5. Run the full script.
-6. Save the results somewhere we can inspect together.
+1. Opened Supabase for the target project.
+2. Ran [self-heal-audit.sql](/Users/austin_alexander_guzman/GitHub/Rapid-Rollout/docs/self-heal-audit.sql)
+   with the atomic-bootstrap cutoff set to the deployment point for the atomic
+   create path.
+3. Reviewed the aggregate counts and before/after bucket output.
+4. Confirmed the audit found `0` proposals missing:
+   - `bid_sheets`
+   - `migration_config`
+   - `migration_detail_lines`
+5. Removed the bid-sheet and migration self-heal paths based on that evidence.
 
-## How To Choose The Cutoff
+## Why The Cutoff Mattered
 
-Use the date when the target environment started using the atomic create path,
-not just when the PR merged on GitHub.
+The cutoff existed to distinguish:
 
-Why:
+- legacy incomplete proposals
+- new proposals that should already have been atomic
 
-- GitHub merge time and DB/app deployment time are not always identical.
-- The whole point of this audit is to distinguish:
-  - legacy incomplete proposals
-  - new proposals that should have been atomic but were not
+That was the key question before removing self-heal. Once the audit showed no
+missing child rows on either side of the cutoff, the runtime repair paths were
+no longer justified.
 
-If you are unsure, use the best known production deployment timestamp and note
-that assumption when you share the output.
-
-## What The Script Returns
+## What The Script Returned
 
 ### 1. Aggregate counts
 
-Shows how many proposals are missing:
+The script measured how many proposals were missing:
 
 - `bid_sheets`
 - `migration_config`
 - `migration_detail_lines`
 
-This tells us the size of the legacy-data problem.
+This told us the size of the legacy-data problem.
 
 ### 2. Before/after bootstrap buckets
 
-Groups missing-child proposals into:
+The script grouped missing-child proposals into:
 
 - `before_atomic_bootstrap`
 - `after_atomic_bootstrap`
 
-This is the most important result.
+This was the most important result.
 
 Interpretation:
 
 | Result | Meaning |
 | --- | --- |
-| Only `before_atomic_bootstrap` rows are missing children | self-heal is mostly legacy protection |
-| Any `after_atomic_bootstrap` rows are missing children | we still have a current regression or bad deployment path |
+| Only `before_atomic_bootstrap` rows are missing children | self-heal was mostly legacy protection |
+| Any `after_atomic_bootstrap` rows are missing children | we had a current regression or bad deployment path |
+| No rows are missing children | self-heal removal is evidence-backed |
 
 ### 3. Detailed proposal list
 
-Lists each affected proposal so we can spot patterns:
+The script could also list each affected proposal with:
 
 - proposal id
 - proposal name
 - created date
 - creator
 - customer
-- which child rows are missing
+- which child rows were missing
 
-This is what we use to decide whether to backfill data, keep self-heal longer,
-or remove it later.
+That detail view would have been used to decide whether to backfill data, keep
+self-heal longer, or remove it.
 
-## Decision Rules
+## Audit Outcome
 
-| Finding | Recommended action |
+| Finding | Result |
 | --- | --- |
-| Missing-child proposals exist only before the cutoff | keep self-heal temporarily, plan a legacy backfill, then remove self-heal later |
-| Missing-child proposals exist after the cutoff | do not remove self-heal yet; investigate proposal creation and environment alignment |
-| No proposals are missing child rows | self-heal removal becomes a reasonable next refactor |
+| Missing-child proposals before the cutoff | `0` |
+| Missing-child proposals after the cutoff | `0` |
+| Proposals missing any required child row | `0` |
 
-## What I Recommend After You Run It
+Because every count was `0`, the self-heal paths were removed.
 
-1. Share the aggregate counts.
-2. Share whether any missing-child proposals exist after the cutoff.
-3. If there are post-cutoff failures, we investigate before removing anything.
-4. If there are only pre-cutoff failures, we decide between:
-   - targeted data backfill first
-   - keep self-heal until legacy proposals are cleaned up
-   - remove self-heal after cleanup
+## Why This Document Still Matters
+
+This document is still useful because it explains why self-heal was removed
+instead of just disappearing from the codebase without explanation.
+
+Future maintainers can use it to understand:
+
+- why load-time self-heal existed
+- what evidence justified removal
+- what to do if missing child rows ever reappear
 
 ## Important Constraint
 
-Do not delete the self-heal logic based only on theory.
+Do not reintroduce silent self-heal logic based only on theory.
 
-The only safe reasons to remove it are:
+If missing child rows ever reappear, the right default response is:
 
-- the audit shows no remaining dependent proposals, or
-- we intentionally backfilled the missing rows first.
+- investigate proposal creation or deployment alignment
+- consider explicit backfill or admin repair tooling
+- only reintroduce runtime repair if real evidence demands it
