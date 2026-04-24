@@ -26,10 +26,11 @@
  *      classic "oh no I just seeded prod" incident.
  */
 
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { createClient } from "@supabase/supabase-js";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { sheetToJson } from "../src/lib/exports/sheet-to-json";
 
 // ─── Parse CLI args ─────────────────────────────────────────────────
 interface CliArgs {
@@ -115,14 +116,13 @@ async function main() {
   console.log(`Mode: ${args.dryRun ? "DRY RUN (no writes)" : "WRITE"}`);
 
   console.log("\nReading workbook...");
-  const wb = XLSX.readFile(args.workbook!);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(args.workbook!);
 
   // Parse all three sheets up-front so the confirmation prompt can
   // show exact row counts before we commit.
-  const rateSheet = wb.Sheets["tblRateCard"];
-  const rateRows = rateSheet
-    ? XLSX.utils.sheet_to_json<Record<string, unknown>>(rateSheet)
-    : [];
+  const rateSheet = wb.getWorksheet("tblRateCard");
+  const rateRows = sheetToJson(rateSheet);
   const rateCards = rateRows
     .filter((r) => r["Activity"] || r["RateCardName"])
     .map((r) => ({
@@ -134,10 +134,8 @@ async function main() {
       lookup_key: `${String(r["RateCardName"] ?? "Master")}|${String(r["Activity"] ?? "")}`,
     }));
 
-  const svcSheet = wb.Sheets["tblServiceHours"];
-  const svcRows = svcSheet
-    ? XLSX.utils.sheet_to_json<Record<string, unknown>>(svcSheet)
-    : [];
+  const svcSheet = wb.getWorksheet("tblServiceHours");
+  const svcRows = sheetToJson(svcSheet);
   const serviceHours = svcRows
     .filter((r) => r["ServiceName"])
     .map((r) => ({
@@ -154,10 +152,8 @@ async function main() {
       ),
     }));
 
-  const custSheet = wb.Sheets["CustomerList"];
-  const custRows = custSheet
-    ? XLSX.utils.sheet_to_json<Record<string, unknown>>(custSheet)
-    : [];
+  const custSheet = wb.getWorksheet("CustomerList");
+  const custRows = sheetToJson(custSheet);
   const customers = custRows
     .filter((r) => r["Company Name"] || r["CompanyName"])
     .map((r) => ({
