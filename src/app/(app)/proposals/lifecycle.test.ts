@@ -280,9 +280,26 @@ describe("proposal lifecycle actions", () => {
       rateMap
     );
 
+    const breakdownConfig = migrationConfigs[0];
     const migrationBreakdownRows = buildScenarioBreakoutMigrationRows(
-      // @ts-expect-error QA-01: pre-existing MigrationConfigRow.num_projects unknown-vs-number mismatch — out of scope (see ticket QA-01)
-      migrationConfigs[0],
+      {
+        num_projects: Number(breakdownConfig.num_projects),
+        hrs_per_import: Number(breakdownConfig.hrs_per_import),
+        lines_per_import_file: Number(breakdownConfig.lines_per_import_file),
+        is_effort_included: breakdownConfig.is_effort_included,
+        is_workshop_included: breakdownConfig.is_workshop_included,
+        sr_im_complexity_factor: Number(breakdownConfig.sr_im_complexity_factor),
+        pm_complexity_factor: Number(breakdownConfig.pm_complexity_factor),
+        sr_im_trips: Number(breakdownConfig.sr_im_trips),
+        pm_trips: Number(breakdownConfig.pm_trips),
+        doc_avg_mb_per_project: Number(breakdownConfig.doc_avg_mb_per_project),
+        doc_mb_per_hour: Number(breakdownConfig.doc_mb_per_hour),
+        core_requirements_hrs: Number(breakdownConfig.core_requirements_hrs),
+        core_migration_plan_hrs: Number(breakdownConfig.core_migration_plan_hrs),
+        core_validation_hrs: Number(breakdownConfig.core_validation_hrs),
+        core_final_qa_hrs: Number(breakdownConfig.core_final_qa_hrs),
+        core_pm_oversight_hrs: Number(breakdownConfig.core_pm_oversight_hrs),
+      },
       migrationLines.map((line) => ({
         section: line.section,
         label: line.label,
