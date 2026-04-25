@@ -1,6 +1,6 @@
 # Rapid Rollout
 
-Proposal scoping & pricing tool for TUC Solution Engineers. Replaces the legacy Excel scoping workbook with a Next.js + Supabase app that lets SEs build customer proposals, price four scenario variants (P1/P2/Opt1/Opt2), scope migration services, and export bid sheets and reports.
+Proposal scoping & pricing tool Rapid Rollout Sales Engineers. Replaces the legacy Excel scoping workbook with a Next.js + Supabase app that lets SEs build customer proposals, price four scenario variants (P1/P2/Opt1/Opt2), scope migration services, and export bid sheets and reports.
 
 ## Stack
 
