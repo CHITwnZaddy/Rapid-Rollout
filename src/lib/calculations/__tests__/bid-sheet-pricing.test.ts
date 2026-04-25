@@ -142,9 +142,7 @@ describe("estimatedMargin — INTERNAL_COST_RATE pin (SA-APP-01)", () => {
         lines_per_import_file: 1000,
         is_effort_included: false,
         is_workshop_included: true,
-        pm_contingency_pct: 0,
-        sr_im_complexity_factor: 1,
-        pm_complexity_factor: 1,
+        complexity_factor: 1,
         sr_im_trips: 0,
         pm_trips: 0,
         doc_avg_mb_per_project: 0,
@@ -165,17 +163,17 @@ describe("estimatedMargin — INTERNAL_COST_RATE pin (SA-APP-01)", () => {
     );
 
     // Workshop preset: 132 Sr.IM hrs + 8 PM hrs.
-    // Sales price = 132*200 + 8*300 = 26400 + 2400 = 28800
+    // Client price = 132*200 + 8*300 = 26400 + 2400 = 28800
     // Total hours = 140; blendedRate = 28800/140 ≈ 205.7142857
     // Margin = 1 - 135/205.7142857 ≈ 0.34375
     expect(totals.totalSrImHours).toBe(132);
     expect(totals.totalPmHours).toBe(8);
-    expect(totals.salesPrice).toBe(28800);
+    expect(totals.clientPrice).toBe(28800);
     expect(totals.blendedRate).toBeCloseTo(205.7142857, 4);
     expect(totals.estimatedMargin).toBeCloseTo(0.34375, 5);
   });
 
-  it("estimatedMargin is exactly 0 when salesPrice is 0 (no NaN, no Infinity)", () => {
+  it("estimatedMargin is exactly 0 when clientPrice is 0 (no NaN, no Infinity)", () => {
     const totals = calculateMigrationTotals(
       {
         num_projects: 1,
@@ -183,9 +181,7 @@ describe("estimatedMargin — INTERNAL_COST_RATE pin (SA-APP-01)", () => {
         lines_per_import_file: 1000,
         is_effort_included: false,
         is_workshop_included: false,
-        pm_contingency_pct: 0,
-        sr_im_complexity_factor: 1,
-        pm_complexity_factor: 1,
+        complexity_factor: 1,
         sr_im_trips: 0,
         pm_trips: 0,
         doc_avg_mb_per_project: 0,
@@ -205,7 +201,7 @@ describe("estimatedMargin — INTERNAL_COST_RATE pin (SA-APP-01)", () => {
       135
     );
 
-    expect(totals.salesPrice).toBe(0);
+    expect(totals.clientPrice).toBe(0);
     expect(totals.estimatedMargin).toBe(0);
     expect(Number.isFinite(totals.estimatedMargin)).toBe(true);
   });

@@ -34,19 +34,19 @@ describe("buildScenarioBreakoutRows", () => {
     });
     expect(rows).toHaveLength(3);
     expect(rows[0]).toEqual({
-      Section: "P1",
+      Section: "Phase 1",
       Item: "Financials",
       Detail: "Small",
       Subtotal: 1000,
     });
     expect(rows[1]).toEqual({
-      Section: "P1",
+      Section: "Phase 1",
       Item: "Project Mgmt",
       Detail: "",
       Subtotal: 500,
     });
     expect(rows[2]).toEqual({
-      Section: "P1 Total",
+      Section: "Phase 1 Total",
       Item: "",
       Detail: "",
       Subtotal: 1500,

@@ -37,14 +37,14 @@ import {
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
+import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 import { toast } from "sonner";
 
 type Customer = { id: string; company_name: string };
 type OwnerFilter = "all" | "mine";
 
-// A single (proposal, scenario-or-bucket) row. "scenario" is one of
-// P1/P2/Opt1/Opt2/"Scoped Services"/"Migration Services" — the latter two
-// are synthetic rows aggregated across their underlying tables.
+// A single (proposal, scenario-or-bucket) row. "scenario" stores the internal
+// scenario code or synthetic bucket; display labels are derived at render/export.
 type HoursRow = {
   proposalId: string;
   proposalName: string;
@@ -58,13 +58,14 @@ type HoursRow = {
 
 const SCENARIO_FILTER = [
   "All",
-  "P1",
-  "P2",
-  "Opt1",
-  "Opt2",
+  ...SCENARIO_ORDER,
   "Scoped Services",
   "Migration Services",
 ];
+
+function scenarioFilterLabel(value: string): string {
+  return value === "All" ? "All" : getScenarioDisplayName(value);
+}
 
 export default function ProposalHoursReport() {
   const supabase = createClient();
@@ -133,7 +134,7 @@ export default function ProposalHoursReport() {
         supabase
           .from("migration_config")
           .select(
-            "proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
+            "proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
           )
           .in("proposal_id", proposalIds),
         supabase
@@ -184,14 +185,17 @@ export default function ProposalHoursReport() {
           .push({ id: s.id, type: s.scenario_type });
       }
 
-      const order = ["P1", "P2", "Opt1", "Opt2"];
       const sortedProposals = [...proposals].sort((a, b) =>
         a.name.localeCompare(b.name)
       );
       for (const p of sortedProposals) {
         const cname = customerName(p.customer_id);
         const pScenarios = (scenariosByProposal.get(p.id) ?? []).sort(
-          (a, b) => order.indexOf(a.type) - order.indexOf(b.type)
+          (a, b) =>
+            SCENARIO_ORDER.indexOf(
+              a.type as (typeof SCENARIO_ORDER)[number]
+            ) -
+            SCENARIO_ORDER.indexOf(b.type as (typeof SCENARIO_ORDER)[number])
         );
         for (const s of pScenarios) {
           const sums = lineSumByScenario.get(s.id) ?? { sr: 0, pm: 0, ba: 0 };
@@ -300,7 +304,7 @@ export default function ProposalHoursReport() {
         ? "All Customers"
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
-    filters.value = `Filtered by: ${customerLabel} · ${selectedScenario} · ${ownerFilter === "mine" ? "My proposals" : "All owners"}`;
+    filters.value = `Filtered by: ${customerLabel} · ${scenarioFilterLabel(selectedScenario)} · ${ownerFilter === "mine" ? "My proposals" : "All owners"}`;
     filters.font = { italic: true, size: 11 };
     filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     sheet.getRow(2).height = 20;
@@ -333,7 +337,11 @@ export default function ProposalHoursReport() {
         pattern: "solid",
         fgColor: { argb: idx % 2 === 0 ? ALT_ROW_BG : WHITE },
       };
-      const textVals = [r.proposalName, r.customerName, r.scenario];
+      const textVals = [
+        r.proposalName,
+        r.customerName,
+        getScenarioDisplayName(r.scenario),
+      ];
       textVals.forEach((v, i) => {
         const c = row.getCell(i + 1);
         c.value = v;
@@ -451,7 +459,7 @@ export default function ProposalHoursReport() {
                 <SelectContent>
                   {SCENARIO_FILTER.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {s}
+                      {scenarioFilterLabel(s)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -521,7 +529,7 @@ export default function ProposalHoursReport() {
                           {r.proposalName}
                         </TableCell>
                         <TableCell>{r.customerName}</TableCell>
-                        <TableCell>{r.scenario}</TableCell>
+                        <TableCell>{getScenarioDisplayName(r.scenario)}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {fmt(r.srImHours)}
                         </TableCell>

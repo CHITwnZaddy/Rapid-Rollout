@@ -6,12 +6,14 @@ import {
   buildServiceHoursMap,
   buildRateCardMap,
   calculateScenarioLine,
+  calculateScenarioContingencySummary,
   calculateScenarioTotals,
   formatCurrency,
   formatHours,
   type ServiceHoursRow,
   type RateCardRow,
 } from "@/lib/calculations/engine";
+import { ContingencySummaryTable } from "@/components/pricing/contingency-summary-table";
 import { saveScenarioGridSelections } from "@/app/(app)/proposals/[id]/actions";
 import { type ScenarioGridPersistLine } from "@/lib/scenarios/persist-scenario-grid";
 import {
@@ -62,6 +64,7 @@ type ScenarioGridProps = {
   serviceHours: ServiceHoursRow[];
   rateCards: RateCardRow[];
   complexityFactor?: number;
+  internalCostRate?: number;
 };
 
 export function ScenarioGrid({
@@ -72,6 +75,7 @@ export function ScenarioGrid({
   serviceHours,
   rateCards,
   complexityFactor = 1,
+  internalCostRate = 0,
 }: ScenarioGridProps) {
   const serviceHoursMap = useMemo(
     () => buildServiceHoursMap(serviceHours),
@@ -141,10 +145,29 @@ export function ScenarioGrid({
     [lines, complexityFactor]
   );
 
+  const baseTotals = useMemo(
+    () => calculateScenarioTotals(lines),
+    [lines]
+  );
+
   const totals = useMemo(
     () => calculateScenarioTotals(displayLines),
     [displayLines]
   );
+
+  const contingencySummary = useMemo(
+    () =>
+      calculateScenarioContingencySummary(
+        baseTotals,
+        complexityFactor,
+        internalCostRate
+      ),
+    [baseTotals, complexityFactor, internalCostRate]
+  );
+  const blendedRate =
+    contingencySummary.totalClientHours === 0
+      ? 0
+      : contingencySummary.clientPrice / contingencySummary.totalClientHours;
 
   const doSave = useCallback(async () => {
     if (isSavingRef.current) {
@@ -319,7 +342,7 @@ export function ScenarioGrid({
               <TableHead className="text-right">BA Cost</TableHead>
               <TableHead className="text-right">Total Hrs</TableHead>
               <TableHead className="text-right font-semibold">
-                Total Cost
+                Client Price
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -409,6 +432,14 @@ export function ScenarioGrid({
             </TableRow>
           </TableBody>
         </Table>
+      </div>
+      <div className="mt-4">
+        <ContingencySummaryTable
+          rows={contingencySummary.roleBreakouts}
+          clientPrice={contingencySummary.clientPrice}
+          blendedRate={blendedRate}
+          marginPercent={contingencySummary.marginPercent}
+        />
       </div>
     </div>
   );

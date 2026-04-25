@@ -13,8 +13,7 @@ describe("migration breakdown", () => {
         lines_per_import_file: 1000,
         is_effort_included: true,
         is_workshop_included: false,
-        sr_im_complexity_factor: 1.5,
-        pm_complexity_factor: 2,
+        complexity_factor: 1.5,
         sr_im_trips: 0,
         pm_trips: 0,
         doc_avg_mb_per_project: 100,
@@ -56,13 +55,13 @@ describe("migration breakdown", () => {
     );
 
     expect(rows).toEqual([
-      { label: "Core Data Migration Efforts", total: 11400 },
+      { label: "Core Data Migration Efforts", total: 11025 },
       { label: "Document Migration", total: 1800 },
       { label: "Project & Schedule Data Migration", total: 5400 },
       { label: "Workflow Data Migration", total: 3600 },
       { label: "Cost Data Migration", total: 3600 },
     ]);
-    expect(calculateMigrationBreakdownTotal(rows)).toBe(25800);
+    expect(calculateMigrationBreakdownTotal(rows)).toBe(25425);
   });
 
   it("includes workshop and placeholder-labeled workflow/cost rows in the migration total", () => {
@@ -73,8 +72,7 @@ describe("migration breakdown", () => {
         lines_per_import_file: 1000,
         is_effort_included: false,
         is_workshop_included: true,
-        sr_im_complexity_factor: 1,
-        pm_complexity_factor: 1,
+        complexity_factor: 1,
         sr_im_trips: 0,
         pm_trips: 0,
         doc_avg_mb_per_project: 0,
@@ -123,8 +121,7 @@ describe("migration breakdown", () => {
         lines_per_import_file: 1000,
         is_effort_included: false,
         is_workshop_included: false,
-        sr_im_complexity_factor: 1,
-        pm_complexity_factor: 1,
+        complexity_factor: 1,
         sr_im_trips: 1,
         pm_trips: 1,
         doc_avg_mb_per_project: 0,

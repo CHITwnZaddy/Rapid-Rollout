@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { ScenarioGrid } from "@/components/scenarios/scenario-grid";
 import { ScenarioComplexityFactor } from "@/components/proposals/scenario-complexity-factor";
+import { INTERNAL_COST_RATE_KEY } from "@/lib/rate-card-keys";
+import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 
 export default async function ScenarioPage({
   params,
@@ -12,8 +14,7 @@ export default async function ScenarioPage({
 }) {
   const { id, type } = await params;
 
-  const validTypes = ["P1", "P2", "Opt1", "Opt2"];
-  if (!validTypes.includes(type)) notFound();
+  if (!SCENARIO_ORDER.includes(type as (typeof SCENARIO_ORDER)[number])) notFound();
 
   const supabase = await createClient();
 
@@ -43,9 +44,15 @@ export default async function ScenarioPage({
     .from("rate_cards")
     .select("*")
     .eq("status", "Active");
+  const internalCostRate =
+    rateCards?.find((rate) => rate.lookup_key === INTERNAL_COST_RATE_KEY)?.rate ??
+    0;
 
   return (
     <div className="space-y-4">
+      <h2 className="text-lg font-semibold">
+        {getScenarioDisplayName(type)}
+      </h2>
       <div className="rounded-md border bg-card p-4">
         <ScenarioComplexityFactor
           scenarioId={scenario.id}
@@ -61,6 +68,7 @@ export default async function ScenarioPage({
         serviceHours={serviceHours ?? []}
         rateCards={rateCards ?? []}
         complexityFactor={Number(scenario.complexity_factor ?? 1)}
+        internalCostRate={Number(internalCostRate)}
       />
     </div>
   );

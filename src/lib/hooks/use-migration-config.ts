@@ -145,7 +145,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
           currentLines,
           getCurrentRateSnapshot()
         );
-        const totalCost = totals?.salesPrice ?? 0;
+        const totalCost = totals?.clientPrice ?? 0;
 
         const { error } = await supabase
           .from("migration_config")
@@ -155,9 +155,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
             lines_per_import_file: updated.lines_per_import_file,
             is_effort_included: updated.is_effort_included,
             is_workshop_included: updated.is_workshop_included,
-            pm_contingency_pct: updated.pm_contingency_pct,
-            sr_im_complexity_factor: updated.sr_im_complexity_factor,
-            pm_complexity_factor: updated.pm_complexity_factor,
+            complexity_factor: updated.complexity_factor,
             sr_im_trips: updated.sr_im_trips,
             pm_trips: updated.pm_trips,
             doc_avg_mb_per_project: updated.doc_avg_mb_per_project,
@@ -201,7 +199,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         const { error } = await supabase
           .from("migration_config")
           .update({
-            computed_total_cost: totals?.salesPrice ?? updated.computed_total_cost,
+            computed_total_cost: totals?.clientPrice ?? updated.computed_total_cost,
             updated_at: new Date().toISOString(),
           })
           .eq("id", updated.id);

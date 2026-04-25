@@ -1,3 +1,10 @@
+import {
+  calculateRolePricingBreakouts,
+  sumContingencyBreakouts,
+  type ContingencyPricingBreakout,
+  type RolePricingBreakout,
+} from "@/lib/calculations/contingency-pricing";
+
 export interface ServiceHoursRow {
   service_name: string;
   scope_value: string;
@@ -45,6 +52,10 @@ export interface ScenarioTotals {
   totalHours: number;
   totalCost: number;
 }
+
+export type ScenarioContingencySummary = ContingencyPricingBreakout & {
+  roleBreakouts: RolePricingBreakout[];
+};
 
 export interface ScenarioSummary {
   scenarioType: string;
@@ -168,6 +179,50 @@ export function calculateScenarioTotals(
       totalCost: 0,
     }
   );
+}
+
+export function calculateScenarioContingencySummary(
+  totals: ScenarioTotals,
+  complexityFactor: number,
+  internalCostRate = 0
+): ScenarioContingencySummary {
+  const roleBreakouts = calculateRolePricingBreakouts(
+    [
+      {
+        role: "srIm",
+        label: "Sr. IM",
+        baseHours: totals.totalSrImHours,
+        rate:
+          totals.totalSrImHours === 0
+            ? 0
+            : totals.totalSrImCost / totals.totalSrImHours,
+      },
+      {
+        role: "pm",
+        label: "PM",
+        baseHours: totals.totalPmHours,
+        rate:
+          totals.totalPmHours === 0
+            ? 0
+            : totals.totalPmCost / totals.totalPmHours,
+      },
+      {
+        role: "ba",
+        label: "BA",
+        baseHours: totals.totalBaHours,
+        rate:
+          totals.totalBaHours === 0
+            ? 0
+            : totals.totalBaCost / totals.totalBaHours,
+      },
+    ],
+    complexityFactor,
+    internalCostRate
+  );
+  return {
+    ...sumContingencyBreakouts(roleBreakouts),
+    roleBreakouts,
+  };
 }
 
 /**

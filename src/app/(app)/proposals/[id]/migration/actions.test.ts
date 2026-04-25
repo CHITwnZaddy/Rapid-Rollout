@@ -66,10 +66,8 @@ type ConfigRow = {
   lines_per_import_file: number;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  pm_contingency_pct: number;
-  sr_im_complexity_factor: number;
-  pm_complexity_factor: number;
-  sr_im_trips: number;
+    complexity_factor: number;
+    sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
   doc_mb_per_hour: number;
@@ -111,9 +109,7 @@ describe("migration actions", () => {
       lines_per_import_file: 1000,
       is_effort_included: true,
       is_workshop_included: false,
-      pm_contingency_pct: 0,
-      sr_im_complexity_factor: 1.25,
-      pm_complexity_factor: 1.1,
+            complexity_factor: 1.25,
       sr_im_trips: 0,
       pm_trips: 0,
       doc_avg_mb_per_project: 200,
@@ -188,7 +184,7 @@ describe("migration actions", () => {
         ["Master|Travel Cost/Trip", 1000],
       ]),
     });
-    computeTotalsMock.mockReturnValue({ salesPrice: 4321 });
+    computeTotalsMock.mockReturnValue({ clientPrice: 4321 });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "migration_config") {

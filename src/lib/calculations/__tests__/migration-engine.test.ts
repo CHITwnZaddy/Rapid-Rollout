@@ -19,9 +19,7 @@ const baseConfig: MigrationConfig = {
   lines_per_import_file: 1000,
   is_effort_included: true,
   is_workshop_included: true,
-  pm_contingency_pct: 0,
-  sr_im_complexity_factor: 1,
-  pm_complexity_factor: 1,
+    complexity_factor: 1,
   sr_im_trips: 0,
   pm_trips: 0,
   doc_avg_mb_per_project: 0,
@@ -178,7 +176,7 @@ describe("calculateDocumentHours", () => {
 });
 
 describe("calculateMigrationTotals", () => {
-  it("zero-everything config produces zero salesPrice and zero blended rate", () => {
+  it("zero-everything config produces zero clientPrice and zero blended rate", () => {
     const cfg: MigrationConfig = {
       ...baseConfig,
       is_effort_included: false,
@@ -190,7 +188,7 @@ describe("calculateMigrationTotals", () => {
       core_pm_oversight_hrs: 0,
     };
     const totals = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250, 135);
-    expect(totals.salesPrice).toBe(0);
+    expect(totals.clientPrice).toBe(0);
     expect(totals.totalSrImHours).toBe(0);
     expect(totals.totalPmHours).toBe(0);
     expect(totals.blendedRate).toBe(0);
@@ -232,8 +230,7 @@ describe("calculateMigrationTotals", () => {
         ...baseConfig,
         is_workshop_included: true,
         is_effort_included: false,
-        sr_im_complexity_factor: 1.5,
-        pm_complexity_factor: 1.25,
+        complexity_factor: 1.5,
       },
       [],
       [],
@@ -244,7 +241,11 @@ describe("calculateMigrationTotals", () => {
       135
     );
     expect(t.workshopSrIm).toBe(132 * 1.5);
-    expect(t.workshopPm).toBe(8 * 1.25);
+    expect(t.workshopPm).toBe(8 * 1.5);
+    expect(t.baseSrImHours).toBe(132);
+    expect(t.srImContingencyHours).toBe(66);
+    expect(t.basePmHours).toBe(8);
+    expect(t.pmContingencyHours).toBe(4);
   });
 
   it("computes travel hours as trips × 40 and travelExpense as (sr_im_trips + pm_trips) × travelCost", () => {
@@ -269,14 +270,13 @@ describe("calculateMigrationTotals", () => {
     expect(t.travelExpense).toBe(3 * 2500);
   });
 
-  it("salesPrice = Sr. IM cost + PM cost (hourly only)", () => {
+  it("clientPrice = Sr. IM cost + PM cost (hourly only)", () => {
     const t = calculateMigrationTotals(
       {
         ...baseConfig,
         is_workshop_included: true,
         is_effort_included: false,
-        sr_im_complexity_factor: 1,
-        pm_complexity_factor: 1,
+        complexity_factor: 1,
       },
       [],
       [],
@@ -289,10 +289,10 @@ describe("calculateMigrationTotals", () => {
     // Workshop only: Sr. IM 132 * 200 = 26400, PM 8 * 300 = 2400
     expect(t.srImCost).toBe(26400);
     expect(t.pmCost).toBe(2400);
-    expect(t.salesPrice).toBe(28800);
+    expect(t.clientPrice).toBe(28800);
   });
 
-  it("blendedRate = salesPrice / totalHours", () => {
+  it("blendedRate = clientPrice / totalHours", () => {
     const t = calculateMigrationTotals(
       {
         ...baseConfig,
@@ -308,7 +308,7 @@ describe("calculateMigrationTotals", () => {
       135
     );
     const totalHours = t.totalSrImHours + t.totalPmHours;
-    expect(t.blendedRate).toBeCloseTo(t.salesPrice / totalHours, 6);
+    expect(t.blendedRate).toBeCloseTo(t.clientPrice / totalHours, 6);
   });
 
   it("estimatedMargin is positive when blendedRate > 135", () => {
@@ -333,7 +333,7 @@ describe("calculateMigrationTotals", () => {
     expect(t.estimatedMargin).toBeLessThan(0); // surfaced, not clamped
   });
 
-  it("estimatedMargin is 0 when salesPrice is 0", () => {
+  it("estimatedMargin is 0 when clientPrice is 0", () => {
     const cfg: MigrationConfig = {
       ...baseConfig,
       is_effort_included: false,
@@ -345,7 +345,7 @@ describe("calculateMigrationTotals", () => {
       core_pm_oversight_hrs: 0,
     };
     const t = calculateMigrationTotals(cfg, [], [], [], 225, 225, 2250, 135);
-    expect(t.salesPrice).toBe(0);
+    expect(t.clientPrice).toBe(0);
     expect(t.estimatedMargin).toBe(0);
   });
 

@@ -59,8 +59,7 @@ export type MigrationConfigRow = {
   lines_per_import_file: unknown;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  sr_im_complexity_factor: unknown;
-  pm_complexity_factor: unknown;
+  complexity_factor: unknown;
   sr_im_trips: unknown;
   pm_trips: unknown;
   doc_avg_mb_per_project: unknown;
@@ -101,9 +100,7 @@ function toEngineConfig(config: MigrationConfigRow): EngineMigrationConfig {
     lines_per_import_file: NUM(config.lines_per_import_file),
     is_effort_included: config.is_effort_included,
     is_workshop_included: config.is_workshop_included,
-    pm_contingency_pct: 0,
-    sr_im_complexity_factor: NUM(config.sr_im_complexity_factor),
-    pm_complexity_factor: NUM(config.pm_complexity_factor),
+    complexity_factor: NUM(config.complexity_factor),
     sr_im_trips: NUM(config.sr_im_trips),
     pm_trips: NUM(config.pm_trips),
     doc_avg_mb_per_project: NUM(config.doc_avg_mb_per_project),
@@ -279,7 +276,7 @@ export function buildMigrationCostMap(
         pmRate,
         travelRate,
         internalCostRate
-      ).salesPrice
+      ).clientPrice
     );
   }
 
