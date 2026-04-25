@@ -47,15 +47,17 @@ let customersRows: CustomerRow[] = [];
 let rateCardRows: RateCardRow[] = [];
 let serviceHoursRows: ServiceHoursRow[] = [];
 
+type AnyRow = CustomerRow | RateCardRow | ServiceHoursRow;
+
 function createTableApi(tableName: string) {
-  const getRows = () => {
+  const getRows = (): AnyRow[] => {
     if (tableName === "customers") return customersRows;
     if (tableName === "rate_cards") return rateCardRows;
     if (tableName === "service_hours") return serviceHoursRows;
     throw new Error(`Unexpected table ${tableName}`);
   };
 
-  const setRows = (rows: typeof customersRows | typeof rateCardRows | typeof serviceHoursRows) => {
+  const setRows = (rows: AnyRow[]) => {
     if (tableName === "customers") {
       customersRows = rows as CustomerRow[];
       return;
@@ -93,8 +95,7 @@ function createTableApi(tableName: string) {
               ? "22222222-2222-4222-8222-222222222223"
               : "33333333-3333-4333-8333-333333333333",
         ...payload,
-      };
-      // @ts-expect-error QA-01: pre-existing CustomerRow union-narrowing error — out of scope (see ticket QA-01)
+      } as AnyRow;
       setRows([...getRows(), newRow]);
       return {
         select() {
@@ -110,9 +111,8 @@ function createTableApi(tableName: string) {
       return {
         async eq(_column: string, value: string) {
           setRows(
-            // @ts-expect-error QA-01: pre-existing CustomerRow union-narrowing error — out of scope (see ticket QA-01)
             getRows().map((row) =>
-              row.id === value ? { ...row, ...payload } : row
+              row.id === value ? ({ ...row, ...payload } as AnyRow) : row
             )
           );
           return { error: null };
@@ -122,7 +122,6 @@ function createTableApi(tableName: string) {
     delete() {
       return {
         async eq(_column: string, value: string) {
-          // @ts-expect-error QA-01: pre-existing CustomerRow union-narrowing error — out of scope (see ticket QA-01)
           setRows(getRows().filter((row) => row.id !== value));
           return { error: null };
         },
