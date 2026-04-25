@@ -20,6 +20,7 @@ import {
   type ScopedLine,
 } from "@/lib/hooks/use-scenario-breakout";
 import { type MigrationBreakdownRow } from "@/lib/reports/migration-breakdown";
+import { getScenarioDisplayName } from "@/lib/scenarios/display";
 
 type ScenarioBreakoutResultsProps = {
   scenarioGroups: ScenarioGroup[];
@@ -39,7 +40,9 @@ export function ScenarioBreakoutResults({
       {scenarioGroups.map((group) => (
         <Card key={group.scenarioType}>
           <CardHeader>
-            <CardTitle className="text-base">{group.scenarioType}</CardTitle>
+            <CardTitle className="text-base">
+              {getScenarioDisplayName(group.scenarioType)}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {group.lines.length === 0 ? (
@@ -70,7 +73,7 @@ export function ScenarioBreakoutResults({
                     ))}
                     <TableRow className="bg-muted/50 font-semibold">
                       <TableCell colSpan={2}>
-                        {group.scenarioType} Total
+                        {getScenarioDisplayName(group.scenarioType)} Total
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatCurrency(group.totalCost)}

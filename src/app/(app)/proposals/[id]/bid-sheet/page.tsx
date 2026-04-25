@@ -9,13 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,7 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency, formatHours } from "@/lib/calculations/engine";
+import { formatCurrency } from "@/lib/calculations/engine";
 import {
   calculateMigrationTotals,
   type MigrationConfig as EngineMigrationConfig,
@@ -42,7 +36,6 @@ import {
 } from "@/lib/validation/bid-sheet";
 import {
   updateBidSheetCredit,
-  updateBidSheetCustomer,
   updateBidSheetDiscountPercent,
   updateBidSheetNotes,
 } from "./actions";
@@ -61,12 +54,14 @@ import {
 } from "@/lib/validation/proposal";
 import { z } from "zod";
 import { toast } from "sonner";
+import { Download } from "lucide-react";
 import {
   INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
+import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 
 export default function BidSheetPage() {
   const { id: proposalId } = useParams<{ id: string }>();
@@ -74,7 +69,6 @@ export default function BidSheetPage() {
 
   const [bidSheet, setBidSheet] = useState<BidSheetData | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioData[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null
   );
@@ -84,7 +78,6 @@ export default function BidSheetPage() {
   const [discountDollarsDraft, setDiscountDollarsDraft] = useState("0");
   const [notesDraft, setNotesDraft] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [savingCustomer, setSavingCustomer] = useState(false);
   const [savingDiscountPercent, setSavingDiscountPercent] = useState(false);
   const [savingDiscountDollars, setSavingDiscountDollars] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
@@ -113,7 +106,7 @@ export default function BidSheetPage() {
           supabase
             .from("migration_config")
             .select(
-              "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
+              "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
             )
             .eq("proposal_id", proposalId)
             .single(),
@@ -231,9 +224,7 @@ export default function BidSheetPage() {
           lines_per_import_file: NUM(migCfg.lines_per_import_file),
           is_effort_included: migCfg.is_effort_included,
           is_workshop_included: migCfg.is_workshop_included,
-          pm_contingency_pct: 0,
-          sr_im_complexity_factor: NUM(migCfg.sr_im_complexity_factor),
-          pm_complexity_factor: NUM(migCfg.pm_complexity_factor),
+          complexity_factor: NUM(migCfg.complexity_factor),
           sr_im_trips: NUM(migCfg.sr_im_trips),
           pm_trips: NUM(migCfg.pm_trips),
           doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
@@ -259,7 +250,7 @@ export default function BidSheetPage() {
           Number(pmRate),
           Number(travelRate),
           Number(internalCostRate)
-        ).salesPrice;
+        ).clientPrice;
       }
 
       if (!bidData) {
@@ -275,14 +266,16 @@ export default function BidSheetPage() {
       setDiscountPercentDraft(String(bidData?.discount_percent ?? 0));
       setDiscountDollarsDraft(String(bidData?.discount_dollars ?? 0));
       setNotesDraft(bidData?.notes ?? "");
-      const scenarioOrder = ["P1", "P2", "Opt1", "Opt2"];
       const orderedScenarios = [...scenarioData].sort(
         (a, b) =>
-          scenarioOrder.indexOf(a.scenario_type) -
-          scenarioOrder.indexOf(b.scenario_type)
+          SCENARIO_ORDER.indexOf(
+            a.scenario_type as (typeof SCENARIO_ORDER)[number]
+          ) -
+          SCENARIO_ORDER.indexOf(
+            b.scenario_type as (typeof SCENARIO_ORDER)[number]
+          )
       );
       setScenarios(orderedScenarios);
-      setCustomers(customerData);
       if (bidData?.customer_id) {
         setSelectedCustomer(
           customerData.find((c) => c.id === bidData!.customer_id) ?? null
@@ -298,22 +291,6 @@ export default function BidSheetPage() {
     };
     load();
   }, [proposalId, supabase]);
-
-  const handleCustomerChange = async (customerId: string | null) => {
-    if (!customerId || !bidSheet) return;
-    const customer = customers.find((c) => c.id === customerId) ?? null;
-    setSavingCustomer(true);
-    const result = await updateBidSheetCustomer(proposalId, customerId);
-    setSavingCustomer(false);
-
-    if (!result.ok) {
-      toast.error(`Failed to save customer: ${result.error}`);
-      return;
-    }
-
-    setSelectedCustomer(customer);
-    setBidSheet({ ...bidSheet, customer_id: customerId });
-  };
 
   const handleDiscountPercentSave = async () => {
     if (!bidSheet) return;
@@ -394,11 +371,7 @@ export default function BidSheetPage() {
   const discountPercent = bidSheet?.discount_percent ?? 0;
   const discountDollars = bidSheet?.discount_dollars ?? 0;
 
-  const {
-    totalHours,
-    proposalSubtotal,
-    pricing,
-  } = calculateProposalPricingSummary({
+  const { proposalSubtotal, pricing } = calculateProposalPricingSummary({
     scenarios,
     migrationTotal,
     scopedTotal,
@@ -406,9 +379,217 @@ export default function BidSheetPage() {
     discountPercent,
   });
   const finalTotal = pricing.finalTotal;
+  const bidLineItems = [
+    ...scenarios.map((scenario) => ({
+      label: scenario.scenario_type,
+      displayLabel: getScenarioDisplayName(scenario.scenario_type),
+      clientPrice: applyComplexity(
+        Number(scenario.summary_total_cost),
+        Number(scenario.complexity_factor ?? 1)
+      ),
+    })),
+    {
+      label: "Scoped Services",
+      displayLabel: "Scoped Services",
+      clientPrice: scopedTotal,
+    },
+    {
+      label: "Migration Services",
+      displayLabel: "Migration Services",
+      clientPrice: migrationTotal,
+    },
+  ];
 
-  const blendedRate = totalHours > 0 ? finalTotal / totalHours : 0;
-  const blendedRateMeetsTarget = blendedRate >= 225;
+  const handleExport = async () => {
+    const ExcelJS = (await import("exceljs")).default;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Bid Summary");
+    const titleFill = "FFC1C1DE";
+    const headerFill = "FFD5D6E9";
+    const altRowFill = "FFEAEAF4";
+    const currencyFormat = "$#,##0.00";
+    const baseFont = { name: "Calibri", size: 12 };
+    const centeredHeaderAlignment = {
+      horizontal: "center" as const,
+      vertical: "middle" as const,
+      wrapText: true,
+    };
+    const labelAlignment = {
+      horizontal: "right" as const,
+      vertical: "middle" as const,
+      wrapText: true,
+      indent: 1,
+    };
+    const valueAlignment = {
+      horizontal: "left" as const,
+      vertical: "middle" as const,
+      wrapText: true,
+      indent: 1,
+    };
+
+    worksheet.columns = [
+      { key: "field", width: 28 },
+      { key: "value", width: 42 },
+    ];
+    worksheet.mergeCells("A1:B1");
+    worksheet.getCell("A1").value = "Bid Proposal";
+    worksheet.addRow({});
+    worksheet.addRow({
+      field: "Customer Name",
+      value: selectedCustomer?.company_name ?? "",
+    });
+    worksheet.addRow({
+      field: "Customer Address",
+      value: selectedCustomer
+        ? [
+            selectedCustomer.address_line1,
+            selectedCustomer.address_line2,
+            `${selectedCustomer.city}, ${selectedCustomer.state} ${selectedCustomer.zip}`,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "",
+    });
+    worksheet.addRow({});
+    worksheet.addRow({ field: "Line Item", value: "Client Price" });
+    for (const item of bidLineItems) {
+      worksheet.addRow({ field: item.displayLabel ?? item.label, value: item.clientPrice });
+    }
+    worksheet.addRow({ field: "Subtotal", value: proposalSubtotal });
+    worksheet.addRow({ field: "Credit", value: discountDollars });
+    worksheet.addRow({ field: "Discount %", value: discountPercent });
+    worksheet.addRow({});
+    worksheet.addRow({ field: "Final Total", value: finalTotal });
+    worksheet.addRow({});
+    worksheet.addRow({ field: "Notes", value: notesDraft });
+
+    worksheet.getCell("A1").font = { ...baseFont, bold: true, size: 24 };
+    worksheet.getCell("A1").alignment = {
+      horizontal: "center",
+      vertical: "middle",
+    };
+    worksheet.getCell("A1").fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: titleFill },
+    };
+    worksheet.getRow(1).height = 40;
+
+    worksheet.eachRow((row) => {
+      row.height = row.number === 4 ? 54 : 22;
+      const fieldCell = row.getCell(1);
+      const valueCell = row.getCell(2);
+      if (row.number === 1) {
+        row.height = 40;
+        fieldCell.font = { ...baseFont, bold: true, size: 24 };
+        fieldCell.alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+        fieldCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: titleFill },
+        };
+        valueCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: titleFill },
+        };
+        return;
+      }
+      fieldCell.font = { ...baseFont, bold: true };
+      valueCell.font = { ...baseFont };
+      fieldCell.alignment = labelAlignment;
+      valueCell.alignment = valueAlignment;
+
+      const fieldValue = String(fieldCell.value ?? "");
+      if (fieldValue === "Line Item") {
+        fieldCell.font = { ...baseFont, bold: true };
+        valueCell.font = { ...baseFont, bold: true };
+        fieldCell.alignment = centeredHeaderAlignment;
+        valueCell.alignment = centeredHeaderAlignment;
+        fieldCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: headerFill },
+        };
+        valueCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: headerFill },
+        };
+      }
+
+      if (
+        [
+          "Phase 2",
+          "Option 2",
+          "Migration Services",
+          "Credit",
+          "Final Total",
+        ].includes(fieldValue)
+      ) {
+        fieldCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: altRowFill },
+        };
+        valueCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: altRowFill },
+        };
+      }
+
+      if (["Subtotal", "Final Total"].includes(fieldValue)) {
+        valueCell.font = { ...baseFont, bold: true };
+      }
+
+      if (["Credit", "Discount %"].includes(fieldValue)) {
+        valueCell.font = { ...baseFont, italic: true };
+      }
+
+      if (
+        [
+          "Phase 1",
+          "Phase 2",
+          "Option 1",
+          "Option 2",
+          "Scoped Services",
+          "Migration Services",
+          "Subtotal",
+          "Credit",
+          "Final Total",
+        ].includes(fieldValue)
+      ) {
+        valueCell.numFmt = currencyFormat;
+      }
+
+      if (fieldValue === "Discount %") {
+        valueCell.numFmt = "0.##";
+      }
+
+      if (fieldValue === "Discount %") {
+        valueCell.border = {
+          bottom: { style: "double", color: { argb: "FF000000" } },
+        };
+      }
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `bid-sheet-${selectedCustomer?.company_name ?? proposalId}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.xlsx`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loadError) {
     return (
@@ -438,24 +619,9 @@ export default function BidSheetPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Customer</Label>
-              <Select
-                value={selectedCustomer?.id ?? ""}
-                onValueChange={handleCustomerChange}
-                disabled={savingCustomer}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select customer">
-                    {selectedCustomer?.company_name ?? "Select customer"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.company_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium">
+                {selectedCustomer?.company_name ?? "No customer selected"}
+              </div>
             </div>
             {selectedCustomer && (
               <div className="text-sm text-muted-foreground">
@@ -475,35 +641,36 @@ export default function BidSheetPage() {
 
       {/* Pricing Summary */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Pricing Summary</CardTitle>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={() => void handleExport()}
+            aria-label="Export Bid Sheet XLSX"
+          >
+            <Download className="mr-2 size-4" aria-hidden="true" />
+            Export Bid Sheet XLSX
+          </Button>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Line Item</TableHead>
-                <TableHead className="text-right">Hours</TableHead>
-                <TableHead className="text-right">Cost</TableHead>
+                <TableHead className="text-right">Client Price</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {scenarios.map((s) => (
                 <TableRow key={s.scenario_type}>
                   <TableCell className="font-medium">
-                    {s.scenario_type}
+                    {getScenarioDisplayName(s.scenario_type)}
                     {Number(s.summary_total_cost) === 0 && (
                       <Badge variant="secondary" className="ml-2">
                         Empty
                       </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatHours(
-                      applyComplexity(
-                        Number(s.summary_total_hours),
-                        Number(s.complexity_factor ?? 1)
-                      )
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
@@ -518,21 +685,18 @@ export default function BidSheetPage() {
               ))}
               <TableRow>
                 <TableCell className="font-medium">Scoped Services</TableCell>
-                <TableCell className="text-right">-</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatCurrency(scopedTotal)}
                 </TableCell>
               </TableRow>
               <TableRow>
                 <TableCell className="font-medium">Migration Services</TableCell>
-                <TableCell className="text-right">-</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatCurrency(migrationTotal)}
                 </TableCell>
               </TableRow>
               <TableRow className="bg-muted/50 font-semibold">
                 <TableCell>Subtotal</TableCell>
-                <TableCell />
                 <TableCell className="text-right tabular-nums">
                   {formatCurrency(proposalSubtotal)}
                 </TableCell>
@@ -584,12 +748,6 @@ export default function BidSheetPage() {
             <span className="text-lg font-bold">
               Total: {formatCurrency(finalTotal)}
             </span>
-            <Badge
-              variant={blendedRateMeetsTarget ? "secondary" : "destructive"}
-              className={blendedRateMeetsTarget ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}
-            >
-              Blended Rate: {formatCurrency(blendedRate)}
-            </Badge>
           </div>
         </CardContent>
       </Card>

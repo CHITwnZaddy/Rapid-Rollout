@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
+import { getScenarioDisplayName } from "@/lib/scenarios/display";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import { ProposalListSchema } from "@/lib/validation/proposal";
 
@@ -110,7 +111,7 @@ export default async function ProposalsPage() {
                           .map((s) => (
                             <span key={s.scenario_type}>
                               <span className="font-medium">
-                                {s.scenario_type}:
+                                {getScenarioDisplayName(s.scenario_type)}:
                               </span>{" "}
                               {formatCurrency(
                                 applyComplexity(

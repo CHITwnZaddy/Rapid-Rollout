@@ -167,7 +167,7 @@ async function updateComputedTotal(
   const { error } = await supabase
     .from("migration_config")
     .update({
-      computed_total_cost: totals.salesPrice,
+      computed_total_cost: totals.clientPrice,
       updated_at: new Date().toISOString(),
     })
     .eq("id", config.id);

@@ -11,9 +11,7 @@ const configFixture: MigrationConfigState = {
   lines_per_import_file: 1000,
   is_effort_included: true,
   is_workshop_included: false,
-  pm_contingency_pct: 0,
-  sr_im_complexity_factor: 1.25,
-  pm_complexity_factor: 1.1,
+  complexity_factor: 1.25,
   sr_im_trips: 0,
   pm_trips: 0,
   doc_avg_mb_per_project: 200,
@@ -97,10 +95,13 @@ describe("computeMigrationTotalsFromState", () => {
 
     expect(totals).not.toBeNull();
     expect(totals?.totalSrImHours).toBe(90);
-    expect(totals?.totalPmHours).toBeCloseTo(3.3);
+    expect(totals?.baseSrImHours).toBe(72);
+    expect(totals?.srImContingencyHours).toBe(18);
+    expect(totals?.totalPmHours).toBeCloseTo(3.75);
     expect(totals?.srImCost).toBe(9000);
-    expect(totals?.pmCost).toBeCloseTo(495);
-    expect(totals?.salesPrice).toBe(9495);
+    expect(totals?.pmCost).toBeCloseTo(562.5);
+    expect(totals?.clientPrice).toBe(9562.5);
+    expect(totals?.internalCost).toBeCloseTo(75 * 135);
     expect(totals?.travelExpense).toBe(0);
   });
 });

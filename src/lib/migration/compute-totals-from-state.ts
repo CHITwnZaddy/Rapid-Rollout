@@ -12,9 +12,7 @@ export type MigrationConfigState = {
   lines_per_import_file: number;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  pm_contingency_pct: number;
-  sr_im_complexity_factor: number;
-  pm_complexity_factor: number;
+  complexity_factor: number;
   sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
@@ -65,9 +63,7 @@ export function computeMigrationTotalsFromState(
     lines_per_import_file: NUM(config.lines_per_import_file),
     is_effort_included: config.is_effort_included,
     is_workshop_included: config.is_workshop_included,
-    pm_contingency_pct: NUM(config.pm_contingency_pct),
-    sr_im_complexity_factor: NUM(config.sr_im_complexity_factor),
-    pm_complexity_factor: NUM(config.pm_complexity_factor),
+    complexity_factor: NUM(config.complexity_factor),
     sr_im_trips: NUM(config.sr_im_trips),
     pm_trips: NUM(config.pm_trips),
     doc_avg_mb_per_project: NUM(config.doc_avg_mb_per_project),

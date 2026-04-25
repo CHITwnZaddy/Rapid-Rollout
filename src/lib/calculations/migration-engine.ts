@@ -7,9 +7,16 @@
  * - Workshop hours
  * - Document migration hours
  * - Travel hours
- * - Complexity factors (legacy ba_* fields now represent Sr. IM-side effort)
+ * - Complexity factor and contingency breakout
  * - Rate card lookups for final cost
  */
+
+import {
+  calculateRolePricingBreakouts,
+  sumContingencyBreakouts,
+  type ContingencyPricingBreakout,
+  type RolePricingBreakout,
+} from "@/lib/calculations/contingency-pricing";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -19,9 +26,7 @@ export type MigrationConfig = {
   lines_per_import_file: number;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  pm_contingency_pct: number;
-  sr_im_complexity_factor: number;
-  pm_complexity_factor: number;
+  complexity_factor: number;
   sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
@@ -141,7 +146,7 @@ export type MigrationTotals = {
   travelSrImRaw: number;
   travelPmRaw: number;
 
-  // After complexity factor
+  // After complexity factor (base + contingency billable hours).
   workshopSrIm: number;
   workshopPm: number;
   coreSrIm: number;
@@ -156,21 +161,40 @@ export type MigrationTotals = {
   totalSrImHours: number;
   totalPmHours: number;
 
+  // Base hours before complexity factor.
+  baseSrImHours: number;
+  basePmHours: number;
+  baseHours: number;
+  srImContingencyHours: number;
+  pmContingencyHours: number;
+  contingencyHours: number;
+
   // Costs
+  baseSrImCost: number;
+  basePmCost: number;
+  baseCost: number;
+  srImContingencyCost: number;
+  pmContingencyCost: number;
+  contingencyCost: number;
   srImCost: number;
   pmCost: number;
   travelExpense: number; // trips × travel cost/trip (separate from hourly)
-  salesPrice: number; // Sr. IM cost + PM cost (hourly billing)
+  clientPrice: number; // base cost + contingency cost (hourly billing)
+  salesPrice: number; // Deprecated alias for clientPrice during cutover.
+  internalCost: number;
 
   // Summary metrics
   blendedRate: number;
   estimatedMargin: number;
+  marginPercent: number | null;
+  roleBreakouts: RolePricingBreakout[];
+  pricingBreakout: ContingencyPricingBreakout;
 };
 
 /**
  * Calculate the full migration totals, mirroring the Excel left-panel formulas.
  *
- * Sr. IM hours per section (all × sr_im_complexity_factor):
+ * Sr. IM hours per section (all × complexity_factor):
  *   Workshop:  132 if workshop=Yes, else 0
  *   Core:      Requirements + Migration Plan + Validation + Final QA (if effort=Yes)
  *   Project:   Sum of project detail line hours
@@ -179,7 +203,7 @@ export type MigrationTotals = {
  *   Document:  (avg_mb / mb_hr) × num_projects
  *   Travel:    sr_im_trips × 40
  *
- * PM II Hours per section (all × pm_complexity_factor):
+ * PM II Hours per section (all × complexity_factor):
  *   Workshop:  8 if workshop=Yes, else 0
  *   Core:      PM Oversight hours (if effort=Yes)
  *   Travel:    pm_trips × 40
@@ -216,45 +240,78 @@ export function calculateMigrationTotals(
   const travelSrImRaw = config.sr_im_trips * 40;
   const travelPmRaw = config.pm_trips * 40;
 
-  // Apply complexity factors
-  const srImFactor = config.sr_im_complexity_factor;
-  const pmF = config.pm_complexity_factor;
+  // Apply one shared complexity factor. The base hours remain the internal
+  // cost basis; the factor delta is the client-facing contingency.
+  const complexityFactor = config.complexity_factor;
 
-  const workshopSrIm = workshopSrImRaw * srImFactor;
-  const workshopPm = workshopPmRaw * pmF;
-  const coreSrIm = coreSrImRaw * srImFactor;
-  const corePm = corePmRaw * pmF;
-  const projectSrIm = projectRaw * srImFactor;
-  const workflowSrIm = workflowRaw * srImFactor;
-  const costSrIm = costRaw * srImFactor;
-  const documentSrIm = documentRaw * srImFactor;
-  const travelSrIm = travelSrImRaw * srImFactor;
-  const travelPm = travelPmRaw * pmF;
+  const workshopSrIm = workshopSrImRaw * complexityFactor;
+  const workshopPm = workshopPmRaw * complexityFactor;
+  const coreSrIm = coreSrImRaw * complexityFactor;
+  const corePm = corePmRaw * complexityFactor;
+  const projectSrIm = projectRaw * complexityFactor;
+  const workflowSrIm = workflowRaw * complexityFactor;
+  const costSrIm = costRaw * complexityFactor;
+  const documentSrIm = documentRaw * complexityFactor;
+  const travelSrIm = travelSrImRaw * complexityFactor;
+  const travelPm = travelPmRaw * complexityFactor;
 
   const totalSrImHours =
     workshopSrIm + coreSrIm + projectSrIm + workflowSrIm + costSrIm + documentSrIm + travelSrIm;
   const totalPmHours = workshopPm + corePm + travelPm;
+  const baseSrImHours =
+    workshopSrImRaw +
+    coreSrImRaw +
+    projectRaw +
+    workflowRaw +
+    costRaw +
+    documentRaw +
+    travelSrImRaw;
+  const basePmHours = workshopPmRaw + corePmRaw + travelPmRaw;
+  const baseHours = baseSrImHours + basePmHours;
+  const srImContingencyHours = totalSrImHours - baseSrImHours;
+  const pmContingencyHours = totalPmHours - basePmHours;
+  const contingencyHours = srImContingencyHours + pmContingencyHours;
+
+  const roleBreakouts = calculateRolePricingBreakouts(
+    [
+      {
+        role: "srIm",
+        label: "Sr. IM",
+        baseHours: baseSrImHours,
+        rate: srImRate,
+      },
+      {
+        role: "pm",
+        label: "PM",
+        baseHours: basePmHours,
+        rate: pmRate,
+      },
+    ],
+    complexityFactor,
+    internalCostRate
+  );
+  const pricingBreakout = sumContingencyBreakouts(roleBreakouts);
 
   // Costs
+  const baseSrImCost = baseSrImHours * srImRate;
+  const basePmCost = basePmHours * pmRate;
+  const baseCost = baseSrImCost + basePmCost;
+  const srImContingencyCost = srImContingencyHours * srImRate;
+  const pmContingencyCost = pmContingencyHours * pmRate;
+  const contingencyCost = srImContingencyCost + pmContingencyCost;
   const srImCost = totalSrImHours * srImRate;
   const pmCost = totalPmHours * pmRate;
   const travelExpense =
     (config.sr_im_trips + config.pm_trips) * travelCostPerTrip;
-  const salesPrice = srImCost + pmCost;
+  const clientPrice = pricingBreakout.clientPrice;
+  const salesPrice = clientPrice;
+  const internalCost = pricingBreakout.internalCost;
 
   // Summary
   const totalHours = totalSrImHours + totalPmHours;
-  const blendedRate = totalHours === 0 ? 0 : salesPrice / totalHours;
-  // Cost baseline: internal delivery cost per hour. Margin goes negative
-  // when blendedRate falls below this — surface it, don't clamp.
-  //
-  // APP-01: internalCostRate is sourced from rate_cards
-  // (lookup_key = 'Master|Internal Cost Rate', seeded by migration
-  // 022). Callers must fetch it and pass it in; there is no default.
-  // This matches the fail-closed pattern established by migration 007
-  // for the burden rate.
-  const estimatedMargin =
-    salesPrice === 0 ? 0 : 1 - internalCostRate / blendedRate;
+  const blendedRate = totalHours === 0 ? 0 : clientPrice / totalHours;
+  const marginPercent = pricingBreakout.marginPercent;
+  const estimatedMargin = marginPercent === null ? 0 : marginPercent / 100;
 
   return {
     workshopSrImRaw,
@@ -279,12 +336,29 @@ export function calculateMigrationTotals(
     travelPm,
     totalSrImHours,
     totalPmHours,
+    baseSrImHours,
+    basePmHours,
+    baseHours,
+    srImContingencyHours,
+    pmContingencyHours,
+    contingencyHours,
+    baseSrImCost,
+    basePmCost,
+    baseCost,
+    srImContingencyCost,
+    pmContingencyCost,
+    contingencyCost,
     srImCost,
     pmCost,
     travelExpense,
+    clientPrice,
     salesPrice,
+    internalCost,
     blendedRate,
     estimatedMargin,
+    marginPercent,
+    roleBreakouts,
+    pricingBreakout,
   };
 }
 

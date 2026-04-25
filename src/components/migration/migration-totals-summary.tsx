@@ -19,20 +19,17 @@ import {
 import { formatCurrency } from "@/lib/calculations/engine";
 import { type DbConfig } from "@/lib/hooks/use-migration-config";
 import { type MigrationTotals } from "@/lib/calculations/migration-engine";
+import { ContingencySummaryTable } from "@/components/pricing/contingency-summary-table";
 
 type MigrationTotalsSummaryProps = {
   config: DbConfig | null;
   totals: MigrationTotals | null;
-  srImRate: number | null;
-  pmRate: number | null;
   onUpdate: (field: keyof DbConfig, value: number | boolean | string) => void;
 };
 
 export function MigrationTotalsSummary({
   config,
   totals,
-  srImRate,
-  pmRate,
   onUpdate,
 }: MigrationTotalsSummaryProps) {
   return (
@@ -170,89 +167,32 @@ export function MigrationTotalsSummary({
             <h4 className="mb-2 text-sm font-medium">
               Complexity Factor
             </h4>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Sr. IM Factor</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  className="h-8"
-                  value={config?.sr_im_complexity_factor ?? 1}
-                  onChange={(e) =>
-                    onUpdate(
-                      "sr_im_complexity_factor",
-                      parseFloat(e.target.value) || 1
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">PM II Factor</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  className="h-8"
-                  value={config?.pm_complexity_factor ?? 1}
-                  onChange={(e) =>
-                    onUpdate(
-                      "pm_complexity_factor",
-                      parseFloat(e.target.value) || 1
-                    )
-                  }
-                />
-              </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Complexity Factor</Label>
+              <Input
+                type="number"
+                min={0.5}
+                max={9.99}
+                step={0.01}
+                className="h-8"
+                value={config?.complexity_factor ?? 1}
+                onChange={(e) =>
+                  onUpdate("complexity_factor", parseFloat(e.target.value) || 1)
+                }
+              />
             </div>
           </div>
         </div>
 
         {/* Cost Summary */}
-        <div className="rounded-md border bg-muted/30 p-4">
-          <h4 className="mb-3 text-sm font-semibold">Cost Summary</h4>
-          <div className="space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span>
-                Sr. IM Cost: {(totals?.totalSrImHours ?? 0).toFixed(1)} hrs
-                &times; {formatCurrency(srImRate ?? 0)}/hr
-              </span>
-              <span className="font-medium tabular-nums">
-                {formatCurrency(totals?.srImCost ?? 0)}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>
-                PM II Cost: {(totals?.totalPmHours ?? 0).toFixed(1)} hrs &times;{" "}
-                {formatCurrency(pmRate ?? 0)}/hr
-              </span>
-              <span className="font-medium tabular-nums">
-                {formatCurrency(totals?.pmCost ?? 0)}
-              </span>
-            </div>
-            <div className="my-2 border-t" />
-            <div className="flex justify-between text-base font-bold">
-              <span>Data Migration Sales Price</span>
-              <span className="tabular-nums">
-                {formatCurrency(totals?.salesPrice ?? 0)}
-              </span>
-            </div>
-            {(totals?.blendedRate ?? 0) > 0 && (
-              <>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Blended Billing Rate</span>
-                  <span className="tabular-nums">
-                    {formatCurrency(totals?.blendedRate ?? 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Estimated Sales Margin</span>
-                  <span className="tabular-nums">
-                    {((totals?.estimatedMargin ?? 0) * 100).toFixed(1)}%
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
+        <ContingencySummaryTable
+          rows={totals?.roleBreakouts ?? []}
+          clientPrice={totals?.clientPrice ?? 0}
+          blendedRate={totals?.blendedRate ?? 0}
+          marginPercent={totals?.marginPercent ?? null}
+        />
+        <div className="text-sm text-muted-foreground">
+          T&amp;E Estimate: {formatCurrency(totals?.travelExpense ?? 0)}
         </div>
       </CardContent>
     </Card>

@@ -1,4 +1,5 @@
 import type ExcelJS from "exceljs";
+import { getScenarioDisplayName } from "@/lib/scenarios/display";
 
 /**
  * Pure XLSX builder for the Scenario Breakout report. Lifted out of
@@ -50,16 +51,17 @@ export function buildScenarioBreakoutRows(
   const rows: Row[] = [];
 
   for (const g of scenarioGroups) {
+    const scenarioLabel = getScenarioDisplayName(g.scenarioType);
     for (const l of g.lines) {
       rows.push({
-        Section: g.scenarioType,
+        Section: scenarioLabel,
         Item: l.module,
         Detail: l.scope_selection ?? "",
         Subtotal: l.total_cost,
       });
     }
     rows.push({
-      Section: `${g.scenarioType} Total`,
+      Section: `${scenarioLabel} Total`,
       Item: "",
       Detail: "",
       Subtotal: g.totalCost,
@@ -234,13 +236,14 @@ export async function exportScenarioBreakoutXLSX(
 
   // Scenario groups
   for (const g of scenarioGroups) {
+    const scenarioLabel = getScenarioDisplayName(g.scenarioType);
     for (const l of g.lines) {
-      writeDataRow([g.scenarioType, l.module, l.scope_selection ?? "", l.total_cost]);
+      writeDataRow([scenarioLabel, l.module, l.scope_selection ?? "", l.total_cost]);
       dataRowIdx++;
     }
     // Section total row — always bold + gray, not part of alternation
     writeDataRow(
-      [`${g.scenarioType} Total`, "", "", g.totalCost],
+      [`${scenarioLabel} Total`, "", "", g.totalCost],
       { bold: true, bg: HEADER_BG }
     );
   }

@@ -27,9 +27,21 @@ import {
   type RateCardRow,
 } from "@/lib/calculations/engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
+import {
+  calculateRolePricingBreakouts,
+  sumContingencyBreakouts,
+  type RolePricingBreakout,
+} from "@/lib/calculations/contingency-pricing";
+import { ContingencySummaryTable } from "@/components/pricing/contingency-summary-table";
 import { ScopedComplexityFactor } from "@/components/proposals/scoped-complexity-factor";
 import { toast } from "sonner";
 import { SCOPED_SERVICE_TYPES } from "@/lib/validation/scoped-services";
+import {
+  SCOPED_KEY_BA,
+  INTERNAL_COST_RATE_KEY,
+  SCOPED_KEY_PM,
+  SCOPED_KEY_SR_IM,
+} from "@/lib/rate-card-keys";
 import {
   addScopedServiceLine,
   deleteScopedServiceLine,
@@ -223,6 +235,42 @@ export default function ScopedServicesPage() {
   const rawTotalHours = lines.reduce((sum, line) => sum + line.hours, 0);
   const totalCost = applyComplexity(rawTotalCost, complexityFactor);
   const totalHours = applyComplexity(rawTotalHours, complexityFactor);
+  const internalCostRate = rateCardMap.get(INTERNAL_COST_RATE_KEY) ?? 0;
+  const scopedRoleBreakouts: RolePricingBreakout[] = calculateRolePricingBreakouts(
+    [
+      {
+        role: "srIm",
+        label: "Sr. IM",
+        baseHours: lines
+          .filter((line) => line.rate_card_lookup_key === SCOPED_KEY_SR_IM)
+          .reduce((sum, line) => sum + line.hours, 0),
+        rate: rateCardMap.get(SCOPED_KEY_SR_IM) ?? 0,
+      },
+      {
+        role: "pm",
+        label: "PM",
+        baseHours: lines
+          .filter((line) => line.rate_card_lookup_key === SCOPED_KEY_PM)
+          .reduce((sum, line) => sum + line.hours, 0),
+        rate: rateCardMap.get(SCOPED_KEY_PM) ?? 0,
+      },
+      {
+        role: "ba",
+        label: "BA",
+        baseHours: lines
+          .filter((line) => line.rate_card_lookup_key === SCOPED_KEY_BA)
+          .reduce((sum, line) => sum + line.hours, 0),
+        rate: rateCardMap.get(SCOPED_KEY_BA) ?? 0,
+      },
+    ],
+    complexityFactor,
+    internalCostRate
+  );
+  const scopedSummary = sumContingencyBreakouts(scopedRoleBreakouts);
+  const scopedBlendedRate =
+    scopedSummary.totalClientHours === 0
+      ? 0
+      : scopedSummary.clientPrice / scopedSummary.totalClientHours;
 
   return (
     <div className="space-y-4">
@@ -397,6 +445,12 @@ export default function ScopedServicesPage() {
           </TableBody>
         </Table>
       </div>
+      <ContingencySummaryTable
+        rows={scopedRoleBreakouts}
+        clientPrice={scopedSummary.clientPrice}
+        blendedRate={scopedBlendedRate}
+        marginPercent={scopedSummary.marginPercent}
+      />
     </div>
   );
 }

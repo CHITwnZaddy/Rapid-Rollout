@@ -32,24 +32,14 @@ import {
 } from "@/lib/calculations/bid-sheet-pricing";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import { getMarginBadgeClass } from "@/lib/ui/helpers";
+import { allocateDiscountedMarginPercent } from "@/lib/calculations/contingency-pricing";
+import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 import {
-  BURDEN_RATE_KEY,
   INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
-
-function calcMarginPercent(
-  discountedCost: number,
-  totalHours: number,
-  burdenRate: number
-): number | null {
-  if (totalHours <= 0 || discountedCost <= 0) return null;
-  const effectiveSellRate = discountedCost / totalHours;
-  if (effectiveSellRate <= 0) return null;
-  return ((effectiveSellRate - burdenRate) / effectiveSellRate) * 100;
-}
 
 export default async function ProposalSummaryPage({
   params,
@@ -69,18 +59,18 @@ export default async function ProposalSummaryPage({
       supabase
         .from("scenarios")
         .select(
-          "scenario_type, summary_total_hours, summary_total_cost, is_active, complexity_factor"
+          "scenario_type, summary_total_hours, summary_total_cost, complexity_factor"
         )
         .eq("proposal_id", id)
         .order("scenario_type"),
       supabase
         .from("scoped_services")
-        .select("cost")
+        .select("cost, hours")
         .eq("proposal_id", id),
       supabase
         .from("migration_config")
         .select(
-          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
+          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
         )
         .eq("proposal_id", id)
         .single(),
@@ -98,7 +88,6 @@ export default async function ProposalSummaryPage({
         .from("rate_cards")
         .select("lookup_key, rate")
         .in("lookup_key", [
-          BURDEN_RATE_KEY,
           INTERNAL_COST_RATE_KEY,
           SR_IM_RATE_KEY,
           PM_RATE_KEY,
@@ -107,7 +96,6 @@ export default async function ProposalSummaryPage({
     ]);
 
   const rateRows = ratesRes.data ?? [];
-  const burdenRateRow = rateRows.find((r) => r.lookup_key === BURDEN_RATE_KEY);
   const internalCostRateRow = rateRows.find(
     (r) => r.lookup_key === INTERNAL_COST_RATE_KEY
   );
@@ -116,9 +104,8 @@ export default async function ProposalSummaryPage({
   // burden rate or internal cost rate, refuse to render margins
   // rather than silently use a stale default. See migrations 007 and
   // 022 for the seed rows.
-  if (ratesRes.error || !burdenRateRow || !internalCostRateRow) {
+  if (ratesRes.error || !internalCostRateRow) {
     const missing = [
-      !burdenRateRow ? BURDEN_RATE_KEY : null,
       !internalCostRateRow ? INTERNAL_COST_RATE_KEY : null,
     ].filter(Boolean) as string[];
     return (
@@ -148,7 +135,6 @@ export default async function ProposalSummaryPage({
       </Card>
     );
   }
-  const burdenRate = Number(burdenRateRow.rate);
   const internalCostRate = Number(internalCostRateRow.rate);
 
   const srImRateRow = rateRows.find((r) => r.lookup_key === SR_IM_RATE_KEY);
@@ -168,7 +154,13 @@ export default async function ProposalSummaryPage({
     (sum, s) => sum + Number(s.cost),
     0
   );
+  const scopedBaseHours = (scopedRes.data ?? []).reduce(
+    (sum, s) => sum + Number(s.hours),
+    0
+  );
   const scopedTotal = applyComplexity(scopedRawTotal, scopedComplexityFactor);
+  const scopedTotalHours = applyComplexity(scopedBaseHours, scopedComplexityFactor);
+  const scopedInternalCost = scopedBaseHours * internalCostRate;
 
   // Compute migration total live from the same inputs the Migration
   // Services page uses, instead of trusting the stored
@@ -177,6 +169,8 @@ export default async function ProposalSummaryPage({
   const migCfg = migrationConfigRes.data;
   const migLines = migrationLinesRes.data ?? [];
   let migrationTotal = 0;
+  let migrationTotalHours = 0;
+  let migrationInternalCost = 0;
   if (migCfg) {
     // Fail closed on missing Sr. IM/PM/Travel rates. Previously the page
     // silently rendered migrationTotal = 0, which is how the Sr. IM
@@ -209,9 +203,7 @@ export default async function ProposalSummaryPage({
       lines_per_import_file: NUM(migCfg.lines_per_import_file),
       is_effort_included: migCfg.is_effort_included,
       is_workshop_included: migCfg.is_workshop_included,
-      pm_contingency_pct: 0,
-      sr_im_complexity_factor: NUM(migCfg.sr_im_complexity_factor),
-      pm_complexity_factor: NUM(migCfg.pm_complexity_factor),
+      complexity_factor: NUM(migCfg.complexity_factor),
       sr_im_trips: NUM(migCfg.sr_im_trips),
       pm_trips: NUM(migCfg.pm_trips),
       doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
@@ -231,7 +223,7 @@ export default async function ProposalSummaryPage({
     const costLines: MigrationDetailLine[] = migLines
       .filter((l) => l.section === "cost")
       .map((l) => toEngineLine(l));
-    migrationTotal = calculateMigrationTotals(
+    const migrationTotals = calculateMigrationTotals(
       engineCfg,
       projectLines,
       workflowLines,
@@ -240,14 +232,16 @@ export default async function ProposalSummaryPage({
       pmRate,
       travelRate,
       internalCostRate
-    ).salesPrice;
+    );
+    migrationTotal = migrationTotals.clientPrice;
+    migrationTotalHours = migrationTotals.totalSrImHours + migrationTotals.totalPmHours;
+    migrationInternalCost = migrationTotals.internalCost;
   }
 
   const discountPercent = Number(bidSheetRes.data?.discount_percent) || 0;
   const discountDollars = Number(bidSheetRes.data?.discount_dollars) || 0;
 
-  const scenarioOrder = ["P1", "P2", "Opt1", "Opt2"];
-  const scenarioRows = scenarioOrder
+  const scenarioRows = SCENARIO_ORDER
     .map((type) => scenarios.find((s) => s.scenario_type === type))
     .filter(Boolean);
 
@@ -265,18 +259,22 @@ export default async function ProposalSummaryPage({
 
   const allocated = scenarioRows.map((s) => {
     const cf = Number(s!.complexity_factor ?? 1);
+    const baseHours = Number(s!.summary_total_hours);
     const totalCost = applyComplexity(Number(s!.summary_total_cost), cf);
-    const totalHours = applyComplexity(Number(s!.summary_total_hours), cf);
+    const totalHours = applyComplexity(baseHours, cf);
+    const internalCost = baseHours * internalCostRate;
     const discountedCost = allocateAdjustedTotal(
       totalCost,
       proposalSubtotal,
       pricing.finalTotal
     );
-    const marginPercent = calcMarginPercent(discountedCost, totalHours, burdenRate);
+    const marginPercent = allocateDiscountedMarginPercent(
+      discountedCost,
+      internalCost
+    );
 
     return {
       scenarioType: s!.scenario_type,
-      isActive: s!.is_active,
       totalHours,
       totalCost,
       discountedCost,
@@ -295,8 +293,14 @@ export default async function ProposalSummaryPage({
     proposalSubtotal,
     pricing.finalTotal
   );
-  const scopedMargin = calcMarginPercent(scopedDiscountedCost, 0, burdenRate);
-  const migrationMargin = calcMarginPercent(migrationDiscountedCost, 0, burdenRate);
+  const scopedMargin = allocateDiscountedMarginPercent(
+    scopedDiscountedCost,
+    scopedInternalCost
+  );
+  const migrationMargin = allocateDiscountedMarginPercent(
+    migrationDiscountedCost,
+    migrationInternalCost
+  );
 
   return (
     <div className="space-y-6">
@@ -311,7 +315,7 @@ export default async function ProposalSummaryPage({
                 <TableHead>Line Item</TableHead>
                 <TableHead className="text-right">Total Hours</TableHead>
                 <TableHead className="text-right">Discounted Cost</TableHead>
-                <TableHead className="text-right">Total Cost</TableHead>
+                <TableHead className="text-right">Client Price</TableHead>
                 <TableHead className="text-right">Margin</TableHead>
                 <TableHead className="text-center">Status</TableHead>
               </TableRow>
@@ -324,13 +328,8 @@ export default async function ProposalSummaryPage({
                       href={`/proposals/${id}/scenarios/${s.scenarioType}`}
                       className="text-primary hover:underline"
                     >
-                      {s.scenarioType}
+                      {getScenarioDisplayName(s.scenarioType)}
                     </Link>
-                    {s.isActive && (
-                      <Badge variant="secondary" className="ml-2">
-                        Active
-                      </Badge>
-                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     {formatHours(s.totalHours)}
@@ -367,7 +366,7 @@ export default async function ProposalSummaryPage({
                     Scoped Services
                   </Link>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground">—</TableCell>
+                <TableCell className="text-right">{formatHours(scopedTotalHours)}</TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(scopedDiscountedCost)}
                 </TableCell>
@@ -397,7 +396,7 @@ export default async function ProposalSummaryPage({
                     Migration Services
                   </Link>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground">—</TableCell>
+                <TableCell className="text-right">{formatHours(migrationTotalHours)}</TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(migrationDiscountedCost)}
                 </TableCell>

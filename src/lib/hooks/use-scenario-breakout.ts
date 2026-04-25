@@ -19,6 +19,7 @@ import {
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
+import { SCENARIO_ORDER } from "@/lib/scenarios/display";
 
 export type Proposal = {
   id: string;
@@ -49,8 +50,7 @@ export type MigrationConfig = {
   lines_per_import_file: number;
   is_effort_included: boolean;
   is_workshop_included: boolean;
-  sr_im_complexity_factor: number;
-  pm_complexity_factor: number;
+  complexity_factor: number;
   sr_im_trips: number;
   pm_trips: number;
   doc_avg_mb_per_project: number;
@@ -173,7 +173,7 @@ export function useScenarioBreakout() {
       supabase
         .from("migration_config")
         .select(
-          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, sr_im_complexity_factor, pm_complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs, computed_total_cost"
+          "num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs, computed_total_cost"
         )
         .eq("proposal_id", selectedProposal)
         .single(),
@@ -200,8 +200,7 @@ export function useScenarioBreakout() {
       scenarios.map((s) => [s.id, Number(s.complexity_factor ?? 1) || 1])
     );
 
-    const order = ["P1", "P2", "Opt1", "Opt2"];
-    const groups: ScenarioGroup[] = order
+    const groups: ScenarioGroup[] = SCENARIO_ORDER
       .map((type) => {
         const scenario = scenarios.find((s) => s.scenario_type === type);
         if (!scenario) return null;
@@ -281,9 +280,7 @@ export function useScenarioBreakout() {
             lines_per_import_file: NUM(migrationConfig.lines_per_import_file),
             is_effort_included: migrationConfig.is_effort_included,
             is_workshop_included: migrationConfig.is_workshop_included,
-            pm_contingency_pct: 0,
-            sr_im_complexity_factor: NUM(migrationConfig.sr_im_complexity_factor),
-            pm_complexity_factor: NUM(migrationConfig.pm_complexity_factor),
+            complexity_factor: NUM(migrationConfig.complexity_factor),
             sr_im_trips: NUM(migrationConfig.sr_im_trips),
             pm_trips: NUM(migrationConfig.pm_trips),
             doc_avg_mb_per_project: NUM(migrationConfig.doc_avg_mb_per_project),
@@ -308,7 +305,7 @@ export function useScenarioBreakout() {
             pmRate,
             travelRate,
             internalCostRate
-          ).salesPrice;
+          ).clientPrice;
         })()
       : 0;
 
