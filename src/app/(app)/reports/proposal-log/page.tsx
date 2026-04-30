@@ -28,16 +28,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/calculations/engine";
 import type ExcelJS from "exceljs";
-import { applyComplexity } from "@/lib/calculations/complexity";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
+import { buildMigrationCostMap } from "@/lib/reports/proposal-aggregates";
 import {
-  buildMigrationCostMap,
-  buildScenarioCostMap,
-  buildScopedCostMap,
-} from "@/lib/reports/proposal-aggregates";
-import {
-  fetchReportProposals,
-  fetchRevenueAggregateInputs,
+  fetchMigrationCostInputs,
+  fetchRevenueReportBaseRows,
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
 import { toast } from "sonner";
@@ -100,11 +95,9 @@ export default function ProposalLogReport() {
     setLoading(true);
     setHasRun(true);
     try {
-      const proposals = await fetchReportProposals(supabase, {
+      const proposals = await fetchRevenueReportBaseRows(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
         status: selectedStatus !== "All" ? selectedStatus : undefined,
-        includeScopedComplexity: true,
-        includeCreatedAt: true,
         orderBy: "created_at",
         ascending: false,
       });
@@ -113,35 +106,31 @@ export default function ProposalLogReport() {
         return;
       }
 
-      const proposalIds = proposals.map((p) => p.id);
-      const [aggregateInputs, historyMetrics] = await Promise.all([
-        fetchRevenueAggregateInputs(supabase, proposalIds),
+      const proposalIds = proposals.map((p) => p.proposal_id);
+      const [migrationInputs, historyMetrics] = await Promise.all([
+        fetchMigrationCostInputs(supabase, proposalIds),
         fetchStatusHistoryMap(supabase, proposalIds),
       ]);
-      const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
-      const scenarioMap = buildScenarioCostMap(aggregateInputs.scenarioRows);
-      const scopedMap = buildScopedCostMap(aggregateInputs.scopedRows);
       const migrationMap = buildMigrationCostMap(
-        aggregateInputs.migrationConfigRows,
-        aggregateInputs.migrationLineRows,
-        aggregateInputs.rateMap
+        migrationInputs.migrationConfigRows,
+        migrationInputs.migrationLineRows,
+        migrationInputs.rateMap
       );
 
       const reportRows: ReportRow[] = proposals.map((p) => {
-        const sc = scenarioMap.get(p.id) ?? {};
         const scopedFactor = Number(p.scoped_complexity_factor) || 1;
-        const p1 = sc["P1"] ?? 0;
-        const p2 = sc["P2"] ?? 0;
-        const opt1 = sc["Opt1"] ?? 0;
-        const opt2 = sc["Opt2"] ?? 0;
-        const scoped = applyComplexity(scopedMap.get(p.id) ?? 0, scopedFactor);
-        const migration = migrationMap.get(p.id) ?? 0;
-        const metrics = historyMetrics.get(p.id);
+        const p1 = Number(p.p1_cost) || 0;
+        const p2 = Number(p.p2_cost) || 0;
+        const opt1 = Number(p.opt1_cost) || 0;
+        const opt2 = Number(p.opt2_cost) || 0;
+        const scoped = Number(p.scoped_total) || 0;
+        const migration = migrationMap.get(p.proposal_id) ?? 0;
+        const metrics = historyMetrics.get(p.proposal_id);
 
         return {
-          proposalId: p.id,
-          proposalName: p.name,
-          customerName: customerMap.get(p.customer_id ?? "") ?? "—",
+          proposalId: p.proposal_id,
+          proposalName: p.proposal_name,
+          customerName: p.customer_name ?? "—",
           status: p.status,
           p1Cost: p1,
           p2Cost: p2,
@@ -169,7 +158,7 @@ export default function ProposalLogReport() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, selectedCustomer, selectedStatus, customers]);
+  }, [supabase, selectedCustomer, selectedStatus]);
 
   const exportXLSX = useCallback(async () => {
     if (rows.length === 0) return;

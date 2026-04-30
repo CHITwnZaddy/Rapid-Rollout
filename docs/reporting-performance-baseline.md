@@ -83,3 +83,24 @@ Target behavior:
 - Verify against staging before any production migration.
 
 Schema work requires explicit approval before merge or production promotion.
+
+## Phase 3A staging change
+
+Implemented on staging first with migration
+`supabase/migrations/20260430021026_proposal_revenue_report_base.sql`.
+
+| Item | Decision |
+| --- | --- |
+| View | `public.proposal_revenue_report_base` |
+| Security | `security_invoker=true` so underlying RLS still applies |
+| Included totals | Proposal, customer, scenario totals, scoped-service totals |
+| Excluded totals | Migration totals remain in TypeScript to avoid stored-total drift |
+| First consumers | Proposal Log and Portfolio Value |
+
+Staging SQL checks after the migration:
+
+| Check | Result |
+| --- | ---: |
+| View row count | 1 |
+| Scenario total mismatches vs raw scenario aggregation | 0 |
+| Scoped total mismatches vs raw scoped aggregation | 0 |

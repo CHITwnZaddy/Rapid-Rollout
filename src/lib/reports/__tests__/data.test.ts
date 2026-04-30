@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import {
   fetchCustomerMap,
   fetchHoursAggregateInputs,
+  fetchMigrationCostInputs,
+  fetchRevenueReportBaseRows,
   fetchReportProposals,
   fetchRevenueAggregateInputs,
   fetchStatusHistoryMap,
@@ -187,6 +189,61 @@ describe("fetchReportProposals", () => {
   });
 });
 
+describe("fetchRevenueReportBaseRows", () => {
+  it("selects the revenue report base columns and applies filters", async () => {
+    const { client, queries } = mockTableClient({
+      proposal_revenue_report_base: { data: [], error: null },
+    });
+
+    await fetchRevenueReportBaseRows(client, {
+      customerId: "customer-1",
+      status: "Won",
+      ownerId: "user-1",
+      excludeStatuses: ["Lost", "VOID"],
+      orderBy: "created_at",
+      ascending: false,
+    });
+
+    const query = queries.get("proposal_revenue_report_base");
+    expect(query?.select).toHaveBeenCalledWith(
+      "proposal_id, proposal_name, status, customer_id, customer_name, created_by, created_at, updated_at, scoped_complexity_factor, p1_cost, p2_cost, opt1_cost, opt2_cost, scenario_total, scoped_total"
+    );
+    expect(query?.eq).toHaveBeenCalledWith("customer_id", "customer-1");
+    expect(query?.eq).toHaveBeenCalledWith("status", "Won");
+    expect(query?.eq).toHaveBeenCalledWith("created_by", "user-1");
+    expect(query?.not).toHaveBeenCalledWith("status", "in", "(Lost,VOID)");
+    expect(query?.order).toHaveBeenCalledWith("created_at", {
+      ascending: false,
+    });
+  });
+
+  it("applies multi-status filters with in()", async () => {
+    const { client, queries } = mockTableClient({
+      proposal_revenue_report_base: { data: [], error: null },
+    });
+
+    await fetchRevenueReportBaseRows(client, {
+      statuses: ["Draft", "Proposal Sent"],
+    });
+
+    expect(queries.get("proposal_revenue_report_base")?.in).toHaveBeenCalledWith(
+      "status",
+      ["Draft", "Proposal Sent"]
+    );
+  });
+
+  it("returns empty rows on error", async () => {
+    const { client } = mockTableClient({
+      proposal_revenue_report_base: {
+        data: null,
+        error: { message: "view unavailable" },
+      },
+    });
+
+    await expect(fetchRevenueReportBaseRows(client, {})).resolves.toEqual([]);
+  });
+});
+
 describe("fetchRevenueAggregateInputs", () => {
   it("short-circuits when proposalIds is empty", async () => {
     const { client } = mockTableClient({});
@@ -222,6 +279,47 @@ describe("fetchRevenueAggregateInputs", () => {
     expect(queries.get("scenarios")?.in).toHaveBeenCalledWith("proposal_id", [
       "p1",
     ]);
+    expect(queries.get("rate_cards")?.in).toHaveBeenCalledWith("lookup_key", [
+      "Master|Sr. Implementation Manager",
+      "Master|Program Manager",
+      "Master|Travel Cost/Trip",
+      "Master|Internal Cost Rate",
+    ]);
+  });
+});
+
+describe("fetchMigrationCostInputs", () => {
+  it("short-circuits when proposalIds is empty", async () => {
+    const { client } = mockTableClient({});
+    const result = await fetchMigrationCostInputs(client, []);
+
+    expect(client.from).not.toHaveBeenCalled();
+    expect(result.migrationConfigRows).toEqual([]);
+    expect(result.migrationLineRows).toEqual([]);
+    expect(result.rateMap.size).toBe(0);
+  });
+
+  it("fetches only migration source tables and required rates", async () => {
+    const { client, queries } = mockTableClient({
+      migration_config: { data: [{ proposal_id: "p1" }], error: null },
+      migration_detail_lines: { data: [{ proposal_id: "p1" }], error: null },
+      rate_cards: {
+        data: [{ lookup_key: "Master|Program Manager", rate: 1 }],
+        error: null,
+      },
+    });
+
+    await fetchMigrationCostInputs(client, ["p1"]);
+
+    expect(client.from).toHaveBeenCalledWith("migration_config");
+    expect(client.from).toHaveBeenCalledWith("migration_detail_lines");
+    expect(client.from).toHaveBeenCalledWith("rate_cards");
+    expect(client.from).not.toHaveBeenCalledWith("scenarios");
+    expect(client.from).not.toHaveBeenCalledWith("scoped_services");
+    expect(queries.get("migration_config")?.in).toHaveBeenCalledWith(
+      "proposal_id",
+      ["p1"]
+    );
     expect(queries.get("rate_cards")?.in).toHaveBeenCalledWith("lookup_key", [
       "Master|Sr. Implementation Manager",
       "Master|Program Manager",

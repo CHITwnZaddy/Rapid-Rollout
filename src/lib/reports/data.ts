@@ -72,6 +72,39 @@ export type RevenueAggregateInputs = {
   rateMap: Map<string, number>;
 };
 
+export type MigrationCostInputs = Pick<
+  RevenueAggregateInputs,
+  "migrationConfigRows" | "migrationLineRows" | "rateMap"
+>;
+
+export type RevenueReportBaseRow = {
+  proposal_id: string;
+  proposal_name: string;
+  status: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  scoped_complexity_factor: unknown;
+  p1_cost: unknown;
+  p2_cost: unknown;
+  opt1_cost: unknown;
+  opt2_cost: unknown;
+  scenario_total: unknown;
+  scoped_total: unknown;
+};
+
+export type RevenueReportBaseFilters = {
+  customerId?: string;
+  status?: string;
+  statuses?: string[];
+  ownerId?: string;
+  excludeStatuses?: string[];
+  orderBy?: "created_at" | "updated_at" | "proposal_name";
+  ascending?: boolean;
+};
+
 export type HoursScenarioRow = {
   id: string;
   proposal_id: string;
@@ -107,6 +140,14 @@ function emptyRevenueAggregateInputs(): RevenueAggregateInputs {
   return {
     scenarioRows: [],
     scopedRows: [],
+    migrationConfigRows: [],
+    migrationLineRows: [],
+    rateMap: new Map(),
+  };
+}
+
+function emptyMigrationCostInputs(): MigrationCostInputs {
+  return {
     migrationConfigRows: [],
     migrationLineRows: [],
     rateMap: new Map(),
@@ -155,6 +196,69 @@ export async function fetchReportProposals(
   const { data, error } = await query;
   if (error || !data) return [];
   return data as unknown as ReportProposalRow[];
+}
+
+export async function fetchRevenueReportBaseRows(
+  client: SupabaseClient,
+  filters: RevenueReportBaseFilters
+): Promise<RevenueReportBaseRow[]> {
+  let query = client
+    .from("proposal_revenue_report_base")
+    .select(
+      "proposal_id, proposal_name, status, customer_id, customer_name, created_by, created_at, updated_at, scoped_complexity_factor, p1_cost, p2_cost, opt1_cost, opt2_cost, scenario_total, scoped_total"
+    );
+
+  if (filters.customerId) {
+    query = query.eq("customer_id", filters.customerId);
+  }
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  } else if (filters.statuses && filters.statuses.length > 0) {
+    query = query.in("status", filters.statuses);
+  }
+  if (filters.ownerId) {
+    query = query.eq("created_by", filters.ownerId);
+  }
+  if (filters.excludeStatuses && filters.excludeStatuses.length > 0) {
+    query = query.not("status", "in", `(${filters.excludeStatuses.join(",")})`);
+  }
+  if (filters.orderBy) {
+    query = query.order(filters.orderBy, {
+      ascending: filters.ascending ?? true,
+    });
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data as unknown as RevenueReportBaseRow[];
+}
+
+export async function fetchMigrationCostInputs(
+  client: SupabaseClient,
+  proposalIds: string[]
+): Promise<MigrationCostInputs> {
+  if (proposalIds.length === 0) return emptyMigrationCostInputs();
+
+  const [migrationRes, migrationLineRes, rateRes] = await Promise.all([
+    client
+      .from("migration_config")
+      .select(MIGRATION_CONFIG_COLUMNS)
+      .in("proposal_id", proposalIds),
+    client
+      .from("migration_detail_lines")
+      .select(MIGRATION_LINE_COLUMNS)
+      .in("proposal_id", proposalIds),
+    client
+      .from("rate_cards")
+      .select("lookup_key, rate")
+      .in("lookup_key", REQUIRED_MIGRATION_RATE_KEYS),
+  ]);
+
+  return {
+    migrationConfigRows: (migrationRes.data ?? []) as MigrationConfigRow[],
+    migrationLineRows: (migrationLineRes.data ?? []) as MigrationLineRow[],
+    rateMap: buildRateMap(rateRes.data ?? []),
+  };
 }
 
 export async function fetchRevenueAggregateInputs(

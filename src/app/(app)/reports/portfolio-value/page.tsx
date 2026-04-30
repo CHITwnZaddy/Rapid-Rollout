@@ -26,18 +26,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/calculations/engine";
-import { applyComplexity } from "@/lib/calculations/complexity";
 import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
+import { buildMigrationCostMap } from "@/lib/reports/proposal-aggregates";
 import {
-  buildMigrationCostMap,
-  buildScenarioTotalByProposal,
-  buildScopedCostMap,
-} from "@/lib/reports/proposal-aggregates";
-import {
-  fetchCustomerMap,
-  fetchReportProposals,
-  fetchRevenueAggregateInputs,
+  fetchMigrationCostInputs,
+  fetchRevenueReportBaseRows,
 } from "@/lib/reports/data";
 import { toast } from "sonner";
 
@@ -74,46 +68,37 @@ export default function PortfolioValueReport() {
     setLoading(true);
     setHasRun(true);
     try {
-      const proposals = await fetchReportProposals(supabase, {
+      const proposals = await fetchRevenueReportBaseRows(supabase, {
         ownerId:
           ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
         excludeStatuses: includeLost ? undefined : ["Lost", "VOID"],
-        includeCreatedBy: true,
-        includeScopedComplexity: true,
       });
       if (proposals.length === 0) {
         setRows([]);
         return;
       }
 
-      const proposalIds = proposals.map((p) => p.id);
-      const [customerMap, aggregateInputs] = await Promise.all([
-        fetchCustomerMap(supabase),
-        fetchRevenueAggregateInputs(supabase, proposalIds),
-      ]);
-      const scenarioTotalByProposal = buildScenarioTotalByProposal(
-        aggregateInputs.scenarioRows
+      const proposalIds = proposals.map((p) => p.proposal_id);
+      const migrationInputs = await fetchMigrationCostInputs(
+        supabase,
+        proposalIds
       );
-      const scopedRawByProposal = buildScopedCostMap(aggregateInputs.scopedRows);
       const migrationTotalByProposal = buildMigrationCostMap(
-        aggregateInputs.migrationConfigRows,
-        aggregateInputs.migrationLineRows,
-        aggregateInputs.rateMap
+        migrationInputs.migrationConfigRows,
+        migrationInputs.migrationLineRows,
+        migrationInputs.rateMap
       );
 
       const portfolio: PortfolioRow[] = proposals
         .map((p) => {
-          const scopedFactor = Number(p.scoped_complexity_factor) || 1;
-          const scenarioTotal = scenarioTotalByProposal.get(p.id) ?? 0;
-          const scopedTotal = applyComplexity(
-            scopedRawByProposal.get(p.id) ?? 0,
-            scopedFactor
-          );
-          const migrationTotal = migrationTotalByProposal.get(p.id) ?? 0;
+          const scenarioTotal = Number(p.scenario_total) || 0;
+          const scopedTotal = Number(p.scoped_total) || 0;
+          const migrationTotal =
+            migrationTotalByProposal.get(p.proposal_id) ?? 0;
           return {
-            proposalId: p.id,
-            proposalName: p.name,
-            customerName: customerMap.get(p.customer_id ?? "") ?? "—",
+            proposalId: p.proposal_id,
+            proposalName: p.proposal_name,
+            customerName: p.customer_name ?? "—",
             status: p.status,
             scenarioTotal,
             scopedTotal,
