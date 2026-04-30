@@ -1,9 +1,23 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  buildRateMap,
+  type MigrationConfigRow,
+  type MigrationLineRow,
+  type ScenarioCostRow,
+  type ScopedCostRow,
+  type ScopedHoursRow,
+} from "./proposal-aggregates";
+import {
   buildStatusMetricsMap,
   type StatusHistoryRow,
   type StatusMetrics,
 } from "./status-history";
+import {
+  INTERNAL_COST_RATE_KEY,
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+} from "@/lib/rate-card-keys";
 
 // Shared report fetchers. Every report page needs a customer lookup,
 // and four of them need status history. Centralizing the query shape
@@ -11,6 +25,334 @@ import {
 // instead of five, and the helpers are unit-testable in isolation.
 
 export type CustomerMap = Map<string, string>;
+
+const MIGRATION_CONFIG_COLUMNS =
+  "proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs";
+
+const MIGRATION_LINE_COLUMNS =
+  "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order";
+
+const REQUIRED_MIGRATION_RATE_KEYS = [
+  SR_IM_RATE_KEY,
+  PM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+  INTERNAL_COST_RATE_KEY,
+];
+
+export type ReportProposalRow = {
+  id: string;
+  name: string;
+  status: string;
+  customer_id: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  scoped_complexity_factor?: unknown;
+};
+
+export type ReportProposalFilters = {
+  customerId?: string;
+  status?: string;
+  statuses?: string[];
+  ownerId?: string;
+  excludeStatuses?: string[];
+  orderBy?: "created_at" | "updated_at" | "name";
+  ascending?: boolean;
+  includeScopedComplexity?: boolean;
+  includeCreatedAt?: boolean;
+  includeUpdatedAt?: boolean;
+  includeCreatedBy?: boolean;
+};
+
+export type RevenueAggregateInputs = {
+  scenarioRows: ScenarioCostRow[];
+  scopedRows: ScopedCostRow[];
+  migrationConfigRows: MigrationConfigRow[];
+  migrationLineRows: MigrationLineRow[];
+  rateMap: Map<string, number>;
+};
+
+export type MigrationCostInputs = Pick<
+  RevenueAggregateInputs,
+  "migrationConfigRows" | "migrationLineRows" | "rateMap"
+>;
+
+export type RevenueReportBaseRow = {
+  proposal_id: string;
+  proposal_name: string;
+  status: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  scoped_complexity_factor: unknown;
+  p1_cost: unknown;
+  p2_cost: unknown;
+  opt1_cost: unknown;
+  opt2_cost: unknown;
+  scenario_total: unknown;
+  scoped_total: unknown;
+};
+
+export type RevenueReportBaseFilters = {
+  customerId?: string;
+  status?: string;
+  statuses?: string[];
+  ownerId?: string;
+  excludeStatuses?: string[];
+  orderBy?: "created_at" | "updated_at" | "proposal_name";
+  ascending?: boolean;
+};
+
+export type HoursScenarioRow = {
+  id: string;
+  proposal_id: string;
+  scenario_type: string;
+};
+
+export type HoursScenarioLineRow = {
+  scenario_id: string;
+  sr_im_hours: unknown;
+  pm_hours: unknown;
+  ba_hours: unknown;
+};
+
+export type HoursAggregateInputs = {
+  scenarioRows: HoursScenarioRow[];
+  scenarioLineRows: HoursScenarioLineRow[];
+  scopedRows: ScopedHoursRow[];
+  migrationConfigRows: MigrationConfigRow[];
+  migrationLineRows: MigrationLineRow[];
+  rateMap: Map<string, number>;
+};
+
+function reportProposalColumns(filters: ReportProposalFilters): string {
+  const columns = ["id", "name", "status", "customer_id"];
+  if (filters.includeScopedComplexity) columns.push("scoped_complexity_factor");
+  if (filters.includeCreatedAt) columns.push("created_at");
+  if (filters.includeUpdatedAt) columns.push("updated_at");
+  if (filters.includeCreatedBy) columns.push("created_by");
+  return columns.join(", ");
+}
+
+function emptyRevenueAggregateInputs(): RevenueAggregateInputs {
+  return {
+    scenarioRows: [],
+    scopedRows: [],
+    migrationConfigRows: [],
+    migrationLineRows: [],
+    rateMap: new Map(),
+  };
+}
+
+function emptyMigrationCostInputs(): MigrationCostInputs {
+  return {
+    migrationConfigRows: [],
+    migrationLineRows: [],
+    rateMap: new Map(),
+  };
+}
+
+function emptyHoursAggregateInputs(): HoursAggregateInputs {
+  return {
+    scenarioRows: [],
+    scenarioLineRows: [],
+    scopedRows: [],
+    migrationConfigRows: [],
+    migrationLineRows: [],
+    rateMap: new Map(),
+  };
+}
+
+export async function fetchReportProposals(
+  client: SupabaseClient,
+  filters: ReportProposalFilters
+): Promise<ReportProposalRow[]> {
+  let query = client
+    .from("proposals")
+    .select(reportProposalColumns(filters));
+
+  if (filters.customerId) {
+    query = query.eq("customer_id", filters.customerId);
+  }
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  } else if (filters.statuses && filters.statuses.length > 0) {
+    query = query.in("status", filters.statuses);
+  }
+  if (filters.ownerId) {
+    query = query.eq("created_by", filters.ownerId);
+  }
+  if (filters.excludeStatuses && filters.excludeStatuses.length > 0) {
+    query = query.not("status", "in", `(${filters.excludeStatuses.join(",")})`);
+  }
+  if (filters.orderBy) {
+    query = query.order(filters.orderBy, {
+      ascending: filters.ascending ?? true,
+    });
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data as unknown as ReportProposalRow[];
+}
+
+export async function fetchRevenueReportBaseRows(
+  client: SupabaseClient,
+  filters: RevenueReportBaseFilters
+): Promise<RevenueReportBaseRow[]> {
+  let query = client
+    .from("proposal_revenue_report_base")
+    .select(
+      "proposal_id, proposal_name, status, customer_id, customer_name, created_by, created_at, updated_at, scoped_complexity_factor, p1_cost, p2_cost, opt1_cost, opt2_cost, scenario_total, scoped_total"
+    );
+
+  if (filters.customerId) {
+    query = query.eq("customer_id", filters.customerId);
+  }
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  } else if (filters.statuses && filters.statuses.length > 0) {
+    query = query.in("status", filters.statuses);
+  }
+  if (filters.ownerId) {
+    query = query.eq("created_by", filters.ownerId);
+  }
+  if (filters.excludeStatuses && filters.excludeStatuses.length > 0) {
+    query = query.not("status", "in", `(${filters.excludeStatuses.join(",")})`);
+  }
+  if (filters.orderBy) {
+    query = query.order(filters.orderBy, {
+      ascending: filters.ascending ?? true,
+    });
+  }
+
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return data as unknown as RevenueReportBaseRow[];
+}
+
+export async function fetchMigrationCostInputs(
+  client: SupabaseClient,
+  proposalIds: string[]
+): Promise<MigrationCostInputs> {
+  if (proposalIds.length === 0) return emptyMigrationCostInputs();
+
+  const [migrationRes, migrationLineRes, rateRes] = await Promise.all([
+    client
+      .from("migration_config")
+      .select(MIGRATION_CONFIG_COLUMNS)
+      .in("proposal_id", proposalIds),
+    client
+      .from("migration_detail_lines")
+      .select(MIGRATION_LINE_COLUMNS)
+      .in("proposal_id", proposalIds),
+    client
+      .from("rate_cards")
+      .select("lookup_key, rate")
+      .in("lookup_key", REQUIRED_MIGRATION_RATE_KEYS),
+  ]);
+
+  return {
+    migrationConfigRows: (migrationRes.data ?? []) as MigrationConfigRow[],
+    migrationLineRows: (migrationLineRes.data ?? []) as MigrationLineRow[],
+    rateMap: buildRateMap(rateRes.data ?? []),
+  };
+}
+
+export async function fetchRevenueAggregateInputs(
+  client: SupabaseClient,
+  proposalIds: string[]
+): Promise<RevenueAggregateInputs> {
+  if (proposalIds.length === 0) return emptyRevenueAggregateInputs();
+
+  const [
+    scenarioRes,
+    scopedRes,
+    migrationRes,
+    migrationLineRes,
+    rateRes,
+  ] = await Promise.all([
+    client
+      .from("scenarios")
+      .select("proposal_id, scenario_type, summary_total_cost, complexity_factor")
+      .in("proposal_id", proposalIds),
+    client
+      .from("scoped_services")
+      .select("proposal_id, cost")
+      .in("proposal_id", proposalIds),
+    client
+      .from("migration_config")
+      .select(MIGRATION_CONFIG_COLUMNS)
+      .in("proposal_id", proposalIds),
+    client
+      .from("migration_detail_lines")
+      .select(MIGRATION_LINE_COLUMNS)
+      .in("proposal_id", proposalIds),
+    client
+      .from("rate_cards")
+      .select("lookup_key, rate")
+      .in("lookup_key", REQUIRED_MIGRATION_RATE_KEYS),
+  ]);
+
+  return {
+    scenarioRows: (scenarioRes.data ?? []) as ScenarioCostRow[],
+    scopedRows: (scopedRes.data ?? []) as ScopedCostRow[],
+    migrationConfigRows: (migrationRes.data ?? []) as MigrationConfigRow[],
+    migrationLineRows: (migrationLineRes.data ?? []) as MigrationLineRow[],
+    rateMap: buildRateMap(rateRes.data ?? []),
+  };
+}
+
+export async function fetchHoursAggregateInputs(
+  client: SupabaseClient,
+  proposalIds: string[]
+): Promise<HoursAggregateInputs> {
+  if (proposalIds.length === 0) return emptyHoursAggregateInputs();
+
+  const { data: scenarios } = await client
+    .from("scenarios")
+    .select("id, proposal_id, scenario_type")
+    .in("proposal_id", proposalIds);
+  const scenarioRows = (scenarios ?? []) as HoursScenarioRow[];
+  const scenarioIds = scenarioRows.map((scenario) => scenario.id);
+
+  const [scenarioLineRes, scopedRes, migrationRes, migrationLineRes, rateRes] =
+    await Promise.all([
+      scenarioIds.length
+        ? client
+            .from("scenario_lines")
+            .select("scenario_id, sr_im_hours, pm_hours, ba_hours")
+            .in("scenario_id", scenarioIds)
+        : Promise.resolve({ data: [] as HoursScenarioLineRow[] }),
+      client
+        .from("scoped_services")
+        .select("proposal_id, hours, rate_card_lookup_key")
+        .in("proposal_id", proposalIds),
+      client
+        .from("migration_config")
+        .select(MIGRATION_CONFIG_COLUMNS)
+        .in("proposal_id", proposalIds),
+      client
+        .from("migration_detail_lines")
+        .select(MIGRATION_LINE_COLUMNS)
+        .in("proposal_id", proposalIds),
+      client
+        .from("rate_cards")
+        .select("lookup_key, rate")
+        .in("lookup_key", REQUIRED_MIGRATION_RATE_KEYS),
+    ]);
+
+  return {
+    scenarioRows,
+    scenarioLineRows: (scenarioLineRes.data ?? []) as HoursScenarioLineRow[],
+    scopedRows: (scopedRes.data ?? []) as ScopedHoursRow[],
+    migrationConfigRows: (migrationRes.data ?? []) as MigrationConfigRow[],
+    migrationLineRows: (migrationLineRes.data ?? []) as MigrationLineRow[],
+    rateMap: buildRateMap(rateRes.data ?? []),
+  };
+}
 
 /**
  * All customers keyed by id → company_name. Returns an empty Map on

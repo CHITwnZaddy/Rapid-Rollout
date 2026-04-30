@@ -608,7 +608,36 @@ export interface Database {
         ];
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      proposal_revenue_report_base: {
+        Row: {
+          proposal_id: string;
+          proposal_name: string;
+          status: string;
+          customer_id: string | null;
+          customer_name: string | null;
+          created_by: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+          scoped_complexity_factor: number;
+          p1_cost: number;
+          p2_cost: number;
+          opt1_cost: number;
+          opt2_cost: number;
+          scenario_total: number;
+          scoped_total: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "proposals_customer_id_fkey";
+            columns: ["customer_id"];
+            isOneToOne: false;
+            referencedRelation: "customers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+    };
     Functions: {
       create_proposal_bundle: {
         Args: {

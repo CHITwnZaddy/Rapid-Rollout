@@ -28,15 +28,12 @@ import {
 import type ExcelJS from "exceljs";
 import {
   buildMigrationHoursMap,
-  buildRateMap,
   buildScopedHoursMap,
 } from "@/lib/reports/proposal-aggregates";
 import {
-  INTERNAL_COST_RATE_KEY,
-  PM_RATE_KEY,
-  SR_IM_RATE_KEY,
-  TRAVEL_RATE_KEY,
-} from "@/lib/rate-card-keys";
+  fetchHoursAggregateInputs,
+  fetchReportProposals,
+} from "@/lib/reports/data";
 import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 import { toast } from "sonner";
 
@@ -95,66 +92,29 @@ export default function ProposalHoursReport() {
     setLoading(true);
     setHasRun(true);
     try {
-      let query = supabase
-        .from("proposals")
-        .select("id, name, status, customer_id, created_by");
-
-      if (selectedCustomer !== "all") {
-        query = query.eq("customer_id", selectedCustomer);
-      }
-      if (ownerFilter === "mine" && currentUserId) {
-        query = query.eq("created_by", currentUserId);
-      }
-
-      const { data: proposals } = await query;
-      if (!proposals || proposals.length === 0) {
+      const proposals = await fetchReportProposals(supabase, {
+        customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
+        ownerId:
+          ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
+        includeCreatedBy: true,
+      });
+      if (proposals.length === 0) {
         setRows([]);
         return;
       }
 
       const proposalIds = proposals.map((p) => p.id);
-      const { data: scenarios } = await supabase
-        .from("scenarios")
-        .select("id, proposal_id, scenario_type")
-        .in("proposal_id", proposalIds);
-      const scenarioIds = (scenarios ?? []).map((s) => s.id);
-
-      const [scenarioLineRes, scopedRes, migrationRes, migLinesRes, ratesRes] =
-        await Promise.all([
-        scenarioIds.length
-          ? supabase
-              .from("scenario_lines")
-              .select("scenario_id, sr_im_hours, pm_hours, ba_hours")
-              .in("scenario_id", scenarioIds)
-          : Promise.resolve({ data: [] as { scenario_id: string; sr_im_hours: number; pm_hours: number; ba_hours: number }[] }),
-        supabase
-          .from("scoped_services")
-          .select("proposal_id, hours, rate_card_lookup_key")
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("migration_config")
-          .select(
-            "proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
-          )
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("migration_detail_lines")
-          .select(
-            "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order"
-          )
-          .in("proposal_id", proposalIds),
-        supabase
-          .from("rate_cards")
-          .select("lookup_key, rate")
-          .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY, INTERNAL_COST_RATE_KEY]),
-      ]);
+      const aggregateInputs = await fetchHoursAggregateInputs(
+        supabase,
+        proposalIds
+      );
 
       const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
       const lineSumByScenario = new Map<
         string,
         { sr: number; pm: number; ba: number }
       >();
-      for (const l of scenarioLineRes.data ?? []) {
+      for (const l of aggregateInputs.scenarioLineRows) {
         const agg = lineSumByScenario.get(l.scenario_id) ?? { sr: 0, pm: 0, ba: 0 };
         agg.sr += Number(l.sr_im_hours) || 0;
         agg.pm += Number(l.pm_hours) || 0;
@@ -162,12 +122,11 @@ export default function ProposalHoursReport() {
         lineSumByScenario.set(l.scenario_id, agg);
       }
 
-      const scopedByProposal = buildScopedHoursMap(scopedRes.data ?? []);
-      const rateMap = buildRateMap(ratesRes.data ?? []);
+      const scopedByProposal = buildScopedHoursMap(aggregateInputs.scopedRows);
       const migrationByProposal = buildMigrationHoursMap(
-        migrationRes.data ?? [],
-        migLinesRes.data ?? [],
-        rateMap
+        aggregateInputs.migrationConfigRows,
+        aggregateInputs.migrationLineRows,
+        aggregateInputs.rateMap
       );
 
       const out: HoursRow[] = [];
@@ -177,7 +136,7 @@ export default function ProposalHoursReport() {
         string,
         { id: string; type: string }[]
       >();
-      for (const s of scenarios ?? []) {
+      for (const s of aggregateInputs.scenarioRows) {
         if (!scenariosByProposal.has(s.proposal_id))
           scenariosByProposal.set(s.proposal_id, []);
         scenariosByProposal
