@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchCustomerMap, fetchStatusHistoryMap } from "../data";
+import {
+  fetchCustomerMap,
+  fetchHoursAggregateInputs,
+  fetchReportProposals,
+  fetchRevenueAggregateInputs,
+  fetchStatusHistoryMap,
+} from "../data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 function mockCustomersClient(response: { data: unknown; error: unknown }) {
@@ -16,6 +22,46 @@ function mockHistoryClient(response: { data: unknown; error: unknown }) {
     in: vi.fn().mockResolvedValue(response),
   };
   return { from: vi.fn().mockReturnValue(query) } as unknown as SupabaseClient;
+}
+
+type QueryMock = {
+  select: ReturnType<typeof vi.fn>;
+  order: ReturnType<typeof vi.fn>;
+  eq: ReturnType<typeof vi.fn>;
+  in: ReturnType<typeof vi.fn>;
+  not: ReturnType<typeof vi.fn>;
+  result: { data: unknown; error: unknown };
+};
+
+function createQueryMock(response: { data: unknown; error: unknown }): QueryMock {
+  const query = {
+    result: response,
+    select: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    not: vi.fn().mockReturnThis(),
+    then: vi.fn((resolve) => Promise.resolve(response).then(resolve)),
+  };
+  query.select.mockReturnValue(query);
+  return query;
+}
+
+function mockTableClient(
+  responses: Record<string, { data: unknown; error: unknown }>
+) {
+  const queries = new Map<string, QueryMock>();
+  const client = {
+    from: vi.fn((table: string) => {
+      const query = createQueryMock(responses[table] ?? { data: [], error: null });
+      queries.set(table, query);
+      return query;
+    }),
+  } as unknown as SupabaseClient & {
+    from: ReturnType<typeof vi.fn>;
+  };
+
+  return { client, queries };
 }
 
 describe("fetchCustomerMap", () => {
@@ -81,5 +127,158 @@ describe("fetchStatusHistoryMap", () => {
     });
     const map = await fetchStatusHistoryMap(client, ["p1"]);
     expect(map.size).toBe(0);
+  });
+});
+
+describe("fetchReportProposals", () => {
+  it("selects only requested proposal columns", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      includeCreatedAt: true,
+      includeCreatedBy: true,
+      includeScopedComplexity: true,
+      orderBy: "created_at",
+      ascending: false,
+    });
+
+    expect(queries.get("proposals")?.select).toHaveBeenCalledWith(
+      "id, name, status, customer_id, scoped_complexity_factor, created_at, created_by"
+    );
+    expect(queries.get("proposals")?.order).toHaveBeenCalledWith("created_at", {
+      ascending: false,
+    });
+  });
+
+  it("applies customer, status, owner, and exclusion filters", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      customerId: "customer-1",
+      status: "Won",
+      ownerId: "user-1",
+      excludeStatuses: ["Lost", "VOID"],
+    });
+
+    const query = queries.get("proposals");
+    expect(query?.eq).toHaveBeenCalledWith("customer_id", "customer-1");
+    expect(query?.eq).toHaveBeenCalledWith("status", "Won");
+    expect(query?.eq).toHaveBeenCalledWith("created_by", "user-1");
+    expect(query?.not).toHaveBeenCalledWith("status", "in", "(Lost,VOID)");
+  });
+
+  it("applies multi-status filters with in()", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      statuses: ["Draft", "Proposal Sent"],
+    });
+
+    expect(queries.get("proposals")?.in).toHaveBeenCalledWith("status", [
+      "Draft",
+      "Proposal Sent",
+    ]);
+  });
+});
+
+describe("fetchRevenueAggregateInputs", () => {
+  it("short-circuits when proposalIds is empty", async () => {
+    const { client } = mockTableClient({});
+    const result = await fetchRevenueAggregateInputs(client, []);
+
+    expect(client.from).not.toHaveBeenCalled();
+    expect(result.scenarioRows).toEqual([]);
+    expect(result.scopedRows).toEqual([]);
+    expect(result.migrationConfigRows).toEqual([]);
+    expect(result.migrationLineRows).toEqual([]);
+    expect(result.rateMap.size).toBe(0);
+  });
+
+  it("fetches revenue aggregate source tables and required rates", async () => {
+    const { client, queries } = mockTableClient({
+      scenarios: { data: [{ proposal_id: "p1" }], error: null },
+      scoped_services: { data: [{ proposal_id: "p1" }], error: null },
+      migration_config: { data: [{ proposal_id: "p1" }], error: null },
+      migration_detail_lines: { data: [{ proposal_id: "p1" }], error: null },
+      rate_cards: {
+        data: [{ lookup_key: "Sr. Implementation Manager", rate: 1 }],
+        error: null,
+      },
+    });
+
+    await fetchRevenueAggregateInputs(client, ["p1"]);
+
+    expect(client.from).toHaveBeenCalledWith("scenarios");
+    expect(client.from).toHaveBeenCalledWith("scoped_services");
+    expect(client.from).toHaveBeenCalledWith("migration_config");
+    expect(client.from).toHaveBeenCalledWith("migration_detail_lines");
+    expect(client.from).toHaveBeenCalledWith("rate_cards");
+    expect(queries.get("scenarios")?.in).toHaveBeenCalledWith("proposal_id", [
+      "p1",
+    ]);
+    expect(queries.get("rate_cards")?.in).toHaveBeenCalledWith("lookup_key", [
+      "Master|Sr. Implementation Manager",
+      "Master|Program Manager",
+      "Master|Travel Cost/Trip",
+      "Master|Internal Cost Rate",
+    ]);
+  });
+});
+
+describe("fetchHoursAggregateInputs", () => {
+  it("short-circuits when proposalIds is empty", async () => {
+    const { client } = mockTableClient({});
+    const result = await fetchHoursAggregateInputs(client, []);
+
+    expect(client.from).not.toHaveBeenCalled();
+    expect(result.scenarioRows).toEqual([]);
+    expect(result.scenarioLineRows).toEqual([]);
+    expect(result.scopedRows).toEqual([]);
+    expect(result.migrationConfigRows).toEqual([]);
+    expect(result.migrationLineRows).toEqual([]);
+    expect(result.rateMap.size).toBe(0);
+  });
+
+  it("fetches scenarios before scenario lines and skips scenario lines when none exist", async () => {
+    const { client } = mockTableClient({
+      scenarios: { data: [], error: null },
+      scoped_services: { data: [], error: null },
+      migration_config: { data: [], error: null },
+      migration_detail_lines: { data: [], error: null },
+      rate_cards: { data: [], error: null },
+    });
+
+    await fetchHoursAggregateInputs(client, ["p1"]);
+
+    expect(client.from).toHaveBeenCalledWith("scenarios");
+    expect(client.from).not.toHaveBeenCalledWith("scenario_lines");
+  });
+
+  it("fetches scenario lines when scenarios exist", async () => {
+    const { client, queries } = mockTableClient({
+      scenarios: {
+        data: [{ id: "s1", proposal_id: "p1", scenario_type: "P1" }],
+        error: null,
+      },
+      scenario_lines: { data: [{ scenario_id: "s1" }], error: null },
+      scoped_services: { data: [], error: null },
+      migration_config: { data: [], error: null },
+      migration_detail_lines: { data: [], error: null },
+      rate_cards: { data: [], error: null },
+    });
+
+    await fetchHoursAggregateInputs(client, ["p1"]);
+
+    expect(client.from).toHaveBeenCalledWith("scenario_lines");
+    expect(queries.get("scenario_lines")?.in).toHaveBeenCalledWith(
+      "scenario_id",
+      ["s1"]
+    );
   });
 });

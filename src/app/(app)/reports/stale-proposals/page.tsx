@@ -26,7 +26,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Fragment } from "react";
-import { fetchStatusHistoryMap } from "@/lib/reports/data";
+import {
+  fetchReportProposals,
+  fetchStatusHistoryMap,
+} from "@/lib/reports/data";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
@@ -80,23 +83,14 @@ export default function StaleProposalsReport() {
     setLoading(true);
     setHasRun(true);
 
-    let query = supabase
-      .from("proposals")
-      .select("id, name, status, customer_id, created_by")
-      .in(
-        "status",
-        selectedStatus === "All" ? IN_FLIGHT_STATUSES : [selectedStatus]
-      );
-
-    if (selectedCustomer !== "all") {
-      query = query.eq("customer_id", selectedCustomer);
-    }
-    if (ownerFilter === "mine" && currentUserId) {
-      query = query.eq("created_by", currentUserId);
-    }
-
-    const { data: proposals } = await query;
-    if (!proposals || proposals.length === 0) {
+    const proposals = await fetchReportProposals(supabase, {
+      customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
+      statuses: selectedStatus === "All" ? IN_FLIGHT_STATUSES : [selectedStatus],
+      ownerId:
+        ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
+      includeCreatedBy: true,
+    });
+    if (proposals.length === 0) {
       setRows([]);
       setLoading(false);
       return;

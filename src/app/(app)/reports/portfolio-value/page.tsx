@@ -31,16 +31,14 @@ import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
 import {
   buildMigrationCostMap,
-  buildRateMap,
   buildScenarioTotalByProposal,
   buildScopedCostMap,
 } from "@/lib/reports/proposal-aggregates";
 import {
-  INTERNAL_COST_RATE_KEY,
-  PM_RATE_KEY,
-  SR_IM_RATE_KEY,
-  TRAVEL_RATE_KEY,
-} from "@/lib/rate-card-keys";
+  fetchCustomerMap,
+  fetchReportProposals,
+  fetchRevenueAggregateInputs,
+} from "@/lib/reports/data";
 import { toast } from "sonner";
 
 type OwnerFilter = "all" | "mine";
@@ -55,10 +53,6 @@ type PortfolioRow = {
   migrationTotal: number;
   grandTotal: number;
 };
-
-// Closed-lost and VOID proposals are excluded by default — "portfolio"
-// should reflect realizable pipeline value, not sunk deals.
-const DEFAULT_EXCLUDED_STATUSES = new Set(["Lost", "VOID"]);
 
 export default function PortfolioValueReport() {
   const supabase = createClient();
@@ -80,74 +74,34 @@ export default function PortfolioValueReport() {
     setLoading(true);
     setHasRun(true);
     try {
-      let query = supabase
-        .from("proposals")
-        .select("id, name, status, customer_id, created_by, scoped_complexity_factor");
-
-      if (ownerFilter === "mine" && currentUserId) {
-        query = query.eq("created_by", currentUserId);
-      }
-
-      const { data: proposals } = await query;
-      if (!proposals || proposals.length === 0) {
+      const proposals = await fetchReportProposals(supabase, {
+        ownerId:
+          ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
+        excludeStatuses: includeLost ? undefined : ["Lost", "VOID"],
+        includeCreatedBy: true,
+        includeScopedComplexity: true,
+      });
+      if (proposals.length === 0) {
         setRows([]);
         return;
       }
 
-      const filtered = includeLost
-        ? proposals
-        : proposals.filter((p) => !DEFAULT_EXCLUDED_STATUSES.has(p.status));
-
-      if (filtered.length === 0) {
-        setRows([]);
-        return;
-      }
-
-      const proposalIds = filtered.map((p) => p.id);
-      const [customerRes, scenarioRes, scopedRes, migrationRes, migLinesRes, ratesRes] =
-        await Promise.all([
-          supabase.from("customers").select("id, company_name"),
-          supabase
-            .from("scenarios")
-            .select("proposal_id, summary_total_cost, complexity_factor")
-            .in("proposal_id", proposalIds),
-          supabase
-            .from("scoped_services")
-            .select("proposal_id, cost")
-            .in("proposal_id", proposalIds),
-          supabase
-            .from("migration_config")
-            .select(
-              "proposal_id, num_projects, hrs_per_import, lines_per_import_file, is_effort_included, is_workshop_included, complexity_factor, sr_im_trips, pm_trips, doc_avg_mb_per_project, doc_mb_per_hour, core_requirements_hrs, core_migration_plan_hrs, core_validation_hrs, core_final_qa_hrs, core_pm_oversight_hrs"
-            )
-            .in("proposal_id", proposalIds),
-          supabase
-            .from("migration_detail_lines")
-            .select(
-              "proposal_id, section, label, quantity, items_per_object, total_line_items, row_order"
-            )
-            .in("proposal_id", proposalIds),
-          supabase
-            .from("rate_cards")
-            .select("lookup_key, rate")
-            .in("lookup_key", [SR_IM_RATE_KEY, PM_RATE_KEY, TRAVEL_RATE_KEY, INTERNAL_COST_RATE_KEY]),
-        ]);
-
-      const customerMap = new Map(
-        (customerRes.data ?? []).map((c) => [c.id, c.company_name])
-      );
+      const proposalIds = proposals.map((p) => p.id);
+      const [customerMap, aggregateInputs] = await Promise.all([
+        fetchCustomerMap(supabase),
+        fetchRevenueAggregateInputs(supabase, proposalIds),
+      ]);
       const scenarioTotalByProposal = buildScenarioTotalByProposal(
-        scenarioRes.data ?? []
+        aggregateInputs.scenarioRows
       );
-      const scopedRawByProposal = buildScopedCostMap(scopedRes.data ?? []);
-      const rateMap = buildRateMap(ratesRes.data ?? []);
+      const scopedRawByProposal = buildScopedCostMap(aggregateInputs.scopedRows);
       const migrationTotalByProposal = buildMigrationCostMap(
-        migrationRes.data ?? [],
-        migLinesRes.data ?? [],
-        rateMap
+        aggregateInputs.migrationConfigRows,
+        aggregateInputs.migrationLineRows,
+        aggregateInputs.rateMap
       );
 
-      const portfolio: PortfolioRow[] = filtered
+      const portfolio: PortfolioRow[] = proposals
         .map((p) => {
           const scopedFactor = Number(p.scoped_complexity_factor) || 1;
           const scenarioTotal = scenarioTotalByProposal.get(p.id) ?? 0;

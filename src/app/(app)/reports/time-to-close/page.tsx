@@ -26,7 +26,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fetchStatusHistoryMap } from "@/lib/reports/data";
+import {
+  fetchReportProposals,
+  fetchStatusHistoryMap,
+} from "@/lib/reports/data";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 import { withinRange } from "@/lib/ui/helpers";
 import type ExcelJS from "exceljs";
@@ -84,23 +87,16 @@ export default function TimeToCloseReport() {
     setLoading(true);
     setHasRun(true);
 
-    let query = supabase
-      .from("proposals")
-      .select("id, name, status, customer_id, created_by")
-      .order("updated_at", { ascending: false });
-
-    if (selectedCustomer !== "all") {
-      query = query.eq("customer_id", selectedCustomer);
-    }
-    if (selectedStatus !== "All") {
-      query = query.eq("status", selectedStatus);
-    }
-    if (ownerFilter === "mine" && currentUserId) {
-      query = query.eq("created_by", currentUserId);
-    }
-
-    const { data: proposals } = await query;
-    if (!proposals || proposals.length === 0) {
+    const proposals = await fetchReportProposals(supabase, {
+      customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
+      status: selectedStatus !== "All" ? selectedStatus : undefined,
+      ownerId:
+        ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
+      includeCreatedBy: true,
+      orderBy: "updated_at",
+      ascending: false,
+    });
+    if (proposals.length === 0) {
       setRows([]);
       setLoading(false);
       return;
