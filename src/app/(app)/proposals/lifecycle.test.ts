@@ -82,7 +82,7 @@ describe("proposal lifecycle actions", () => {
     expect(statusResult).toEqual({ ok: true });
     expect(rpcMock).toHaveBeenNthCalledWith(1, "create_proposal_bundle", {
       p_name: "Revenue Flow",
-      p_customer_id: null,
+      p_customer_id: undefined,
     });
     expect(rpcMock).toHaveBeenNthCalledWith(2, "transition_proposal_status", {
       p_proposal_id: "proposal-123",
@@ -321,7 +321,7 @@ describe("proposal lifecycle actions", () => {
     expect(createResult).toEqual({ ok: true, proposalId });
     expect(rpcMock).toHaveBeenNthCalledWith(1, "create_proposal_bundle", {
       p_name: "Lifecycle Revenue Flow",
-      p_customer_id: null,
+      p_customer_id: undefined,
     });
     expect(rpcMock).toHaveBeenNthCalledWith(2, "transition_proposal_status", {
       p_proposal_id: proposalId,
