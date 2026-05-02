@@ -1,8 +1,11 @@
 import Link from "next/link";
 
 import { formatCurrency } from "@/lib/calculations/engine";
-import { cn } from "@/lib/utils";
 import type { StageValue } from "@/lib/dashboard/sales-ops";
+import {
+  PROPOSAL_STATUS_BAR_CLASS,
+  isProposalStatus,
+} from "@/lib/constants/statuses";
 
 type ValueByStageChartProps = {
   rows: StageValue[];
@@ -25,8 +28,11 @@ export function ValueByStageChart({
 
   return (
     <div className="space-y-3">
-      {rows.map((row, index) => {
+      {rows.map((row) => {
         const width = maxValue > 0 ? Math.max((row.value / maxValue) * 100, 4) : 4;
+        const barClass = isProposalStatus(row.status)
+          ? PROPOSAL_STATUS_BAR_CLASS[row.status]
+          : "bg-primary/60";
         return (
           <Link
             key={row.status}
@@ -41,13 +47,7 @@ export function ValueByStageChart({
             </div>
             <div className="h-2 rounded-full bg-muted">
               <div
-                className={cn(
-                  "h-2 rounded-full",
-                  index % 4 === 0 && "bg-sky-500/70",
-                  index % 4 === 1 && "bg-indigo-500/65",
-                  index % 4 === 2 && "bg-teal-500/65",
-                  index % 4 === 3 && "bg-amber-500/70"
-                )}
+                className={`h-2 rounded-full ${barClass}`}
                 style={{ width: `${width}%` }}
               />
             </div>

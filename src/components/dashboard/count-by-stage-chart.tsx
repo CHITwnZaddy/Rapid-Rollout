@@ -1,7 +1,10 @@
 import Link from "next/link";
 
-import { cn } from "@/lib/utils";
 import type { StageCount } from "@/lib/dashboard/sales-ops";
+import {
+  PROPOSAL_STATUS_BAR_CLASS,
+  isProposalStatus,
+} from "@/lib/constants/statuses";
 
 type CountByStageChartProps = {
   rows: StageCount[];
@@ -24,8 +27,11 @@ export function CountByStageChart({
 
   return (
     <div className="space-y-3">
-      {rows.map((row, index) => {
+      {rows.map((row) => {
         const width = maxCount > 0 ? Math.max((row.count / maxCount) * 100, 6) : 6;
+        const barClass = isProposalStatus(row.status)
+          ? PROPOSAL_STATUS_BAR_CLASS[row.status]
+          : "bg-primary/60";
         return (
           <Link
             key={row.status}
@@ -40,13 +46,7 @@ export function CountByStageChart({
             </div>
             <div className="h-2 rounded-full bg-muted">
               <div
-                className={cn(
-                  "h-2 rounded-full",
-                  index % 4 === 0 && "bg-violet-500/65",
-                  index % 4 === 1 && "bg-cyan-500/65",
-                  index % 4 === 2 && "bg-emerald-500/65",
-                  index % 4 === 3 && "bg-rose-500/60"
-                )}
+                className={`h-2 rounded-full ${barClass}`}
                 style={{ width: `${width}%` }}
               />
             </div>

@@ -371,7 +371,7 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-2">
         <DashboardWidgetLink href={openProposalHref}>
           <CardHeader>
             <div className="flex items-start justify-between gap-3">

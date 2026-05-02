@@ -25,8 +25,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/calculations/engine";
-import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
+import {
+  PROPOSAL_STATUSES,
+  PROPOSAL_STATUS_VARIANT,
+  type ProposalStatus,
+} from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
 import { buildMigrationCostMap } from "@/lib/reports/proposal-aggregates";
 import {
@@ -359,7 +364,7 @@ export default function PortfolioValueReport() {
               </p>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <Table>
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Proposal Name</TableHead>
@@ -376,7 +381,14 @@ export default function PortfolioValueReport() {
                       <Fragment key={`group-${status}`}>
                         <TableRow className="bg-muted/40">
                           <TableCell colSpan={3} className="font-semibold">
-                            {status}
+                            <Badge
+                              variant={
+                                PROPOSAL_STATUS_VARIANT[status as ProposalStatus] ??
+                                "secondary"
+                              }
+                            >
+                              {status}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-right font-semibold tabular-nums">
                             {formatCurrency(
@@ -403,7 +415,17 @@ export default function PortfolioValueReport() {
                               {r.proposalName}
                             </TableCell>
                             <TableCell>{r.customerName}</TableCell>
-                            <TableCell>{r.status}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  PROPOSAL_STATUS_VARIANT[
+                                    r.status as ProposalStatus
+                                  ] ?? "secondary"
+                                }
+                              >
+                                {r.status}
+                              </Badge>
+                            </TableCell>
                             <TableCell className="text-right tabular-nums">
                               {formatCurrency(r.scenarioTotal)}
                             </TableCell>

@@ -37,7 +37,11 @@ import {
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
 import { toast } from "sonner";
-import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
+import {
+  PROPOSAL_STATUSES,
+  PROPOSAL_STATUS_VARIANT,
+  type ProposalStatus,
+} from "@/lib/constants/statuses";
 import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/status";
 
 interface Customer {
@@ -538,7 +542,7 @@ export default function ProposalLogReport() {
               </p>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <Table>
+                <Table className="min-w-[1120px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Customer</TableHead>
@@ -568,11 +572,8 @@ export default function ProposalLogReport() {
                         <TableCell>
                           <Badge
                             variant={
-                              r.status === "Closed Won"
-                                ? "default"
-                                : r.status === "Closed Lost"
-                                  ? "destructive"
-                                  : "secondary"
+                              PROPOSAL_STATUS_VARIANT[r.status as ProposalStatus] ??
+                              "secondary"
                             }
                           >
                             {r.status}

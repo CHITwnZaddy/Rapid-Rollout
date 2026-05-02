@@ -26,13 +26,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Fragment } from "react";
 import {
   fetchReportProposals,
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
-import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
+import {
+  PROPOSAL_STATUSES,
+  PROPOSAL_STATUS_VARIANT,
+  type ProposalStatus,
+} from "@/lib/constants/statuses";
 import { STALE_TRACKED_STATUSES } from "@/lib/proposals/status";
 import type ExcelJS from "exceljs";
 
@@ -47,7 +52,7 @@ type ReportRow = {
   status: string;
   daysInStatus: number | null;
   lastActivity: string | null;
-  threshold: "red" | "green" | null;
+  threshold: "stale" | "fresh" | null;
 };
 
 // Anything sitting more than this in its current status is "stale".
@@ -115,7 +120,7 @@ export default function StaleProposalsReport() {
         const m = metricsMap.get(p.id);
         const days = m?.daysInCurrentStatus ?? null;
         const threshold: ReportRow["threshold"] =
-          days == null ? null : days >= STALE_THRESHOLD_DAYS ? "red" : "green";
+          days == null ? null : days >= STALE_THRESHOLD_DAYS ? "stale" : "fresh";
         return {
           proposalId: p.id,
           proposalName: p.name,
@@ -127,8 +132,8 @@ export default function StaleProposalsReport() {
         };
       })
       .filter((row) => {
-        if (staleBucket === "stale") return row.threshold === "red";
-        if (staleBucket === "fresh") return row.threshold === "green";
+        if (staleBucket === "stale") return row.threshold === "stale";
+        if (staleBucket === "fresh") return row.threshold === "fresh";
         return true;
       })
       // Group by status in the canonical PROPOSAL_STATUSES order, then sort
@@ -207,7 +212,7 @@ export default function StaleProposalsReport() {
         ? "All Customers"
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
-    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "Team proposals"} · ${staleBucket}  |  Red when Days in Status >= ${STALE_THRESHOLD_DAYS}`;
+    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "Team proposals"} · ${staleBucket}  |  Stale when Days in Status >= ${STALE_THRESHOLD_DAYS}`;
     filters.font = { italic: true, size: 11 };
     filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     sheet.getRow(2).height = 20;
@@ -238,9 +243,9 @@ export default function StaleProposalsReport() {
     rows.forEach((r, idx) => {
       const row = sheet.getRow(DATA_START + idx);
       const fillArgb =
-        r.threshold === "red"
+        r.threshold === "stale"
           ? RED_BG
-          : r.threshold === "green"
+          : r.threshold === "fresh"
             ? GREEN_BG
             : idx % 2 === 0
               ? ALT_ROW_BG
@@ -414,7 +419,7 @@ export default function StaleProposalsReport() {
           <CardHeader>
             <CardTitle className="text-base">
               Results ({rows.length} proposal{rows.length !== 1 ? "s" : ""}) —
-              Red rows indicate proposals that have been in the same status for{" "}
+              Amber stale labels indicate proposals that have been in the same status for{" "}
               {STALE_THRESHOLD_DAYS} days or more.
             </CardTitle>
           </CardHeader>
@@ -425,7 +430,7 @@ export default function StaleProposalsReport() {
               </p>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <Table>
+                <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Proposal Name</TableHead>
@@ -447,10 +452,10 @@ export default function StaleProposalsReport() {
                           <TableRow
                             key={r.proposalId}
                             className={
-                              r.threshold === "red"
-                                ? "bg-red-100 hover:bg-red-100/80 dark:bg-red-950/40 dark:hover:bg-red-950/50"
-                                : r.threshold === "green"
-                                  ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/50"
+                              r.threshold === "stale"
+                                ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
+                                : r.threshold === "fresh"
+                                  ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
                                   : undefined
                             }
                           >
@@ -458,9 +463,25 @@ export default function StaleProposalsReport() {
                               {r.proposalName}
                             </TableCell>
                             <TableCell>{r.customerName}</TableCell>
-                            <TableCell>{r.status}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  PROPOSAL_STATUS_VARIANT[
+                                    r.status as ProposalStatus
+                                  ] ?? "secondary"
+                                }
+                              >
+                                {r.status}
+                              </Badge>
+                            </TableCell>
                             <TableCell className="text-center tabular-nums">
-                              {r.daysInStatus ?? "—"}
+                              <span className="mr-2">{r.daysInStatus ?? "—"}</span>
+                              {r.threshold === "stale" && (
+                                <Badge variant="amber">Stale</Badge>
+                              )}
+                              {r.threshold === "fresh" && (
+                                <Badge variant="sage">Fresh</Badge>
+                              )}
                             </TableCell>
                             <TableCell className="tabular-nums text-xs">
                               {formatDateShort(r.lastActivity)}
