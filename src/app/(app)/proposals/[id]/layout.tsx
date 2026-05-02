@@ -8,6 +8,8 @@ interface ProposalData {
   id: string;
   name: string;
   status: string;
+  sold_price: number | null;
+  loe_value: number | null;
   customers: { company_name: string } | { company_name: string }[] | null;
 }
 
@@ -21,11 +23,18 @@ export default async function ProposalLayout({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data } = await supabase
+  const [{ data }, { data: varianceReasons }] = await Promise.all([
+    supabase
     .from("proposals")
-    .select("id, name, status, customers ( company_name )")
+      .select("id, name, status, sold_price, loe_value, customers ( company_name )")
     .eq("id", id)
-    .single();
+      .single(),
+    supabase
+      .from("proposal_variance_reasons")
+      .select("code, label")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+  ]);
   const proposal = data as ProposalData | null;
 
   if (!proposal) notFound();
@@ -41,7 +50,13 @@ export default async function ProposalLayout({
           <h1 className="text-2xl font-bold">{proposal.name}</h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {customer?.company_name ?? "No customer"} &middot;{" "}
-            <ProposalStatus proposalId={id} initialStatus={proposal.status} />
+            <ProposalStatus
+              proposalId={id}
+              initialStatus={proposal.status}
+              initialSoldPrice={Number(proposal.sold_price ?? 0)}
+              initialLoeValue={Number(proposal.loe_value ?? 0)}
+              varianceReasons={varianceReasons ?? []}
+            />
           </div>
         </div>
         <DeleteProposalButton

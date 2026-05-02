@@ -19,22 +19,27 @@ export const CLOSED_PROPOSAL_STATUSES = [
   "Closed Lost",
 ] as const satisfies readonly ProposalStatus[];
 
+export type ClosedProposalStatus = (typeof CLOSED_PROPOSAL_STATUSES)[number];
+export type OpenProposalStatus = (typeof OPEN_PROPOSAL_STATUSES)[number];
+export type StaleTrackedStatus = (typeof STALE_TRACKED_STATUSES)[number];
 export type ProposalStatusBucket = "open" | "hold" | "closed" | "unknown";
 
 export function isProposalStatus(status: unknown): status is ProposalStatus {
   return PROPOSAL_STATUSES.includes(status as ProposalStatus);
 }
 
-export function isOpenProposalStatus(status: unknown): status is ProposalStatus {
-  return OPEN_PROPOSAL_STATUSES.includes(status as ProposalStatus);
+export function isOpenProposalStatus(status: unknown): status is OpenProposalStatus {
+  return OPEN_PROPOSAL_STATUSES.includes(status as OpenProposalStatus);
 }
 
-export function isClosedProposalStatus(status: unknown): status is ProposalStatus {
-  return CLOSED_PROPOSAL_STATUSES.includes(status as ProposalStatus);
+export function isClosedProposalStatus(
+  status: unknown
+): status is ClosedProposalStatus {
+  return CLOSED_PROPOSAL_STATUSES.includes(status as ClosedProposalStatus);
 }
 
-export function isStaleTrackedStatus(status: unknown): status is ProposalStatus {
-  return STALE_TRACKED_STATUSES.includes(status as ProposalStatus);
+export function isStaleTrackedStatus(status: unknown): status is StaleTrackedStatus {
+  return STALE_TRACKED_STATUSES.includes(status as StaleTrackedStatus);
 }
 
 export function getStatusBucket(status: unknown): ProposalStatusBucket {

@@ -13,6 +13,7 @@ import {
   PROPOSAL_STATUSES,
   type ProposalStatus,
 } from "@/lib/constants/statuses";
+import { isClosedProposalStatus } from "@/lib/proposals/status";
 
 const { getUserMock, rpcMock, revalidatePathMock } = vi.hoisted(() => ({
   getUserMock: vi.fn(),
@@ -73,8 +74,8 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       expect(rpcMock).not.toHaveBeenCalled();
     });
 
-    it.each(PROPOSAL_STATUSES.map((s) => [s]))(
-      "accepts the canonical status %s and calls the RPC",
+    it.each(PROPOSAL_STATUSES.filter((s) => !isClosedProposalStatus(s)).map((s) => [s]))(
+      "accepts the non-terminal canonical status %s and calls the RPC",
       async (status: ProposalStatus) => {
         authedUser();
         rpcMock.mockResolvedValue({ data: true, error: null });
@@ -88,13 +89,27 @@ describe("proposal lifecycle — JS-layer status validation", () => {
         });
       }
     );
+
+    it.each(["Closed Won", "Closed Lost"])(
+      "requires closeout details for terminal status %s",
+      async (status) => {
+        authedUser();
+        const result = await updateProposalStatus("p-1", status);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toContain("requires closeout details");
+        }
+        expect(rpcMock).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe("auth gate (second layer of defense)", () => {
     it("rejects an unauthenticated caller before invoking the RPC", async () => {
       getUserMock.mockResolvedValue({ data: { user: null }, error: null });
 
-      const result = await updateProposalStatus("p-1", "Closed Won");
+      const result = await updateProposalStatus("p-1", "Scoping");
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -109,7 +124,7 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       authedUser();
       rpcMock.mockResolvedValue({ data: true, error: null });
 
-      const result = await updateProposalStatus("p-1", "Closed Won");
+      const result = await updateProposalStatus("p-1", "Scoping");
       expect(result).toEqual({ ok: true });
     });
 
@@ -131,7 +146,7 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       authedUser();
       rpcMock.mockResolvedValue({ data: false, error: null });
 
-      const result = await updateProposalStatus("p-1", "Closed Won");
+      const result = await updateProposalStatus("p-1", "Scoping");
 
       expect(result).toEqual({ ok: true });
       // The action only revalidates when the RPC reports a real change.
@@ -142,7 +157,7 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       authedUser();
       rpcMock.mockResolvedValue({ data: true, error: null });
 
-      await updateProposalStatus("p-42", "Closed Won");
+      await updateProposalStatus("p-42", "Scoping");
 
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals/p-42");
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals");

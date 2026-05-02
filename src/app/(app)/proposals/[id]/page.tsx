@@ -53,7 +53,9 @@ export default async function ProposalSummaryPage({
     await Promise.all([
       supabase
         .from("proposals")
-        .select("scoped_complexity_factor")
+        .select(
+          "created_at, status, sold_price, loe_value, loe_signed_date, variance_reason_code, variance_note, closed_lost_reason, closed_lost_note, closed_financials_corrected_at, scoped_complexity_factor"
+        )
         .eq("id", id)
         .single(),
       supabase
@@ -149,6 +151,15 @@ export default async function ProposalSummaryPage({
 
   const scopedComplexityFactor =
     Number(proposalRes.data?.scoped_complexity_factor) || 1;
+  const proposal = proposalRes.data;
+  const isClosed =
+    proposal?.status === "Closed Won" || proposal?.status === "Closed Lost";
+  const varianceAmount =
+    proposal?.sold_price != null && proposal?.loe_value != null
+      ? Number(proposal.loe_value) - Number(proposal.sold_price)
+      : null;
+  const formatDate = (value: string | null | undefined) =>
+    value ? new Date(value).toLocaleDateString() : "—";
 
   const scopedRawTotal = (scopedRes.data ?? []).reduce(
     (sum, s) => sum + Number(s.cost),
@@ -304,6 +315,79 @@ export default async function ProposalSummaryPage({
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Proposal Facts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <dt className="text-muted-foreground">Created Date</dt>
+              <dd className="font-medium">{formatDate(proposal?.created_at)}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Status</dt>
+              <dd className="font-medium">{proposal?.status ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Sold Price</dt>
+              <dd className="font-medium">
+                {proposal?.sold_price == null
+                  ? "—"
+                  : formatCurrency(Number(proposal.sold_price))}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Signed LoE Value</dt>
+              <dd className="font-medium">
+                {proposal?.loe_value == null
+                  ? "—"
+                  : formatCurrency(Number(proposal.loe_value))}
+              </dd>
+            </div>
+            {isClosed && (
+              <>
+                <div>
+                  <dt className="text-muted-foreground">LoE Signed Date</dt>
+                  <dd className="font-medium">
+                    {formatDate(proposal?.loe_signed_date)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Variance</dt>
+                  <dd className="font-medium">
+                    {varianceAmount == null ? "—" : formatCurrency(varianceAmount)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Variance Reason</dt>
+                  <dd className="font-medium">
+                    {proposal?.variance_reason_code ?? "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Correction</dt>
+                  <dd className="font-medium">
+                    {formatDate(proposal?.closed_financials_corrected_at)}
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-muted-foreground">Variance Note</dt>
+                  <dd className="font-medium">{proposal?.variance_note ?? "—"}</dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-muted-foreground">Closed Lost Details</dt>
+                  <dd className="font-medium">
+                    {proposal?.closed_lost_reason
+                      ? `${proposal.closed_lost_reason}: ${proposal.closed_lost_note ?? ""}`
+                      : "—"}
+                  </dd>
+                </div>
+              </>
+            )}
+          </dl>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Scenario Comparison</CardTitle>
