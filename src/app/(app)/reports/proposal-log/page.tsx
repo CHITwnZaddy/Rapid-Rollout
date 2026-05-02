@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -85,11 +85,23 @@ function parseStatusPreset(value: string | null): string[] | undefined {
 export default function ProposalLogReport() {
   const supabase = createClient();
   const searchParams = useSearchParams();
-  const statusPreset = parseStatusPreset(searchParams.get("status"));
-  const scopePreset = (searchParams.get("scope") as OwnerScope | null) ?? "team";
-  const ownerIdPreset = searchParams.get("ownerId") ?? undefined;
-  const dateFromPreset = searchParams.get("dateFrom") ?? undefined;
-  const dateToPreset = searchParams.get("dateTo") ?? undefined;
+  const searchParamString = searchParams.toString();
+  const {
+    statusPreset,
+    scopePreset,
+    ownerIdPreset,
+    dateFromPreset,
+    dateToPreset,
+  } = useMemo(() => {
+    const params = new URLSearchParams(searchParamString);
+    return {
+      statusPreset: parseStatusPreset(params.get("status")),
+      scopePreset: (params.get("scope") as OwnerScope | null) ?? "team",
+      ownerIdPreset: params.get("ownerId") ?? undefined,
+      dateFromPreset: params.get("dateFrom") ?? undefined,
+      dateToPreset: params.get("dateTo") ?? undefined,
+    };
+  }, [searchParamString]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState("all");
@@ -201,10 +213,10 @@ export default function ProposalLogReport() {
   ]);
 
   useEffect(() => {
-    if (!searchParams.toString()) return;
+    if (!searchParamString) return;
     if (scopePreset === "mine" && !currentUserId) return;
     void runReport();
-  }, [currentUserId, runReport, scopePreset, searchParams]);
+  }, [currentUserId, runReport, scopePreset, searchParamString]);
 
   const exportXLSX = useCallback(async () => {
     if (rows.length === 0) return;
@@ -445,7 +457,7 @@ export default function ProposalLogReport() {
   const screenRows = [...rows].sort((a, b) =>
     a.customerName.localeCompare(b.customerName)
   );
-  const appliedPresetLabel = searchParams.toString()
+  const appliedPresetLabel = searchParamString
     ? [
         statusPreset?.length ? `Status: ${statusPreset.join(", ")}` : null,
         `Scope: ${scopePreset}`,

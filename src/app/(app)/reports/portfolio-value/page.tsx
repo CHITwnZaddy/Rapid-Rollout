@@ -76,7 +76,7 @@ export default function PortfolioValueReport() {
       const proposals = await fetchRevenueReportBaseRows(supabase, {
         ownerId:
           ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
-        excludeStatuses: includeLost ? undefined : ["Lost", "VOID"],
+        excludeStatuses: includeLost ? undefined : ["Closed Lost"],
       });
       if (proposals.length === 0) {
         setRows([]);
@@ -111,9 +111,8 @@ export default function PortfolioValueReport() {
             grandTotal: scenarioTotal + scopedTotal + migrationTotal,
           };
         })
-      // Group order follows PROPOSAL_STATUSES (Draft → Proposal Sent → … → VOID).
-      // Within each group, sort by Proposal Name A→Z. Unknown statuses sink to
-      // the bottom via a large sentinel index.
+      // Group order follows PROPOSAL_STATUSES. Within each group, sort by
+      // Proposal Name A→Z. Unknown statuses sink to the bottom.
         .sort((a, b) => {
           const ai = PROPOSAL_STATUSES.indexOf(
             a.status as (typeof PROPOSAL_STATUSES)[number]
@@ -189,7 +188,7 @@ export default function PortfolioValueReport() {
 
     sheet.mergeCells("A2:G2");
     const filters = sheet.getCell("A2");
-    filters.value = `Filtered by: ${ownerFilter === "mine" ? "My proposals" : "All owners"} · ${includeLost ? "Including Lost/VOID" : "Excluding Lost/VOID"}`;
+    filters.value = `Filtered by: ${ownerFilter === "mine" ? "My proposals" : "All owners"} · ${includeLost ? "Including Closed Lost" : "Excluding Closed Lost"}`;
     filters.font = { italic: true, size: 11 };
     filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     sheet.getRow(2).height = 20;
@@ -335,7 +334,7 @@ export default function PortfolioValueReport() {
                 onChange={(e) => setIncludeLost(e.target.checked)}
                 className="h-4 w-4"
               />
-              Include Lost / VOID
+              Include Closed Lost
             </label>
             <Button size="sm" onClick={runReport} disabled={loading}>
               {loading ? "Running..." : "Run Report"}

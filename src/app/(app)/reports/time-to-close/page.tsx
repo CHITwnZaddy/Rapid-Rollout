@@ -34,6 +34,7 @@ import {
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 import { withinRange } from "@/lib/ui/helpers";
 import {
+  PROPOSAL_STATUSES,
   PROPOSAL_STATUS_VARIANT,
   type ProposalStatus,
 } from "@/lib/constants/statuses";
@@ -57,7 +58,7 @@ type ReportRow = {
 // conditional fill. Centralised so the two can never disagree.
 const CLOSE_THRESHOLD_DAYS = 30;
 
-const STATUSES = ["All", "Won", "Lost", "Proposal Sent", "Customer Review"];
+const STATUSES = ["All", ...PROPOSAL_STATUSES];
 
 type OwnerFilter = "all" | "mine";
 
@@ -113,11 +114,11 @@ export default function TimeToCloseReport() {
     const reportRows: ReportRow[] = proposals
       .map((p) => {
         const m = metricsMap.get(p.id);
-        // The terminal date — prefer Won, then fall back to the last
-        // transition if the proposal is currently Lost.
+        // The terminal date prefers Closed Won, then falls back to the last
+        // transition when the proposal is currently Closed Lost.
         const dateClosed =
           m?.firstWonAt ??
-          (p.status === "Lost" ? (m?.lastChangedAt ?? null) : null);
+          (p.status === "Closed Lost" ? (m?.lastChangedAt ?? null) : null);
 
         const threshold: ReportRow["threshold"] =
           m?.daysToClose == null

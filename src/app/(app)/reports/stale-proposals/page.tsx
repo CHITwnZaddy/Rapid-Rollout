@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -59,16 +59,22 @@ type ReportRow = {
 const STALE_THRESHOLD_DAYS = 21;
 
 // In-flight statuses only — closed deals are intentionally excluded from
-// "stale" because a Won or Lost proposal sitting for 30 days is by design.
+// "stale" because a closed proposal sitting for 30 days is by design.
 const IN_FLIGHT_STATUSES = [...STALE_TRACKED_STATUSES];
 const STATUS_OPTIONS = ["All", ...IN_FLIGHT_STATUSES];
 
 export default function StaleProposalsReport() {
   const supabase = createClient();
   const searchParams = useSearchParams();
-  const scopePreset = (searchParams.get("scope") as OwnerFilter | null) ?? "team";
-  const bucketPreset = (searchParams.get("bucket") as StaleBucket | null) ?? "all";
-  const statusPreset = searchParams.get("status") ?? "All";
+  const searchParamString = searchParams.toString();
+  const { scopePreset, bucketPreset, statusPreset } = useMemo(() => {
+    const params = new URLSearchParams(searchParamString);
+    return {
+      scopePreset: (params.get("scope") as OwnerFilter | null) ?? "team",
+      bucketPreset: (params.get("bucket") as StaleBucket | null) ?? "all",
+      statusPreset: params.get("status") ?? "All",
+    };
+  }, [searchParamString]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState("all");
@@ -137,9 +143,8 @@ export default function StaleProposalsReport() {
         return true;
       })
       // Group by status in the canonical PROPOSAL_STATUSES order, then sort
-      // by Proposal Name A→Z within each group. Only Draft / Proposal Sent /
-      // Customer Review ever populate (Won/Lost/VOID are excluded upstream),
-      // so the other groups will simply render empty.
+      // by Proposal Name A→Z within each group. Only stale-tracked statuses
+      // populate, so the other groups will simply render empty.
       .sort((a, b) => {
         const ai = PROPOSAL_STATUSES.indexOf(
           a.status as (typeof PROPOSAL_STATUSES)[number]
@@ -166,10 +171,10 @@ export default function StaleProposalsReport() {
   ]);
 
   useEffect(() => {
-    if (!searchParams.toString()) return;
+    if (!searchParamString) return;
     if (ownerFilter === "mine" && !currentUserId) return;
     void runReport();
-  }, [currentUserId, ownerFilter, runReport, searchParams]);
+  }, [currentUserId, ownerFilter, runReport, searchParamString]);
 
   const exportXLSX = useCallback(async () => {
     if (rows.length === 0) return;
@@ -304,7 +309,7 @@ export default function StaleProposalsReport() {
     map.get(r.status)!.push(r);
     return map;
   }, new Map());
-  const appliedPresetLabel = searchParams.toString()
+  const appliedPresetLabel = searchParamString
     ? `Scope: ${scopePreset} | Bucket: ${bucketPreset} | Status: ${statusPreset}`
     : null;
 
