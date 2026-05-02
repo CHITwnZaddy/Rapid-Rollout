@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { User } from "@supabase/supabase-js";
+import { isAdminRole, isManagerOrAdminRole } from "./roles";
 
 // ─────────────────────────────────────────────────────────────
 // Server-side authorization helpers for server actions
@@ -49,8 +50,21 @@ export async function assertAuthenticated(): Promise<User> {
  */
 export async function assertAdmin(): Promise<User> {
   const user = await assertAuthenticated();
-  if (user.app_metadata?.role !== "admin") {
+  if (!isAdminRole(user.app_metadata?.role)) {
     throw new AuthError("FORBIDDEN", "Admin access required.");
+  }
+  return user;
+}
+
+/**
+ * Assert the caller is a manager or admin. Throws AuthError otherwise.
+ * Use for SE operations settings such as KPI targets, stale thresholds,
+ * variance reasons, and manager-visible audit surfaces.
+ */
+export async function assertManagerOrAdmin(): Promise<User> {
+  const user = await assertAuthenticated();
+  if (!isManagerOrAdminRole(user.app_metadata?.role)) {
+    throw new AuthError("FORBIDDEN", "Manager or admin access required.");
   }
   return user;
 }

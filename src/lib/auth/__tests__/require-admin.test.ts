@@ -13,7 +13,12 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 // Must import *after* the mock is registered.
-import { assertAdmin, assertAuthenticated, AuthError } from "../require-admin";
+import {
+  assertAdmin,
+  assertAuthenticated,
+  assertManagerOrAdmin,
+  AuthError,
+} from "../require-admin";
 
 function userWith(role: string | undefined): User {
   return {
@@ -86,6 +91,54 @@ describe("require-admin", () => {
     it("throws AuthError(UNAUTHENTICATED) when there is no session (does not leak FORBIDDEN)", async () => {
       getUserMock.mockResolvedValue({ data: { user: null }, error: null });
       await expect(assertAdmin()).rejects.toMatchObject({
+        code: "UNAUTHENTICATED",
+      });
+    });
+  });
+
+  describe("assertManagerOrAdmin", () => {
+    it("returns the user when role is manager", async () => {
+      getUserMock.mockResolvedValue({
+        data: { user: userWith("manager") },
+        error: null,
+      });
+      const user = await assertManagerOrAdmin();
+      expect(user.app_metadata?.role).toBe("manager");
+    });
+
+    it("returns the user when role is admin", async () => {
+      getUserMock.mockResolvedValue({
+        data: { user: userWith("admin") },
+        error: null,
+      });
+      const user = await assertManagerOrAdmin();
+      expect(user.app_metadata?.role).toBe("admin");
+    });
+
+    it("throws AuthError(FORBIDDEN) when role is user", async () => {
+      getUserMock.mockResolvedValue({
+        data: { user: userWith("user") },
+        error: null,
+      });
+      await expect(assertManagerOrAdmin()).rejects.toMatchObject({
+        name: "AuthError",
+        code: "FORBIDDEN",
+      });
+    });
+
+    it("throws AuthError(FORBIDDEN) when role is missing entirely", async () => {
+      getUserMock.mockResolvedValue({
+        data: { user: userWith(undefined) },
+        error: null,
+      });
+      await expect(assertManagerOrAdmin()).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+    });
+
+    it("throws AuthError(UNAUTHENTICATED) when there is no session", async () => {
+      getUserMock.mockResolvedValue({ data: { user: null }, error: null });
+      await expect(assertManagerOrAdmin()).rejects.toMatchObject({
         code: "UNAUTHENTICATED",
       });
     });
