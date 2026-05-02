@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/hooks/use-auth";
-import { useRequireAdmin } from "@/lib/hooks/use-require-admin";
+import { useRequireManagerOrAdmin } from "@/lib/hooks/use-require-admin";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
@@ -15,22 +15,37 @@ const navItems = [
   { label: "Customers", href: "/customers", icon: "users" },
 ];
 
-const adminItems = [
+const managerSettingsItems = [
+  { label: "Change Log", href: "/admin/change-log" },
+  { label: "KPI Targets", href: "/admin/kpi-targets" },
+  { label: "Stale Thresholds", href: "/admin/stale-thresholds" },
+  { label: "Variance Reasons", href: "/admin/variance-reasons" },
+];
+
+const adminSettingsItems = [
+  { label: "Customers", href: "/admin/customers" },
   { label: "Rate Cards", href: "/admin/rate-cards" },
   { label: "Service Hours", href: "/admin/service-hours" },
-  { label: "Customers", href: "/admin/customers" },
   { label: "Users", href: "/admin/users" },
   { label: "Change Log", href: "/admin/change-log" },
+  { label: "KPI Targets", href: "/admin/kpi-targets" },
+  { label: "Stale Thresholds", href: "/admin/stale-thresholds" },
+  { label: "Variance Reasons", href: "/admin/variance-reasons" },
   { label: "Theme", href: "/admin/theme" },
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
-  // useAuth() is used only for user/signOut here — NEVER read `isAdmin`
-  // directly to gate UI; use the discriminated `useRequireAdmin()` status
-  // so the loading branch doesn't flash the non-admin layout at real admins.
+  // useAuth() is used only for user/signOut here. Role-gated UI goes through
+  // the discriminated hook so loading does not flash the wrong section.
   const { user, signOut } = useAuth();
-  const adminStatus = useRequireAdmin();
+  const settingsStatus = useRequireManagerOrAdmin();
+  const settingsItems =
+    settingsStatus.status === "admin"
+      ? adminSettingsItems
+      : settingsStatus.status === "manager"
+        ? managerSettingsItems
+        : [];
 
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
@@ -58,20 +73,20 @@ export function AppSidebar() {
           ))}
         </div>
 
-        {adminStatus.status === "loading" ? (
+        {settingsStatus.status === "loading" ? (
           <div className="mt-4 space-y-2 px-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-8 rounded-md bg-sidebar-accent/30 animate-pulse" />
             ))}
           </div>
-        ) : adminStatus.status === "admin" && (
+        ) : settingsItems.length > 0 && (
           <>
             <Separator className="my-4" />
             <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/50">
-              Admin
+              Settings
             </p>
             <div className="space-y-1">
-              {adminItems.map((item) => (
+              {settingsItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}

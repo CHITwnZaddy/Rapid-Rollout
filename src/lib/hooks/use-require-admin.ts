@@ -60,3 +60,15 @@ export function useRequireAdmin(): RequireAdminStatus {
   if (loading) return { status: "loading" };
   return isAdmin ? { status: "admin" } : { status: "denied" };
 }
+
+export type RequireManagerOrAdminStatus =
+  | { status: "loading" }
+  | { status: "manager" | "admin" }
+  | { status: "denied" };
+
+export function useRequireManagerOrAdmin(): RequireManagerOrAdminStatus {
+  const { loading, role, isManagerOrAdmin } = useAuth();
+  if (loading) return { status: "loading" };
+  if (!isManagerOrAdmin) return { status: "denied" };
+  return { status: role === "admin" ? "admin" : "manager" };
+}
