@@ -107,13 +107,13 @@ describe("fetchStatusHistoryMap", () => {
         {
           proposal_id: "p1",
           old_status: null,
-          new_status: "Draft",
+          new_status: "Discovery",
           changed_at: "2026-04-01T00:00:00Z",
         },
         {
           proposal_id: "p1",
-          old_status: "Draft",
-          new_status: "Proposal Sent",
+          old_status: "Discovery",
+          new_status: "Sent for Review",
           changed_at: "2026-04-05T00:00:00Z",
         },
       ],
@@ -121,7 +121,7 @@ describe("fetchStatusHistoryMap", () => {
     });
     const map = await fetchStatusHistoryMap(client, ["p1"], now);
     const metrics = map.get("p1");
-    expect(metrics?.currentStatus).toBe("Proposal Sent");
+    expect(metrics?.currentStatus).toBe("Sent for Review");
     expect(metrics?.firstSentAt).toBe("2026-04-05T00:00:00Z");
     expect(metrics?.daysInCurrentStatus).toBe(15);
   });

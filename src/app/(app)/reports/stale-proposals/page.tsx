@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,10 +33,12 @@ import {
 } from "@/lib/reports/data";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
+import { STALE_TRACKED_STATUSES } from "@/lib/proposals/status";
 import type ExcelJS from "exceljs";
 
 type Customer = { id: string; company_name: string };
-type OwnerFilter = "all" | "mine";
+type OwnerFilter = "team" | "mine";
+type StaleBucket = "all" | "stale" | "fresh";
 
 type ReportRow = {
   proposalId: string;
@@ -52,16 +55,23 @@ const STALE_THRESHOLD_DAYS = 21;
 
 // In-flight statuses only — closed deals are intentionally excluded from
 // "stale" because a Won or Lost proposal sitting for 30 days is by design.
-const IN_FLIGHT_STATUSES = ["Draft", "Proposal Sent", "Customer Review"];
+const IN_FLIGHT_STATUSES = [...STALE_TRACKED_STATUSES];
 const STATUS_OPTIONS = ["All", ...IN_FLIGHT_STATUSES];
 
 export default function StaleProposalsReport() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const scopePreset = (searchParams.get("scope") as OwnerFilter | null) ?? "team";
+  const bucketPreset = (searchParams.get("bucket") as StaleBucket | null) ?? "all";
+  const statusPreset = searchParams.get("status") ?? "All";
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("All");
-  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
+  const [selectedStatus, setSelectedStatus] = useState(
+    STATUS_OPTIONS.includes(statusPreset) ? statusPreset : "All"
+  );
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>(scopePreset);
+  const [staleBucket, setStaleBucket] = useState<StaleBucket>(bucketPreset);
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
@@ -86,8 +96,8 @@ export default function StaleProposalsReport() {
     const proposals = await fetchReportProposals(supabase, {
       customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
       statuses: selectedStatus === "All" ? IN_FLIGHT_STATUSES : [selectedStatus],
-      ownerId:
-        ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
+      ownerScope: ownerFilter,
+      currentUserId: currentUserId ?? undefined,
       includeCreatedBy: true,
     });
     if (proposals.length === 0) {
@@ -116,6 +126,11 @@ export default function StaleProposalsReport() {
           threshold,
         };
       })
+      .filter((row) => {
+        if (staleBucket === "stale") return row.threshold === "red";
+        if (staleBucket === "fresh") return row.threshold === "green";
+        return true;
+      })
       // Group by status in the canonical PROPOSAL_STATUSES order, then sort
       // by Proposal Name A→Z within each group. Only Draft / Proposal Sent /
       // Customer Review ever populate (Won/Lost/VOID are excluded upstream),
@@ -140,9 +155,16 @@ export default function StaleProposalsReport() {
     selectedCustomer,
     selectedStatus,
     ownerFilter,
+    staleBucket,
     currentUserId,
     customers,
   ]);
+
+  useEffect(() => {
+    if (!searchParams.toString()) return;
+    if (ownerFilter === "mine" && !currentUserId) return;
+    void runReport();
+  }, [currentUserId, ownerFilter, runReport, searchParams]);
 
   const exportXLSX = useCallback(async () => {
     if (rows.length === 0) return;
@@ -185,7 +207,7 @@ export default function StaleProposalsReport() {
         ? "All Customers"
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
-    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "All owners"}  |  Red when Days in Status >= ${STALE_THRESHOLD_DAYS}`;
+    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "Team proposals"} · ${staleBucket}  |  Red when Days in Status >= ${STALE_THRESHOLD_DAYS}`;
     filters.font = { italic: true, size: 11 };
     filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     sheet.getRow(2).height = 20;
@@ -267,7 +289,7 @@ export default function StaleProposalsReport() {
     a.download = `stale-proposals-${new Date().toISOString().slice(0, 10)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [rows, selectedCustomer, selectedStatus, ownerFilter, customers]);
+  }, [rows, selectedCustomer, selectedStatus, ownerFilter, staleBucket, customers]);
 
   // Rows come in PROPOSAL_STATUSES order already. Reduce into a Map so we
   // can render group-header rows — Map preserves insertion order, so the
@@ -277,10 +299,18 @@ export default function StaleProposalsReport() {
     map.get(r.status)!.push(r);
     return map;
   }, new Map());
+  const appliedPresetLabel = searchParams.toString()
+    ? `Scope: ${scopePreset} | Bucket: ${bucketPreset} | Status: ${statusPreset}`
+    : null;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Stale Proposals Report</h1>
+      {appliedPresetLabel && (
+        <p className="text-sm text-muted-foreground">
+          Applied preset: {appliedPresetLabel}
+        </p>
+      )}
 
       <Card>
         <CardHeader>
@@ -340,12 +370,30 @@ export default function StaleProposalsReport() {
               >
                 <SelectTrigger className="h-8 w-[160px]">
                   <SelectValue>
-                    {ownerFilter === "mine" ? "My Proposals" : "All Owners"}
+                    {ownerFilter === "mine" ? "My Proposals" : "Team Proposals"}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Owners</SelectItem>
+                  <SelectItem value="team">Team Proposals</SelectItem>
                   <SelectItem value="mine">My Proposals</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Bucket</Label>
+              <Select
+                value={staleBucket}
+                onValueChange={(v) =>
+                  setStaleBucket((v ?? "all") as StaleBucket)
+                }
+              >
+                <SelectTrigger className="h-8 w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="stale">Stale</SelectItem>
+                  <SelectItem value="fresh">Fresh</SelectItem>
                 </SelectContent>
               </Select>
             </div>

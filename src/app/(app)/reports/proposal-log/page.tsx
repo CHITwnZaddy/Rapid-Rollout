@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +37,8 @@ import {
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
 import { toast } from "sonner";
+import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
+import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/status";
 
 interface Customer {
   id: string;
@@ -64,24 +67,39 @@ interface ReportRow {
 
 const STATUSES = [
   "All",
-  "Draft",
-  "Proposal Sent",
-  "Customer Review",
-  "Won",
-  "Lost",
-  "VOID",
+  ...PROPOSAL_STATUSES,
 ];
+
+type OwnerScope = "team" | "mine" | "specific";
+
+function parseStatusPreset(value: string | null): string[] | undefined {
+  if (!value || value === "All") return undefined;
+  if (value === "open") return [...OPEN_PROPOSAL_STATUSES];
+  return value.split(",").map((status) => status.trim()).filter(Boolean);
+}
 
 export default function ProposalLogReport() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const statusPreset = parseStatusPreset(searchParams.get("status"));
+  const scopePreset = (searchParams.get("scope") as OwnerScope | null) ?? "team";
+  const ownerIdPreset = searchParams.get("ownerId") ?? undefined;
+  const dateFromPreset = searchParams.get("dateFrom") ?? undefined;
+  const dateToPreset = searchParams.get("dateTo") ?? undefined;
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("All");
+  const [selectedStatus, setSelectedStatus] = useState(
+    statusPreset?.length === 1 ? statusPreset[0] : "All"
+  );
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id ?? null);
+    });
     supabase
       .from("customers")
       .select("id, company_name")
@@ -97,7 +115,15 @@ export default function ProposalLogReport() {
     try {
       const proposals = await fetchRevenueReportBaseRows(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
-        status: selectedStatus !== "All" ? selectedStatus : undefined,
+        status:
+          selectedStatus !== "All" && !statusPreset ? selectedStatus : undefined,
+        statuses: statusPreset,
+        ownerScope: scopePreset,
+        currentUserId: currentUserId ?? undefined,
+        selectedOwnerId: ownerIdPreset,
+        dateColumn: "created_at",
+        dateFrom: dateFromPreset,
+        dateTo: dateToPreset,
         orderBy: "created_at",
         ascending: false,
       });
@@ -158,7 +184,23 @@ export default function ProposalLogReport() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, selectedCustomer, selectedStatus]);
+  }, [
+    supabase,
+    selectedCustomer,
+    selectedStatus,
+    statusPreset,
+    scopePreset,
+    currentUserId,
+    ownerIdPreset,
+    dateFromPreset,
+    dateToPreset,
+  ]);
+
+  useEffect(() => {
+    if (!searchParams.toString()) return;
+    if (scopePreset === "mine" && !currentUserId) return;
+    void runReport();
+  }, [currentUserId, runReport, scopePreset, searchParams]);
 
   const exportXLSX = useCallback(async () => {
     if (rows.length === 0) return;
@@ -179,7 +221,9 @@ export default function ProposalLogReport() {
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
     const statusLabel =
-      selectedStatus === "All" ? "All Statuses" : selectedStatus;
+      statusPreset && statusPreset.length > 1
+        ? statusPreset.join(", ")
+        : selectedStatus === "All" ? "All Statuses" : selectedStatus;
 
     // ── Workbook / sheet ─────────────────────────────────────────────────────
     const workbook = new ExcelJS.Workbook();
@@ -390,17 +434,33 @@ export default function ProposalLogReport() {
     anchor.download = `proposal-log-${new Date().toISOString().slice(0, 10)}.xlsx`;
     anchor.click();
     URL.revokeObjectURL(url);
-  }, [rows, selectedCustomer, selectedStatus, customers]);
+  }, [rows, selectedCustomer, selectedStatus, statusPreset, customers]);
 
   // Screen sort: Customer A→Z. XLSX intentionally keeps its own Status→Customer
   // sort (see exportXLSX) — managers want status-grouped output in the file.
   const screenRows = [...rows].sort((a, b) =>
     a.customerName.localeCompare(b.customerName)
   );
+  const appliedPresetLabel = searchParams.toString()
+    ? [
+        statusPreset?.length ? `Status: ${statusPreset.join(", ")}` : null,
+        `Scope: ${scopePreset}`,
+        dateFromPreset || dateToPreset
+          ? `Date: ${dateFromPreset ?? "start"} to ${dateToPreset ?? "end"}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" | ")
+    : null;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Proposal Log Report</h1>
+      {appliedPresetLabel && (
+        <p className="text-sm text-muted-foreground">
+          Applied preset: {appliedPresetLabel}
+        </p>
+      )}
 
       {/* Filters */}
       <Card>
@@ -508,9 +568,9 @@ export default function ProposalLogReport() {
                         <TableCell>
                           <Badge
                             variant={
-                              r.status === "Won"
+                              r.status === "Closed Won"
                                 ? "default"
-                                : r.status === "Lost" || r.status === "VOID"
+                                : r.status === "Closed Lost"
                                   ? "destructive"
                                   : "secondary"
                             }
