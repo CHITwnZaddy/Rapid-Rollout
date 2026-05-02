@@ -3,18 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { assertManagerOrAdmin, AuthError } from "@/lib/auth/require-admin";
+import { STALE_THRESHOLD_STATUSES } from "@/lib/settings/sales-ops-constants";
 import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
-
-export const STALE_THRESHOLD_STATUSES = [
-  "Discovery",
-  "Scoping",
-  "Proposal Draft",
-  "Sent for Review",
-  "Negotiations",
-  "Awaiting Sig",
-] as const;
 
 const activeSchema = z.enum(["true", "false"]).transform((value) => value === "true");
 
@@ -70,4 +62,10 @@ export async function updateStaleThreshold(
   } catch (error) {
     return actionError(error);
   }
+}
+
+export async function submitUpdateStaleThreshold(
+  formData: FormData
+): Promise<void> {
+  await updateStaleThreshold(formData);
 }

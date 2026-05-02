@@ -80,6 +80,10 @@ export async function updateKpiYearTarget(
   }
 }
 
+export async function submitUpdateKpiYearTarget(formData: FormData): Promise<void> {
+  await updateKpiYearTarget(formData);
+}
+
 export async function upsertKpiUserTarget(
   formData: FormData
 ): Promise<ActionResult> {
@@ -112,4 +116,8 @@ export async function upsertKpiUserTarget(
   } catch (error) {
     return actionError(error);
   }
+}
+
+export async function submitUpsertKpiUserTarget(formData: FormData): Promise<void> {
+  await upsertKpiUserTarget(formData);
 }

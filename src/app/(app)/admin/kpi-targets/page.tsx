@@ -22,7 +22,10 @@ import {
   listKpiYearTargets,
   listSettingsUsers,
 } from "@/lib/settings/sales-ops";
-import { updateKpiYearTarget, upsertKpiUserTarget } from "./actions";
+import {
+  submitUpdateKpiYearTarget,
+  submitUpsertKpiUserTarget,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +73,7 @@ export default async function KpiTargetsPage() {
                   <TableCell>
                     <form
                       id={`year-target-${target.id}`}
-                      action={updateKpiYearTarget}
+                      action={submitUpdateKpiYearTarget}
                       className="flex items-center gap-2"
                     >
                       <input type="hidden" name="id" value={target.id} />
@@ -120,7 +123,7 @@ export default async function KpiTargetsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <form
-            action={upsertKpiUserTarget}
+            action={submitUpsertKpiUserTarget}
             className="grid gap-4 rounded-md border p-4 md:grid-cols-[1fr_120px_160px_120px_auto]"
           >
             <div className="space-y-2">
@@ -214,7 +217,7 @@ export default async function KpiTargetsPage() {
                       <TableCell>{user?.email ?? target.user_id}</TableCell>
                       <TableCell>{year?.label ?? target.year}</TableCell>
                       <TableCell>
-                        <form action={upsertKpiUserTarget} id={formId}>
+                        <form action={submitUpsertKpiUserTarget} id={formId}>
                           <input type="hidden" name="id" value={target.id} />
                           <input type="hidden" name="year" value={target.year} />
                           <input type="hidden" name="userId" value={target.user_id} />

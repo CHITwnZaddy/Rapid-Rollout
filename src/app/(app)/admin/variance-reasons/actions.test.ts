@@ -27,9 +27,9 @@ vi.mock("next/cache", () => ({
 }));
 
 import {
-  SEEDED_VARIANCE_REASON_CODES,
   updateVarianceReason,
 } from "./actions";
+import { SEEDED_VARIANCE_REASON_CODES } from "@/lib/settings/sales-ops-constants";
 
 const reasonId = "11111111-1111-4111-8111-111111111111";
 

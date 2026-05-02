@@ -7,13 +7,6 @@ import { createClient } from "@/lib/supabase/server";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
-export const SEEDED_VARIANCE_REASON_CODES = [
-  "ae_discount",
-  "scope_removed",
-  "pricing_correction",
-  "client_negotiation",
-] as const;
-
 const activeSchema = z.enum(["true", "false"]).transform((value) => value === "true");
 
 const reasonSchema = z.object({
@@ -71,4 +64,10 @@ export async function updateVarianceReason(
   } catch (error) {
     return actionError(error);
   }
+}
+
+export async function submitUpdateVarianceReason(
+  formData: FormData
+): Promise<void> {
+  await updateVarianceReason(formData);
 }

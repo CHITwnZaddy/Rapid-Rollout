@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { listVarianceReasons } from "@/lib/settings/sales-ops";
-import { updateVarianceReason } from "./actions";
+import { submitUpdateVarianceReason } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +59,7 @@ export default async function VarianceReasonsPage() {
                   <TableCell>
                     <form
                       id={`variance-reason-${reason.id}`}
-                      action={updateVarianceReason}
+                      action={submitUpdateVarianceReason}
                     >
                       <input type="hidden" name="id" value={reason.id} />
                       <input type="hidden" name="code" value={reason.code} />

@@ -16,7 +16,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { listStaleThresholds } from "@/lib/settings/sales-ops";
-import { STALE_THRESHOLD_STATUSES, updateStaleThreshold } from "./actions";
+import { STALE_THRESHOLD_STATUSES } from "@/lib/settings/sales-ops-constants";
+import { submitUpdateStaleThreshold } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,7 @@ export default async function StaleThresholdsPage() {
                   <TableCell>
                     <form
                       id={`stale-threshold-${threshold.id}`}
-                      action={updateStaleThreshold}
+                      action={submitUpdateStaleThreshold}
                     >
                       <input type="hidden" name="id" value={threshold.id} />
                       <input type="hidden" name="status" value={threshold.status} />
