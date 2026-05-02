@@ -47,6 +47,32 @@ export default async function ScenarioPage({
   const internalCostRate =
     rateCards?.find((rate) => rate.lookup_key === INTERNAL_COST_RATE_KEY)?.rate ??
     0;
+  const normalizedLines = (lines ?? []).map((line) => ({
+    ...line,
+    row_order: line.row_order ?? 0,
+    sr_im_hours: line.sr_im_hours ?? 0,
+    sr_im_cost: line.sr_im_cost ?? 0,
+    pm_hours: line.pm_hours ?? 0,
+    pm_cost: line.pm_cost ?? 0,
+    ba_hours: line.ba_hours ?? 0,
+    ba_cost: line.ba_cost ?? 0,
+    total_hours: line.total_hours ?? 0,
+    total_cost: line.total_cost ?? 0,
+    is_locked: line.is_locked ?? false,
+  }));
+  const normalizedServiceHours = (serviceHours ?? []).map((row) => ({
+    ...row,
+    sr_im_hours: row.sr_im_hours ?? 0,
+    pm_hours: row.pm_hours ?? 0,
+    ba_hours: row.ba_hours ?? 0,
+    scope_label: row.scope_label ?? row.scope_value,
+    service_group: row.service_group ?? "Core",
+  }));
+  const normalizedRateCards = (rateCards ?? []).map((row) => ({
+    ...row,
+    rate: row.rate ?? 0,
+    role_category: row.role_category ?? "",
+  }));
 
   return (
     <div className="space-y-4">
@@ -64,9 +90,9 @@ export default async function ScenarioPage({
         proposalId={id}
         scenarioId={scenario.id}
         scenarioType={type}
-        initialLines={lines ?? []}
-        serviceHours={serviceHours ?? []}
-        rateCards={rateCards ?? []}
+        initialLines={normalizedLines}
+        serviceHours={normalizedServiceHours}
+        rateCards={normalizedRateCards}
         complexityFactor={Number(scenario.complexity_factor ?? 1)}
         internalCostRate={Number(internalCostRate)}
       />

@@ -231,8 +231,8 @@ export default function ScopedServicesPage() {
   );
 
   const isMutating = isAdding || !!savingLineId || !!deletingLineId;
-  const rawTotalCost = lines.reduce((sum, line) => sum + line.cost, 0);
-  const rawTotalHours = lines.reduce((sum, line) => sum + line.hours, 0);
+  const rawTotalCost = lines.reduce((sum, line) => sum + (line.cost ?? 0), 0);
+  const rawTotalHours = lines.reduce((sum, line) => sum + (line.hours ?? 0), 0);
   const totalCost = applyComplexity(rawTotalCost, complexityFactor);
   const totalHours = applyComplexity(rawTotalHours, complexityFactor);
   const internalCostRate = rateCardMap.get(INTERNAL_COST_RATE_KEY) ?? 0;
@@ -243,7 +243,7 @@ export default function ScopedServicesPage() {
         label: "Sr. IM",
         baseHours: lines
           .filter((line) => line.rate_card_lookup_key === SCOPED_KEY_SR_IM)
-          .reduce((sum, line) => sum + line.hours, 0),
+          .reduce((sum, line) => sum + (line.hours ?? 0), 0),
         rate: rateCardMap.get(SCOPED_KEY_SR_IM) ?? 0,
       },
       {
@@ -251,7 +251,7 @@ export default function ScopedServicesPage() {
         label: "PM",
         baseHours: lines
           .filter((line) => line.rate_card_lookup_key === SCOPED_KEY_PM)
-          .reduce((sum, line) => sum + line.hours, 0),
+          .reduce((sum, line) => sum + (line.hours ?? 0), 0),
         rate: rateCardMap.get(SCOPED_KEY_PM) ?? 0,
       },
       {
@@ -259,7 +259,7 @@ export default function ScopedServicesPage() {
         label: "BA",
         baseHours: lines
           .filter((line) => line.rate_card_lookup_key === SCOPED_KEY_BA)
-          .reduce((sum, line) => sum + line.hours, 0),
+          .reduce((sum, line) => sum + (line.hours ?? 0), 0),
         rate: rateCardMap.get(SCOPED_KEY_BA) ?? 0,
       },
     ],
@@ -400,10 +400,10 @@ export default function ScopedServicesPage() {
                   </Select>
                 </TableCell>
                 <TableCell className="text-right tabular-nums text-sm">
-                  {formatHours(applyComplexity(line.hours, complexityFactor))}
+                  {formatHours(applyComplexity(line.hours ?? 0, complexityFactor))}
                 </TableCell>
                 <TableCell className="text-right tabular-nums font-medium">
-                  {formatCurrency(applyComplexity(line.cost, complexityFactor))}
+                  {formatCurrency(applyComplexity(line.cost ?? 0, complexityFactor))}
                 </TableCell>
                 <TableCell>
                   <Button

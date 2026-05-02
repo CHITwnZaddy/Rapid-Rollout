@@ -55,6 +55,12 @@ export type ReportProposalFilters = {
   status?: string;
   statuses?: string[];
   ownerId?: string;
+  ownerScope?: "mine" | "team" | "specific";
+  currentUserId?: string;
+  selectedOwnerId?: string;
+  dateColumn?: "created_at" | "updated_at";
+  dateFrom?: string;
+  dateTo?: string;
   excludeStatuses?: string[];
   orderBy?: "created_at" | "updated_at" | "name";
   ascending?: boolean;
@@ -100,6 +106,12 @@ export type RevenueReportBaseFilters = {
   status?: string;
   statuses?: string[];
   ownerId?: string;
+  ownerScope?: "mine" | "team" | "specific";
+  currentUserId?: string;
+  selectedOwnerId?: string;
+  dateColumn?: "created_at" | "updated_at";
+  dateFrom?: string;
+  dateTo?: string;
   excludeStatuses?: string[];
   orderBy?: "created_at" | "updated_at" | "proposal_name";
   ascending?: boolean;
@@ -165,6 +177,32 @@ function emptyHoursAggregateInputs(): HoursAggregateInputs {
   };
 }
 
+function resolveOwnerId(
+  filters: Pick<
+    ReportProposalFilters,
+    "ownerId" | "ownerScope" | "currentUserId" | "selectedOwnerId"
+  >
+): string | null {
+  if (filters.ownerId) return filters.ownerId;
+  if (filters.ownerScope === "mine") return filters.currentUserId ?? null;
+  if (filters.ownerScope === "specific") return filters.selectedOwnerId ?? null;
+  return null;
+}
+
+function applyDateRange<TQuery extends { gte: (column: string, value: string) => TQuery; lte: (column: string, value: string) => TQuery }>(
+  query: TQuery,
+  filters: Pick<ReportProposalFilters, "dateColumn" | "dateFrom" | "dateTo">
+): TQuery {
+  const dateColumn = filters.dateColumn ?? "created_at";
+  if (filters.dateFrom) {
+    query = query.gte(dateColumn, filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    query = query.lte(dateColumn, filters.dateTo);
+  }
+  return query;
+}
+
 export async function fetchReportProposals(
   client: SupabaseClient,
   filters: ReportProposalFilters
@@ -181,9 +219,11 @@ export async function fetchReportProposals(
   } else if (filters.statuses && filters.statuses.length > 0) {
     query = query.in("status", filters.statuses);
   }
-  if (filters.ownerId) {
-    query = query.eq("created_by", filters.ownerId);
+  const ownerId = resolveOwnerId(filters);
+  if (ownerId) {
+    query = query.eq("created_by", ownerId);
   }
+  query = applyDateRange(query, filters);
   if (filters.excludeStatuses && filters.excludeStatuses.length > 0) {
     query = query.not("status", "in", `(${filters.excludeStatuses.join(",")})`);
   }
@@ -216,9 +256,11 @@ export async function fetchRevenueReportBaseRows(
   } else if (filters.statuses && filters.statuses.length > 0) {
     query = query.in("status", filters.statuses);
   }
-  if (filters.ownerId) {
-    query = query.eq("created_by", filters.ownerId);
+  const ownerId = resolveOwnerId(filters);
+  if (ownerId) {
+    query = query.eq("created_by", ownerId);
   }
+  query = applyDateRange(query, filters);
   if (filters.excludeStatuses && filters.excludeStatuses.length > 0) {
     query = query.not("status", "in", `(${filters.excludeStatuses.join(",")})`);
   }

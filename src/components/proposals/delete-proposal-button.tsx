@@ -50,11 +50,14 @@ import { buildDeleteConfirmationPhrase } from "@/lib/proposals/delete-confirmati
 
 // Statuses that are considered "in flight" and require the extra friction step.
 const IN_FLIGHT_STATUSES = new Set([
-  "Proposal Sent",
-  "Customer Review",
-  "Won",
-  "Lost",
-  "VOID",
+  "Scoping",
+  "Proposal Draft",
+  "Sent for Review",
+  "Negotiations",
+  "Awaiting Sig",
+  "Closed Won",
+  "Closed Lost",
+  "On Hold",
 ]);
 
 type Step = "idle" | "confirm" | "warn" | "justify";

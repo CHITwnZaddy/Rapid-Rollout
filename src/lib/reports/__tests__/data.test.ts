@@ -30,7 +30,9 @@ type QueryMock = {
   select: ReturnType<typeof vi.fn>;
   order: ReturnType<typeof vi.fn>;
   eq: ReturnType<typeof vi.fn>;
+  gte: ReturnType<typeof vi.fn>;
   in: ReturnType<typeof vi.fn>;
+  lte: ReturnType<typeof vi.fn>;
   not: ReturnType<typeof vi.fn>;
   result: { data: unknown; error: unknown };
 };
@@ -41,7 +43,9 @@ function createQueryMock(response: { data: unknown; error: unknown }): QueryMock
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
+    lte: vi.fn().mockReturnThis(),
     not: vi.fn().mockReturnThis(),
     then: vi.fn((resolve) => Promise.resolve(response).then(resolve)),
   };
@@ -103,13 +107,13 @@ describe("fetchStatusHistoryMap", () => {
         {
           proposal_id: "p1",
           old_status: null,
-          new_status: "Draft",
+          new_status: "Discovery",
           changed_at: "2026-04-01T00:00:00Z",
         },
         {
           proposal_id: "p1",
-          old_status: "Draft",
-          new_status: "Proposal Sent",
+          old_status: "Discovery",
+          new_status: "Sent for Review",
           changed_at: "2026-04-05T00:00:00Z",
         },
       ],
@@ -117,7 +121,7 @@ describe("fetchStatusHistoryMap", () => {
     });
     const map = await fetchStatusHistoryMap(client, ["p1"], now);
     const metrics = map.get("p1");
-    expect(metrics?.currentStatus).toBe("Proposal Sent");
+    expect(metrics?.currentStatus).toBe("Sent for Review");
     expect(metrics?.firstSentAt).toBe("2026-04-05T00:00:00Z");
     expect(metrics?.daysInCurrentStatus).toBe(15);
   });
@@ -187,6 +191,75 @@ describe("fetchReportProposals", () => {
       "Proposal Sent",
     ]);
   });
+
+  it("applies mine scope with current user id", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      ownerScope: "mine",
+      currentUserId: "user-1",
+    });
+
+    expect(queries.get("proposals")?.eq).toHaveBeenCalledWith(
+      "created_by",
+      "user-1"
+    );
+  });
+
+  it("applies team scope without owner filtering", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      ownerScope: "team",
+      currentUserId: "user-1",
+    });
+
+    expect(queries.get("proposals")?.eq).not.toHaveBeenCalledWith(
+      "created_by",
+      expect.any(String)
+    );
+  });
+
+  it("applies specific SE scope with selected owner id", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      ownerScope: "specific",
+      selectedOwnerId: "se-2",
+    });
+
+    expect(queries.get("proposals")?.eq).toHaveBeenCalledWith(
+      "created_by",
+      "se-2"
+    );
+  });
+
+  it("applies inclusive date range filters", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      dateColumn: "created_at",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-03-31",
+    });
+
+    expect(queries.get("proposals")?.gte).toHaveBeenCalledWith(
+      "created_at",
+      "2026-01-01"
+    );
+    expect(queries.get("proposals")?.lte).toHaveBeenCalledWith(
+      "created_at",
+      "2026-03-31"
+    );
+  });
 });
 
 describe("fetchRevenueReportBaseRows", () => {
@@ -230,6 +303,30 @@ describe("fetchRevenueReportBaseRows", () => {
       "status",
       ["Draft", "Proposal Sent"]
     );
+  });
+
+  it("applies preset owner scope, date range, and status arrays", async () => {
+    const { client, queries } = mockTableClient({
+      proposal_revenue_report_base: { data: [], error: null },
+    });
+
+    await fetchRevenueReportBaseRows(client, {
+      ownerScope: "specific",
+      selectedOwnerId: "se-2",
+      statuses: ["Discovery", "Awaiting Sig"],
+      dateColumn: "created_at",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-12-31",
+    });
+
+    const query = queries.get("proposal_revenue_report_base");
+    expect(query?.eq).toHaveBeenCalledWith("created_by", "se-2");
+    expect(query?.in).toHaveBeenCalledWith("status", [
+      "Discovery",
+      "Awaiting Sig",
+    ]);
+    expect(query?.gte).toHaveBeenCalledWith("created_at", "2026-01-01");
+    expect(query?.lte).toHaveBeenCalledWith("created_at", "2026-12-31");
   });
 
   it("returns empty rows on error", async () => {

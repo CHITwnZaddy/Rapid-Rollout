@@ -34,7 +34,7 @@ export async function createProposal(
 
   const { data, error } = await supabase.rpc("create_proposal_bundle", {
     p_name: name,
-    p_customer_id: customerId || null,
+    p_customer_id: customerId || undefined,
   });
 
   if (error || !data) {

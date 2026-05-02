@@ -31,19 +31,19 @@ const reports = [
   {
     title: "Portfolio Value",
     description:
-      "Pipeline value grouped by status (scenario + scoped + migration, complexity-adjusted). Defaults to My Proposals and excludes Lost/VOID.",
+      "Pipeline value grouped by status (scenario + scoped + migration, complexity-adjusted). Defaults to My Proposals and excludes closed/lost work.",
     href: "/reports/portfolio-value",
   },
   {
     title: "Stale Proposals",
     description:
-      "In-flight proposals sitting in their current status too long. Red when Days in Status > 21. Filter by customer, status, and owner.",
+      "In-flight proposals sitting in their current status too long. Amber stale labels show when Days in Status is over threshold.",
     href: "/reports/stale-proposals",
   },
   {
     title: "Time to Close",
     description:
-      "Days from Proposal Sent to Won/Lost across proposals. Red rows closed in >30 days; green ≤30. Filter by customer, status, owner, and sent-date range.",
+      "Days from Proposal Sent to Won/Lost across proposals. Filter by customer, status, owner, and sent-date range.",
     href: "/reports/time-to-close",
   },
 ];
