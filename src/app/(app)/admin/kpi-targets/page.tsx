@@ -1,3 +1,4 @@
+import { ConfirmSubmitButton } from "@/components/admin/confirm-submit-button";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,6 +24,8 @@ import {
   listSettingsUsers,
 } from "@/lib/settings/sales-ops";
 import {
+  submitDeleteKpiUserTarget,
+  submitDeleteKpiYearTarget,
   submitUpdateKpiYearTarget,
   submitUpsertKpiUserTarget,
 } from "./actions";
@@ -62,7 +65,7 @@ export default async function KpiTargetsPage() {
                 <TableHead>Label</TableHead>
                 <TableHead>Team quota</TableHead>
                 <TableHead>Active</TableHead>
-                <TableHead className="w-24">Save</TableHead>
+                <TableHead className="w-40">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -103,9 +106,23 @@ export default async function KpiTargetsPage() {
                     </select>
                   </TableCell>
                   <TableCell>
-                    <Button size="sm" form={`year-target-${target.id}`}>
-                      Save
-                    </Button>
+                    <form
+                      id={`delete-year-target-${target.id}`}
+                      action={submitDeleteKpiYearTarget}
+                    >
+                      <input type="hidden" name="id" value={target.id} />
+                    </form>
+                    <div className="flex gap-2">
+                      <Button size="sm" form={`year-target-${target.id}`}>
+                        Save
+                      </Button>
+                      <ConfirmSubmitButton
+                        form={`delete-year-target-${target.id}`}
+                        message={`Delete ${target.label}? This also deletes SE targets tied to ${target.year}.`}
+                      >
+                        Delete
+                      </ConfirmSubmitButton>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -191,7 +208,7 @@ export default async function KpiTargetsPage() {
                 <TableHead>Year</TableHead>
                 <TableHead>Target</TableHead>
                 <TableHead>Active</TableHead>
-                <TableHead className="w-24">Save</TableHead>
+                <TableHead className="w-40">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -211,6 +228,7 @@ export default async function KpiTargetsPage() {
                     (candidate) => candidate.year === target.year
                   );
                   const formId = `user-target-${target.id}`;
+                  const deleteFormId = `delete-user-target-${target.id}`;
 
                   return (
                     <TableRow key={target.id}>
@@ -248,9 +266,20 @@ export default async function KpiTargetsPage() {
                         </select>
                       </TableCell>
                       <TableCell>
-                        <Button size="sm" form={formId}>
-                          Save
-                        </Button>
+                        <form action={submitDeleteKpiUserTarget} id={deleteFormId}>
+                          <input type="hidden" name="id" value={target.id} />
+                        </form>
+                        <div className="flex gap-2">
+                          <Button size="sm" form={formId}>
+                            Save
+                          </Button>
+                          <ConfirmSubmitButton
+                            form={deleteFormId}
+                            message={`Delete ${user?.email ?? target.user_id} target for ${year?.label ?? target.year}?`}
+                          >
+                            Delete
+                          </ConfirmSubmitButton>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -67,12 +68,13 @@ export default function StaleProposalsReport() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();
-  const { scopePreset, bucketPreset, statusPreset } = useMemo(() => {
+  const { scopePreset, bucketPreset, statusPreset, fromDashboard } = useMemo(() => {
     const params = new URLSearchParams(searchParamString);
     return {
       scopePreset: (params.get("scope") as OwnerFilter | null) ?? "team",
       bucketPreset: (params.get("bucket") as StaleBucket | null) ?? "all",
       statusPreset: params.get("status") ?? "All",
+      fromDashboard: params.get("from") === "dashboard",
     };
   }, [searchParamString]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -315,7 +317,17 @@ export default function StaleProposalsReport() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Stale Proposals Report</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold">Stale Proposals Report</h1>
+        {fromDashboard && (
+          <Link
+            href="/dashboard"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Return to Dashboard
+          </Link>
+        )}
+      </div>
       {appliedPresetLabel && (
         <p className="text-sm text-muted-foreground">
           Applied preset: {appliedPresetLabel}
@@ -461,11 +473,16 @@ export default function StaleProposalsReport() {
                                 ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
                                 : r.threshold === "fresh"
                                   ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
-                                  : undefined
+                                  : "hover:bg-muted/50"
                             }
                           >
                             <TableCell className="font-medium">
-                              {r.proposalName}
+                              <Link
+                                href={`/proposals/${r.proposalId}`}
+                                className="text-primary hover:underline"
+                              >
+                                {r.proposalName}
+                              </Link>
                             </TableCell>
                             <TableCell>{r.customerName}</TableCell>
                             <TableCell>

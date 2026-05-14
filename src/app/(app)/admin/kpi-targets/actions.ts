@@ -15,6 +15,10 @@ const calendarYearSchema = z.coerce
 
 const activeSchema = z.enum(["true", "false"]).transform((value) => value === "true");
 
+const idSchema = z.object({
+  id: z.string().uuid("Invalid KPI target id."),
+});
+
 const yearTargetSchema = z.object({
   id: z.string().uuid("Invalid KPI year target id."),
   year: calendarYearSchema,
@@ -84,6 +88,31 @@ export async function submitUpdateKpiYearTarget(formData: FormData): Promise<voi
   await updateKpiYearTarget(formData);
 }
 
+export async function deleteKpiYearTarget(
+  formData: FormData
+): Promise<ActionResult> {
+  try {
+    await assertManagerOrAdmin();
+    const parsed = idSchema.parse({ id: getString(formData, "id") });
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("kpi_year_targets")
+      .delete()
+      .eq("id", parsed.id);
+
+    if (error) throw new Error(error.message);
+    revalidatePath("/admin/kpi-targets");
+    return { ok: true };
+  } catch (error) {
+    return actionError(error);
+  }
+}
+
+export async function submitDeleteKpiYearTarget(formData: FormData): Promise<void> {
+  await deleteKpiYearTarget(formData);
+}
+
 export async function upsertKpiUserTarget(
   formData: FormData
 ): Promise<ActionResult> {
@@ -120,4 +149,29 @@ export async function upsertKpiUserTarget(
 
 export async function submitUpsertKpiUserTarget(formData: FormData): Promise<void> {
   await upsertKpiUserTarget(formData);
+}
+
+export async function deleteKpiUserTarget(
+  formData: FormData
+): Promise<ActionResult> {
+  try {
+    await assertManagerOrAdmin();
+    const parsed = idSchema.parse({ id: getString(formData, "id") });
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("kpi_user_targets")
+      .delete()
+      .eq("id", parsed.id);
+
+    if (error) throw new Error(error.message);
+    revalidatePath("/admin/kpi-targets");
+    return { ok: true };
+  } catch (error) {
+    return actionError(error);
+  }
+}
+
+export async function submitDeleteKpiUserTarget(formData: FormData): Promise<void> {
+  await deleteKpiUserTarget(formData);
 }

@@ -5,13 +5,21 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   BarChart3,
+  BadgeDollarSign,
+  Building2,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   FileText,
   Grid3X3,
+  History,
+  ListChecks,
   Menu,
+  Palette,
   Settings,
+  Target,
   Users,
+  UserCog,
   X,
 } from "lucide-react";
 
@@ -29,22 +37,22 @@ const navItems = [
 ];
 
 const managerSettingsItems = [
-  { label: "Change Log", href: "/admin/change-log" },
-  { label: "KPI Targets", href: "/admin/kpi-targets" },
-  { label: "Stale Thresholds", href: "/admin/stale-thresholds" },
-  { label: "Variance Reasons", href: "/admin/variance-reasons" },
+  { label: "Change Log", href: "/admin/change-log", icon: History },
+  { label: "KPI Targets", href: "/admin/kpi-targets", icon: Target },
+  { label: "Stale Thresholds", href: "/admin/stale-thresholds", icon: Clock3 },
+  { label: "Variance Reasons", href: "/admin/variance-reasons", icon: ListChecks },
 ];
 
 const adminSettingsItems = [
-  { label: "Customers", href: "/admin/customers" },
-  { label: "Rate Cards", href: "/admin/rate-cards" },
-  { label: "Service Hours", href: "/admin/service-hours" },
-  { label: "Users", href: "/admin/users" },
-  { label: "Change Log", href: "/admin/change-log" },
-  { label: "KPI Targets", href: "/admin/kpi-targets" },
-  { label: "Stale Thresholds", href: "/admin/stale-thresholds" },
-  { label: "Variance Reasons", href: "/admin/variance-reasons" },
-  { label: "Theme", href: "/admin/theme" },
+  { label: "Customers", href: "/admin/customers", icon: Building2 },
+  { label: "Rate Cards", href: "/admin/rate-cards", icon: BadgeDollarSign },
+  { label: "Service Hours", href: "/admin/service-hours", icon: Clock3 },
+  { label: "Users", href: "/admin/users", icon: UserCog },
+  { label: "Change Log", href: "/admin/change-log", icon: History },
+  { label: "KPI Targets", href: "/admin/kpi-targets", icon: Target },
+  { label: "Stale Thresholds", href: "/admin/stale-thresholds", icon: Clock3 },
+  { label: "Variance Reasons", href: "/admin/variance-reasons", icon: ListChecks },
+  { label: "Theme", href: "/admin/theme", icon: Palette },
 ];
 
 export function AppSidebar() {
@@ -118,23 +126,27 @@ export function AppSidebar() {
                 </div>
               )}
               <div className="space-y-1">
-                {settingsItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    title={isCollapsed ? item.label : undefined}
-                    onClick={closeMobile}
-                    className={cn(
-                      "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      isCollapsed && "justify-center px-2 text-xs",
-                      pathname.startsWith(item.href)
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-                    )}
-                  >
-                    {isCollapsed ? item.label.slice(0, 2) : item.label}
-                  </Link>
-                ))}
+                {settingsItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      title={isCollapsed ? item.label : undefined}
+                      onClick={closeMobile}
+                      className={cn(
+                        "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        isCollapsed && "justify-center px-2",
+                        pathname.startsWith(item.href)
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                      )}
+                    >
+                      <Icon className="size-4 shrink-0" />
+                      {!isCollapsed && <span>{item.label}</span>}
+                    </Link>
+                  );
+                })}
               </div>
             </>
           )}

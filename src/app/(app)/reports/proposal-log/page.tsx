@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,8 @@ interface ReportRow {
   status: string;
   p1Cost: number;
   p2Cost: number;
+  p3Cost: number;
+  p4Cost: number;
   opt1Cost: number;
   opt2Cost: number;
   scopedCost: number;
@@ -92,6 +95,7 @@ export default function ProposalLogReport() {
     ownerIdPreset,
     dateFromPreset,
     dateToPreset,
+    fromDashboard,
   } = useMemo(() => {
     const params = new URLSearchParams(searchParamString);
     return {
@@ -100,6 +104,7 @@ export default function ProposalLogReport() {
       ownerIdPreset: params.get("ownerId") ?? undefined,
       dateFromPreset: params.get("dateFrom") ?? undefined,
       dateToPreset: params.get("dateTo") ?? undefined,
+      fromDashboard: params.get("from") === "dashboard",
     };
   }, [searchParamString]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -163,6 +168,8 @@ export default function ProposalLogReport() {
         const scopedFactor = Number(p.scoped_complexity_factor) || 1;
         const p1 = Number(p.p1_cost) || 0;
         const p2 = Number(p.p2_cost) || 0;
+        const p3 = Number(p.p3_cost) || 0;
+        const p4 = Number(p.p4_cost) || 0;
         const opt1 = Number(p.opt1_cost) || 0;
         const opt2 = Number(p.opt2_cost) || 0;
         const scoped = Number(p.scoped_total) || 0;
@@ -176,11 +183,13 @@ export default function ProposalLogReport() {
           status: p.status,
           p1Cost: p1,
           p2Cost: p2,
+          p3Cost: p3,
+          p4Cost: p4,
           opt1Cost: opt1,
           opt2Cost: opt2,
           scopedCost: scoped,
           migrationCost: migration,
-          grandTotal: p1 + p2 + opt1 + opt2 + scoped + migration,
+          grandTotal: p1 + p2 + p3 + p4 + opt1 + opt2 + scoped + migration,
           dateCreated: p.created_at ?? null,
           dateProposalSent: metrics?.firstSentAt ?? null,
           dateWon: metrics?.firstWonAt ?? null,
@@ -245,8 +254,8 @@ export default function ProposalLogReport() {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Proposal Log");
 
-    const TOTAL_COLS = 15;
-    const LAST_COL_LETTER = "O";
+    const TOTAL_COLS = 17;
+    const LAST_COL_LETTER = "Q";
     const CURRENCY_FMT = '$#,##0.00';
     const TITLE_BG    = "FFC1C1DE"; // #313392 tint — title row
     const HEADER_BG   = "FFD5D6E9"; // #313392 tint — column headers + section totals
@@ -265,11 +274,13 @@ export default function ProposalLogReport() {
       { width: 12 }, // H Scoped CF
       { width: 15 }, // I Phase 1
       { width: 15 }, // J Phase 2
-      { width: 15 }, // K Option 1
-      { width: 15 }, // L Option 2
-      { width: 20 }, // M Ad-hoc Services
-      { width: 22 }, // N Migration Services
-      { width: 18 }, // O Grand Total
+      { width: 15 }, // K Phase 3
+      { width: 15 }, // L Phase 4
+      { width: 15 }, // M Option 1
+      { width: 15 }, // N Option 2
+      { width: 20 }, // O Ad-hoc Services
+      { width: 22 }, // P Migration Services
+      { width: 18 }, // Q Grand Total
     ];
 
     // ── Row 1: Title ─────────────────────────────────────────────────────────
@@ -308,6 +319,8 @@ export default function ProposalLogReport() {
       "Complexity Factor",
       "Phase 1",
       "Phase 2",
+      "Phase 3",
+      "Phase 4",
       "Option 1",
       "Option 2",
       "Ad-hoc Services",
@@ -389,6 +402,8 @@ export default function ProposalLogReport() {
       const numValues = [
         r.p1Cost,
         r.p2Cost,
+        r.p3Cost,
+        r.p4Cost,
         r.opt1Cost,
         r.opt2Cost,
         r.scopedCost,
@@ -417,9 +432,9 @@ export default function ProposalLogReport() {
       fgColor: { argb: HEADER_BG },
     };
 
-    // Merge A–N for the "Grand Total" label (col O holds the value)
+    // Merge A-P for the "Grand Total" label (col Q holds the value)
     sheet.mergeCells(
-      `A${grandTotalRowNum}:N${grandTotalRowNum}`
+      `A${grandTotalRowNum}:P${grandTotalRowNum}`
     );
     const gtLabelCell = grandTotalRow.getCell(1);
     gtLabelCell.value = "Grand Total";
@@ -471,7 +486,17 @@ export default function ProposalLogReport() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Proposal Log Report</h1>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold">Proposal Log Report</h1>
+        {fromDashboard && (
+          <Link
+            href="/dashboard"
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            Return to Dashboard
+          </Link>
+        )}
+      </div>
       {appliedPresetLabel && (
         <p className="text-sm text-muted-foreground">
           Applied preset: {appliedPresetLabel}
@@ -567,6 +592,8 @@ export default function ProposalLogReport() {
                       <TableHead className="text-right">Complexity Factor</TableHead>
                       <TableHead className="text-right">Phase 1</TableHead>
                       <TableHead className="text-right">Phase 2</TableHead>
+                      <TableHead className="text-right">Phase 3</TableHead>
+                      <TableHead className="text-right">Phase 4</TableHead>
                       <TableHead className="text-right">Option 1</TableHead>
                       <TableHead className="text-right">Option 2</TableHead>
                       <TableHead className="text-right">Scoped Services</TableHead>
@@ -576,11 +603,18 @@ export default function ProposalLogReport() {
                   </TableHeader>
                   <TableBody>
                     {screenRows.map((r) => (
-                      <TableRow key={r.proposalId}>
+                      <TableRow key={r.proposalId} className="hover:bg-muted/50">
                         <TableCell className="font-medium">
                           {r.customerName}
                         </TableCell>
-                        <TableCell>{r.proposalName}</TableCell>
+                        <TableCell>
+                          <Link
+                            href={`/proposals/${r.proposalId}`}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {r.proposalName}
+                          </Link>
+                        </TableCell>
                         <TableCell>
                           <Badge
                             variant={
@@ -613,6 +647,12 @@ export default function ProposalLogReport() {
                           {r.p2Cost > 0 ? formatCurrency(r.p2Cost) : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
+                          {r.p3Cost > 0 ? formatCurrency(r.p3Cost) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {r.p4Cost > 0 ? formatCurrency(r.p4Cost) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
                           {r.opt1Cost > 0 ? formatCurrency(r.opt1Cost) : "—"}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
@@ -639,6 +679,12 @@ export default function ProposalLogReport() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatCurrency(rows.reduce((s, r) => s + r.p2Cost, 0))}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrency(rows.reduce((s, r) => s + r.p3Cost, 0))}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatCurrency(rows.reduce((s, r) => s + r.p4Cost, 0))}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatCurrency(rows.reduce((s, r) => s + r.opt1Cost, 0))}
