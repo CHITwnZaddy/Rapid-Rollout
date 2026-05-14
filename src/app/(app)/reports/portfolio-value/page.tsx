@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -409,9 +410,14 @@ export default function PortfolioValueReport() {
                           </TableCell>
                         </TableRow>
                         {group.map((r) => (
-                          <TableRow key={r.proposalId}>
+                          <TableRow key={r.proposalId} className="hover:bg-muted/50">
                             <TableCell className="font-medium">
-                              {r.proposalName}
+                              <Link
+                                href={`/proposals/${r.proposalId}`}
+                                className="text-primary hover:underline"
+                              >
+                                {r.proposalName}
+                              </Link>
                             </TableCell>
                             <TableCell>{r.customerName}</TableCell>
                             <TableCell>

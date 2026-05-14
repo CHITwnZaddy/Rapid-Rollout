@@ -271,6 +271,8 @@ export default async function DashboardPage({
     const value = roundMoney(
       (Number(proposal.p1_cost) || 0) +
         (Number(proposal.p2_cost) || 0) +
+        (Number(proposal.p3_cost) || 0) +
+        (Number(proposal.p4_cost) || 0) +
         (Number(proposal.opt1_cost) || 0) +
         (Number(proposal.opt2_cost) || 0) +
         (Number(proposal.scoped_total) || 0) +
@@ -309,6 +311,8 @@ export default async function DashboardPage({
 
   const proposalLogParams = {
     scope,
+    from: "dashboard",
+    range: dateWindow.range,
     dateFrom: dateWindow.dateFrom,
     dateTo: dateWindow.dateTo,
   };
@@ -318,6 +322,10 @@ export default async function DashboardPage({
   });
   const staleHref = buildReportHref("/reports/stale-proposals", {
     scope,
+    from: "dashboard",
+    range: dateWindow.range,
+    dateFrom: dateWindow.dateFrom,
+    dateTo: dateWindow.dateTo,
     bucket: "stale",
   });
   const onHoldHref = buildReportHref("/reports/proposal-log", {
@@ -372,7 +380,10 @@ export default async function DashboardPage({
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <DashboardWidgetLink href={openProposalHref}>
+        <DashboardWidgetLink
+          href={openProposalHref}
+          title="Blue means normal pipeline value. The value comes from open proposal totals."
+        >
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -393,7 +404,11 @@ export default async function DashboardPage({
           </CardContent>
         </DashboardWidgetLink>
 
-        <DashboardWidgetLink href={staleHref} className="border-l-amber-500/65">
+        <DashboardWidgetLink
+          href={staleHref}
+          className="border-l-amber-500/65"
+          title="Amber means follow-up risk. These proposals are past their stale threshold."
+        >
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -413,7 +428,11 @@ export default async function DashboardPage({
           </CardContent>
         </DashboardWidgetLink>
 
-        <DashboardWidgetLink href={onHoldHref} className="border-l-slate-400/80">
+        <DashboardWidgetLink
+          href={onHoldHref}
+          className="border-l-slate-400/80"
+          title="Slate means paused work. These proposals are on hold but still visible."
+        >
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -433,7 +452,10 @@ export default async function DashboardPage({
           </CardContent>
         </DashboardWidgetLink>
 
-        <Card className="rounded-lg border-l-4 border-l-emerald-500/60">
+        <Card
+          className="rounded-lg border-l-4 border-l-emerald-500/60"
+          title="Green means quota progress. This uses closed sold value in the selected range."
+        >
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <div>

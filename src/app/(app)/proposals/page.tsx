@@ -6,6 +6,7 @@ export const revalidate = 60;
 
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -50,7 +51,10 @@ export default async function ProposalsPage() {
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Proposals</h1>
           <Link href="/proposals/new">
-            <Button>New Proposal</Button>
+            <Button>
+              <Plus className="size-4" />
+              New Proposal
+            </Button>
           </Link>
         </div>
         <Card>
@@ -68,7 +72,10 @@ export default async function ProposalsPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Proposals</h1>
         <Link href="/proposals/new">
-          <Button>New Proposal</Button>
+          <Button>
+            <Plus className="size-4" />
+            New Proposal
+          </Button>
         </Link>
       </div>
 

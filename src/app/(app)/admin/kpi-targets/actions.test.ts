@@ -26,7 +26,12 @@ vi.mock("next/cache", () => ({
   revalidatePath: revalidatePathMock,
 }));
 
-import { updateKpiYearTarget, upsertKpiUserTarget } from "./actions";
+import {
+  deleteKpiUserTarget,
+  deleteKpiYearTarget,
+  updateKpiYearTarget,
+  upsertKpiUserTarget,
+} from "./actions";
 
 const yearTargetId = "11111111-1111-4111-8111-111111111111";
 const userTargetId = "22222222-2222-4222-8222-222222222222";
@@ -53,6 +58,14 @@ function mockUpsert() {
   const from = vi.fn(() => ({ upsert }));
   createClientMock.mockResolvedValue({ from });
   return { from, upsert };
+}
+
+function mockDelete() {
+  const eq = vi.fn(async () => ({ error: null }));
+  const deleteFn = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ delete: deleteFn }));
+  createClientMock.mockResolvedValue({ from });
+  return { from, deleteFn, eq };
 }
 
 describe("KPI target actions", () => {
@@ -169,5 +182,29 @@ describe("KPI target actions", () => {
 
     expect(result.ok).toBe(false);
     expect(createClientMock).not.toHaveBeenCalled();
+  });
+
+  it("allows managers to delete yearly KPI targets", async () => {
+    const { from, deleteFn, eq } = mockDelete();
+
+    const result = await deleteKpiYearTarget(form({ id: yearTargetId }));
+
+    expect(result).toEqual({ ok: true });
+    expect(from).toHaveBeenCalledWith("kpi_year_targets");
+    expect(deleteFn).toHaveBeenCalled();
+    expect(eq).toHaveBeenCalledWith("id", yearTargetId);
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/kpi-targets");
+  });
+
+  it("allows managers to delete SE KPI targets", async () => {
+    const { from, deleteFn, eq } = mockDelete();
+
+    const result = await deleteKpiUserTarget(form({ id: userTargetId }));
+
+    expect(result).toEqual({ ok: true });
+    expect(from).toHaveBeenCalledWith("kpi_user_targets");
+    expect(deleteFn).toHaveBeenCalled();
+    expect(eq).toHaveBeenCalledWith("id", userTargetId);
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/kpi-targets");
   });
 });

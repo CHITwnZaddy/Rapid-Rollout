@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -433,11 +434,16 @@ export default function TimeToCloseReport() {
                             ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
                             : r.threshold === "on-track"
                               ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
-                              : undefined
+                              : "hover:bg-muted/50"
                         }
                       >
                         <TableCell className="font-medium">
-                          {r.proposalName}
+                          <Link
+                            href={`/proposals/${r.proposalId}`}
+                            className="text-primary hover:underline"
+                          >
+                            {r.proposalName}
+                          </Link>
                         </TableCell>
                         <TableCell>{r.customerName}</TableCell>
                         <TableCell>
