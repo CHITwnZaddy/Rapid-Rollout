@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -483,9 +484,17 @@ export default function ProposalHoursReport() {
                   </TableHeader>
                   <TableBody>
                     {rows.map((r, i) => (
-                      <TableRow key={`${r.proposalId}-${r.scenario}-${i}`}>
+                      <TableRow
+                        key={`${r.proposalId}-${r.scenario}-${i}`}
+                        className="hover:bg-muted/50"
+                      >
                         <TableCell className="font-medium">
-                          {r.proposalName}
+                          <Link
+                            href={`/proposals/${r.proposalId}`}
+                            className="text-primary hover:underline"
+                          >
+                            {r.proposalName}
+                          </Link>
                         </TableCell>
                         <TableCell>{r.customerName}</TableCell>
                         <TableCell>{getScenarioDisplayName(r.scenario)}</TableCell>

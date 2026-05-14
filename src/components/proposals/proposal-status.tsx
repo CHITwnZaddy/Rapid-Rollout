@@ -13,6 +13,14 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { updateProposalStatus } from "@/app/(app)/proposals/[id]/actions";
 import {
+  isClosedProposalStatus,
+  type ClosedProposalStatus,
+} from "@/lib/proposals/status";
+import {
+  ProposalCloseoutDialog,
+  type VarianceReasonOption,
+} from "./proposal-closeout-dialog";
+import {
   PROPOSAL_STATUSES,
   PROPOSAL_STATUS_VARIANT,
   type ProposalStatus,
@@ -26,12 +34,21 @@ import {
 export function ProposalStatus({
   proposalId,
   initialStatus,
+  initialSoldPrice = 0,
+  initialLoeValue = 0,
+  varianceReasons = [],
 }: {
   proposalId: string;
   initialStatus: string;
+  initialSoldPrice?: number;
+  initialLoeValue?: number;
+  varianceReasons?: VarianceReasonOption[];
 }) {
   const [committed, setCommitted] = useState(initialStatus);
   const [staged, setStaged] = useState(initialStatus);
+  const [closeoutStatus, setCloseoutStatus] =
+    useState<ClosedProposalStatus | null>(null);
+  const [isCloseoutOpen, setIsCloseoutOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const isDirty = staged !== committed;
@@ -40,6 +57,12 @@ export function ProposalStatus({
 
   const save = () => {
     if (!isDirty) return;
+    if (isClosedProposalStatus(staged)) {
+      setCloseoutStatus(staged);
+      setIsCloseoutOpen(true);
+      return;
+    }
+
     startTransition(async () => {
       const result = await updateProposalStatus(proposalId, staged);
       if (!result.ok) {
@@ -80,6 +103,26 @@ export function ProposalStatus({
       >
         {isPending ? "Saving..." : "Save"}
       </Button>
+      <ProposalCloseoutDialog
+        proposalId={proposalId}
+        status={closeoutStatus}
+        open={isCloseoutOpen}
+        onOpenChange={(open) => {
+          setIsCloseoutOpen(open);
+          if (!open) {
+            setCloseoutStatus(null);
+            setStaged(committed);
+          }
+        }}
+        onClosed={(status) => {
+          setCommitted(status);
+          setStaged(status);
+          toast.success(`Status updated to "${status}".`);
+        }}
+        initialSoldPrice={initialSoldPrice}
+        initialLoeValue={initialLoeValue}
+        varianceReasons={varianceReasons}
+      />
     </div>
   );
 }

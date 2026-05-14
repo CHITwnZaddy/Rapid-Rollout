@@ -6,6 +6,7 @@ export const revalidate = 60;
 
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,6 +21,10 @@ import { applyComplexity } from "@/lib/calculations/complexity";
 import { getScenarioDisplayName } from "@/lib/scenarios/display";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import { ProposalListSchema } from "@/lib/validation/proposal";
+import {
+  PROPOSAL_STATUS_VARIANT,
+  type ProposalStatus,
+} from "@/lib/constants/statuses";
 
 export default async function ProposalsPage() {
   const supabase = await createClient();
@@ -46,7 +51,10 @@ export default async function ProposalsPage() {
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Proposals</h1>
           <Link href="/proposals/new">
-            <Button>New Proposal</Button>
+            <Button>
+              <Plus className="size-4" />
+              New Proposal
+            </Button>
           </Link>
         </div>
         <Card>
@@ -64,7 +72,10 @@ export default async function ProposalsPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Proposals</h1>
         <Link href="/proposals/new">
-          <Button>New Proposal</Button>
+          <Button>
+            <Plus className="size-4" />
+            New Proposal
+          </Button>
         </Link>
       </div>
 
@@ -98,7 +109,8 @@ export default async function ProposalsPage() {
                       </div>
                       <Badge
                         variant={
-                          proposal.status === "Draft" ? "secondary" : "default"
+                          PROPOSAL_STATUS_VARIANT[proposal.status as ProposalStatus] ??
+                          "secondary"
                         }
                       >
                         {proposal.status}

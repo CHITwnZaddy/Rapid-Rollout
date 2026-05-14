@@ -1,9 +1,12 @@
 export const revalidate = 60;
 
+import { requireAdminPage } from "@/lib/auth/page-guards";
 import { listUsers } from "./actions";
 import { UsersClient } from "./users-client";
 
 export default async function UsersPage() {
+  await requireAdminPage();
+
   const users = await listUsers();
   return (
     <div>

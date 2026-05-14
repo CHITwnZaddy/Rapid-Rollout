@@ -13,6 +13,7 @@ import {
   PROPOSAL_STATUSES,
   type ProposalStatus,
 } from "@/lib/constants/statuses";
+import { isClosedProposalStatus } from "@/lib/proposals/status";
 
 const { getUserMock, rpcMock, revalidatePathMock } = vi.hoisted(() => ({
   getUserMock: vi.fn(),
@@ -68,13 +69,13 @@ describe("proposal lifecycle — JS-layer status validation", () => {
 
     it("is case-sensitive — 'won' (lowercase) is not valid", async () => {
       authedUser();
-      const result = await updateProposalStatus("p-1", "won");
+      const result = await updateProposalStatus("p-1", "closed won");
       expect(result.ok).toBe(false);
       expect(rpcMock).not.toHaveBeenCalled();
     });
 
-    it.each(PROPOSAL_STATUSES.map((s) => [s]))(
-      "accepts the canonical status %s and calls the RPC",
+    it.each(PROPOSAL_STATUSES.filter((s) => !isClosedProposalStatus(s)).map((s) => [s]))(
+      "accepts the non-terminal canonical status %s and calls the RPC",
       async (status: ProposalStatus) => {
         authedUser();
         rpcMock.mockResolvedValue({ data: true, error: null });
@@ -88,13 +89,27 @@ describe("proposal lifecycle — JS-layer status validation", () => {
         });
       }
     );
+
+    it.each(["Closed Won", "Closed Lost"])(
+      "requires closeout details for terminal status %s",
+      async (status) => {
+        authedUser();
+        const result = await updateProposalStatus("p-1", status);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toContain("requires closeout details");
+        }
+        expect(rpcMock).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe("auth gate (second layer of defense)", () => {
     it("rejects an unauthenticated caller before invoking the RPC", async () => {
       getUserMock.mockResolvedValue({ data: { user: null }, error: null });
 
-      const result = await updateProposalStatus("p-1", "Won");
+      const result = await updateProposalStatus("p-1", "Scoping");
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -109,7 +124,7 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       authedUser();
       rpcMock.mockResolvedValue({ data: true, error: null });
 
-      const result = await updateProposalStatus("p-1", "Won");
+      const result = await updateProposalStatus("p-1", "Scoping");
       expect(result).toEqual({ ok: true });
     });
 
@@ -117,10 +132,10 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       authedUser();
       rpcMock.mockResolvedValue({
         data: null,
-        error: { message: "transition not allowed: Lost -> Draft" },
+        error: { message: "transition not allowed: Closed Lost -> Discovery" },
       });
 
-      const result = await updateProposalStatus("p-1", "Draft");
+      const result = await updateProposalStatus("p-1", "Discovery");
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toContain("transition not allowed");
@@ -131,7 +146,7 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       authedUser();
       rpcMock.mockResolvedValue({ data: false, error: null });
 
-      const result = await updateProposalStatus("p-1", "Won");
+      const result = await updateProposalStatus("p-1", "Scoping");
 
       expect(result).toEqual({ ok: true });
       // The action only revalidates when the RPC reports a real change.
@@ -142,7 +157,7 @@ describe("proposal lifecycle — JS-layer status validation", () => {
       authedUser();
       rpcMock.mockResolvedValue({ data: true, error: null });
 
-      await updateProposalStatus("p-42", "Won");
+      await updateProposalStatus("p-42", "Scoping");
 
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals/p-42");
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals");
@@ -150,22 +165,19 @@ describe("proposal lifecycle — JS-layer status validation", () => {
   });
 
   // The actual transition rule table (which "from -> to" pairs are
-  // legal — e.g. closed/Lost cannot return to Draft) lives entirely in
+  // legal — e.g. Closed Lost cannot return to Discovery) lives entirely in
   // the transition_proposal_status Postgres RPC (migration 016). The
   // JS layer only enforces the enum allow-list above; we cannot
   // exercise the rule table here without a live DB.
   describe("transition rule table (RPC-enforced)", () => {
     it.todo(
-      "SA-QA-02: rejects Lost -> Draft (RPC rule) — needs Supabase test helper integration"
+      "SA-QA-02: rejects Closed Lost -> Discovery (RPC rule) — needs Supabase test helper integration"
     );
     it.todo(
-      "SA-QA-02: rejects Won -> Draft (RPC rule) — needs Supabase test helper integration"
+      "SA-QA-02: rejects Closed Won -> Discovery (RPC rule) — needs Supabase test helper integration"
     );
     it.todo(
-      "SA-QA-02: allows Draft -> Proposal Sent (RPC rule) — needs Supabase test helper integration"
-    );
-    it.todo(
-      "SA-QA-02: allows VOID from any non-terminal status (RPC rule) — needs Supabase test helper integration"
+      "SA-QA-02: allows Discovery -> Scoping (RPC rule) — needs Supabase test helper integration"
     );
   });
 });

@@ -3,6 +3,7 @@
 export const revalidate = 300;
 
 import { createClient } from "@/lib/supabase/server";
+import { requireAdminPage } from "@/lib/auth/page-guards";
 import {
   AdminDataTable,
   type AdminRow,
@@ -10,6 +11,8 @@ import {
 import { getAdminTableConfig } from "@/components/admin/data-table-config";
 
 export default async function RateCardsPage() {
+  await requireAdminPage();
+
   const supabase = await createClient();
   const { data } = await supabase
     .from("rate_cards")

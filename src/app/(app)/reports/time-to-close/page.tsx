@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,12 +27,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import {
   fetchReportProposals,
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
 import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
 import { withinRange } from "@/lib/ui/helpers";
+import {
+  PROPOSAL_STATUSES,
+  PROPOSAL_STATUS_VARIANT,
+  type ProposalStatus,
+} from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
 
 type Customer = { id: string; company_name: string };
@@ -45,15 +52,14 @@ type ReportRow = {
   dateSent: string | null;
   dateClosed: string | null;
   daysToClose: number | null;
-  // "red" when daysToClose > 30, "green" when <= 30, null when not yet closed.
-  threshold: "red" | "green" | null;
+  threshold: "slow" | "on-track" | null;
 };
 
 // Threshold (days) used by both the on-screen row color and the XLSX
 // conditional fill. Centralised so the two can never disagree.
 const CLOSE_THRESHOLD_DAYS = 30;
 
-const STATUSES = ["All", "Won", "Lost", "Proposal Sent", "Customer Review"];
+const STATUSES = ["All", ...PROPOSAL_STATUSES];
 
 type OwnerFilter = "all" | "mine";
 
@@ -109,18 +115,18 @@ export default function TimeToCloseReport() {
     const reportRows: ReportRow[] = proposals
       .map((p) => {
         const m = metricsMap.get(p.id);
-        // The terminal date — prefer Won, then fall back to the last
-        // transition if the proposal is currently Lost.
+        // The terminal date prefers Closed Won, then falls back to the last
+        // transition when the proposal is currently Closed Lost.
         const dateClosed =
           m?.firstWonAt ??
-          (p.status === "Lost" ? (m?.lastChangedAt ?? null) : null);
+          (p.status === "Closed Lost" ? (m?.lastChangedAt ?? null) : null);
 
         const threshold: ReportRow["threshold"] =
           m?.daysToClose == null
             ? null
             : m.daysToClose > CLOSE_THRESHOLD_DAYS
-              ? "red"
-              : "green";
+              ? "slow"
+              : "on-track";
 
         return {
           proposalId: p.id,
@@ -225,9 +231,9 @@ export default function TimeToCloseReport() {
     sorted.forEach((r, idx) => {
       const row = sheet.getRow(DATA_START + idx);
       const fillArgb =
-        r.threshold === "red"
+        r.threshold === "slow"
           ? RED_BG
-          : r.threshold === "green"
+          : r.threshold === "on-track"
             ? GREEN_BG
             : idx % 2 === 0
               ? ALT_ROW_BG
@@ -398,7 +404,7 @@ export default function TimeToCloseReport() {
           <CardHeader>
             <CardTitle className="text-base">
               Results ({rows.length} proposal{rows.length !== 1 ? "s" : ""}) —
-              red rows closed in &gt;{CLOSE_THRESHOLD_DAYS} days
+              amber rows closed in &gt;{CLOSE_THRESHOLD_DAYS} days
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -408,7 +414,7 @@ export default function TimeToCloseReport() {
               </p>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <Table>
+                <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Proposal</TableHead>
@@ -424,18 +430,32 @@ export default function TimeToCloseReport() {
                       <TableRow
                         key={r.proposalId}
                         className={
-                          r.threshold === "red"
-                            ? "bg-red-100 hover:bg-red-100/80 dark:bg-red-950/40 dark:hover:bg-red-950/50"
-                            : r.threshold === "green"
-                              ? "bg-emerald-100 hover:bg-emerald-100/80 dark:bg-emerald-950/40 dark:hover:bg-emerald-950/50"
-                              : undefined
+                          r.threshold === "slow"
+                            ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
+                            : r.threshold === "on-track"
+                              ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
+                              : "hover:bg-muted/50"
                         }
                       >
                         <TableCell className="font-medium">
-                          {r.proposalName}
+                          <Link
+                            href={`/proposals/${r.proposalId}`}
+                            className="text-primary hover:underline"
+                          >
+                            {r.proposalName}
+                          </Link>
                         </TableCell>
                         <TableCell>{r.customerName}</TableCell>
-                        <TableCell>{r.status}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              PROPOSAL_STATUS_VARIANT[r.status as ProposalStatus] ??
+                              "secondary"
+                            }
+                          >
+                            {r.status}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="tabular-nums text-xs">
                           {formatDateShort(r.dateSent)}
                         </TableCell>
@@ -443,7 +463,13 @@ export default function TimeToCloseReport() {
                           {formatDateShort(r.dateClosed)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {r.daysToClose ?? "—"}
+                          <span className="mr-2">{r.daysToClose ?? "—"}</span>
+                          {r.threshold === "slow" && (
+                            <Badge variant="amber">Slow close</Badge>
+                          )}
+                          {r.threshold === "on-track" && (
+                            <Badge variant="sage">On track</Badge>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

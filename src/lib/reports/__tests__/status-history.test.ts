@@ -32,22 +32,21 @@ describe("computeStatusMetrics", () => {
   });
 
   it("returns daysInCurrentStatus = 0 on same-day transition", () => {
-    const rows = [row("p1", "Draft", 0)];
+    const rows = [row("p1", "Discovery", 0)];
     const m = computeStatusMetrics("p1", rows, NOW);
     expect(m.daysInCurrentStatus).toBe(0);
-    expect(m.currentStatus).toBe("Draft");
+    expect(m.currentStatus).toBe("Discovery");
   });
 
   it("computes firstSentAt, firstWonAt, daysToClose across a full lifecycle", () => {
-    // Draft 30d ago -> Proposal Sent 20d ago -> Customer Review 10d ago -> Won 5d ago
     const rows = [
-      row("p1", "Draft", 30),
-      row("p1", "Proposal Sent", 20, "Draft"),
-      row("p1", "Customer Review", 10, "Proposal Sent"),
-      row("p1", "Won", 5, "Customer Review"),
+      row("p1", "Discovery", 30),
+      row("p1", "Sent for Review", 20, "Discovery"),
+      row("p1", "Awaiting Sig", 10, "Sent for Review"),
+      row("p1", "Closed Won", 5, "Awaiting Sig"),
     ];
     const m = computeStatusMetrics("p1", rows, NOW);
-    expect(m.currentStatus).toBe("Won");
+    expect(m.currentStatus).toBe("Closed Won");
     expect(m.daysInCurrentStatus).toBe(5);
     expect(m.daysToClose).toBe(15); // 20d ago → 5d ago
     expect(m.firstSentAt).not.toBeNull();
@@ -55,15 +54,18 @@ describe("computeStatusMetrics", () => {
   });
 
   it("returns null daysToClose when proposal was never sent", () => {
-    const rows = [row("p1", "Draft", 30), row("p1", "VOID", 5, "Draft")];
+    const rows = [
+      row("p1", "Discovery", 30),
+      row("p1", "Closed Lost", 5, "Discovery"),
+    ];
     const m = computeStatusMetrics("p1", rows, NOW);
     expect(m.daysToClose).toBeNull();
   });
 
   it("returns null daysToClose when still in-flight (never Won/Lost)", () => {
     const rows = [
-      row("p1", "Draft", 30),
-      row("p1", "Proposal Sent", 20, "Draft"),
+      row("p1", "Discovery", 30),
+      row("p1", "Sent for Review", 20, "Discovery"),
     ];
     const m = computeStatusMetrics("p1", rows, NOW);
     expect(m.daysToClose).toBeNull();
@@ -71,14 +73,12 @@ describe("computeStatusMetrics", () => {
   });
 
   it("measures daysToClose to the FIRST close, even if re-opened later", () => {
-    // Sent 40d ago, Won 30d ago (10d close), re-opened to Draft 20d ago,
-    // Won again 5d ago. Expected: 10 — the original close.
     const rows = [
-      row("p1", "Proposal Sent", 40),
-      row("p1", "Won", 30, "Proposal Sent"),
-      row("p1", "Draft", 20, "Won"),
-      row("p1", "Proposal Sent", 15, "Draft"),
-      row("p1", "Won", 5, "Proposal Sent"),
+      row("p1", "Sent for Review", 40),
+      row("p1", "Closed Won", 30, "Sent for Review"),
+      row("p1", "Discovery", 20, "Closed Won"),
+      row("p1", "Sent for Review", 15, "Discovery"),
+      row("p1", "Closed Won", 5, "Sent for Review"),
     ];
     const m = computeStatusMetrics("p1", rows, NOW);
     expect(m.daysToClose).toBe(10);
@@ -86,23 +86,23 @@ describe("computeStatusMetrics", () => {
 
   it("sorts mixed-order rows ascending by changed_at", () => {
     const rows = [
-      row("p1", "Won", 5, "Proposal Sent"),
-      row("p1", "Draft", 30),
-      row("p1", "Proposal Sent", 20, "Draft"),
+      row("p1", "Closed Won", 5, "Sent for Review"),
+      row("p1", "Discovery", 30),
+      row("p1", "Sent for Review", 20, "Discovery"),
     ];
     const m = computeStatusMetrics("p1", rows, NOW);
-    expect(m.currentStatus).toBe("Won");
+    expect(m.currentStatus).toBe("Closed Won");
     expect(m.daysToClose).toBe(15);
   });
 
   it("filters out rows belonging to other proposals", () => {
     const rows = [
-      row("p1", "Draft", 30),
-      row("p2", "Won", 1, "Draft"),
-      row("p1", "Proposal Sent", 10, "Draft"),
+      row("p1", "Discovery", 30),
+      row("p2", "Closed Won", 1, "Discovery"),
+      row("p1", "Sent for Review", 10, "Discovery"),
     ];
     const m = computeStatusMetrics("p1", rows, NOW);
-    expect(m.currentStatus).toBe("Proposal Sent");
+    expect(m.currentStatus).toBe("Sent for Review");
     expect(m.firstWonAt).toBeNull();
   });
 });
@@ -110,14 +110,14 @@ describe("computeStatusMetrics", () => {
 describe("buildStatusMetricsMap", () => {
   it("returns one entry per distinct proposal_id", () => {
     const rows = [
-      row("a", "Draft", 10),
-      row("b", "Proposal Sent", 5),
-      row("a", "Proposal Sent", 2, "Draft"),
+      row("a", "Discovery", 10),
+      row("b", "Sent for Review", 5),
+      row("a", "Sent for Review", 2, "Discovery"),
     ];
     const map = buildStatusMetricsMap(rows, NOW);
     expect(map.size).toBe(2);
-    expect(map.get("a")?.currentStatus).toBe("Proposal Sent");
-    expect(map.get("b")?.currentStatus).toBe("Proposal Sent");
+    expect(map.get("a")?.currentStatus).toBe("Sent for Review");
+    expect(map.get("b")?.currentStatus).toBe("Sent for Review");
   });
 
   it("returns an empty map for zero rows", () => {

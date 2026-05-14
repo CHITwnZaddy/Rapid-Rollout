@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,8 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/calculations/engine";
-import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
+import {
+  PROPOSAL_STATUSES,
+  PROPOSAL_STATUS_VARIANT,
+  type ProposalStatus,
+} from "@/lib/constants/statuses";
 import type ExcelJS from "exceljs";
 import { buildMigrationCostMap } from "@/lib/reports/proposal-aggregates";
 import {
@@ -71,7 +77,7 @@ export default function PortfolioValueReport() {
       const proposals = await fetchRevenueReportBaseRows(supabase, {
         ownerId:
           ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
-        excludeStatuses: includeLost ? undefined : ["Lost", "VOID"],
+        excludeStatuses: includeLost ? undefined : ["Closed Lost"],
       });
       if (proposals.length === 0) {
         setRows([]);
@@ -106,9 +112,8 @@ export default function PortfolioValueReport() {
             grandTotal: scenarioTotal + scopedTotal + migrationTotal,
           };
         })
-      // Group order follows PROPOSAL_STATUSES (Draft → Proposal Sent → … → VOID).
-      // Within each group, sort by Proposal Name A→Z. Unknown statuses sink to
-      // the bottom via a large sentinel index.
+      // Group order follows PROPOSAL_STATUSES. Within each group, sort by
+      // Proposal Name A→Z. Unknown statuses sink to the bottom.
         .sort((a, b) => {
           const ai = PROPOSAL_STATUSES.indexOf(
             a.status as (typeof PROPOSAL_STATUSES)[number]
@@ -184,7 +189,7 @@ export default function PortfolioValueReport() {
 
     sheet.mergeCells("A2:G2");
     const filters = sheet.getCell("A2");
-    filters.value = `Filtered by: ${ownerFilter === "mine" ? "My proposals" : "All owners"} · ${includeLost ? "Including Lost/VOID" : "Excluding Lost/VOID"}`;
+    filters.value = `Filtered by: ${ownerFilter === "mine" ? "My proposals" : "All owners"} · ${includeLost ? "Including Closed Lost" : "Excluding Closed Lost"}`;
     filters.font = { italic: true, size: 11 };
     filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
     sheet.getRow(2).height = 20;
@@ -330,7 +335,7 @@ export default function PortfolioValueReport() {
                 onChange={(e) => setIncludeLost(e.target.checked)}
                 className="h-4 w-4"
               />
-              Include Lost / VOID
+              Include Closed Lost
             </label>
             <Button size="sm" onClick={runReport} disabled={loading}>
               {loading ? "Running..." : "Run Report"}
@@ -359,7 +364,7 @@ export default function PortfolioValueReport() {
               </p>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <Table>
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Proposal Name</TableHead>
@@ -376,7 +381,14 @@ export default function PortfolioValueReport() {
                       <Fragment key={`group-${status}`}>
                         <TableRow className="bg-muted/40">
                           <TableCell colSpan={3} className="font-semibold">
-                            {status}
+                            <Badge
+                              variant={
+                                PROPOSAL_STATUS_VARIANT[status as ProposalStatus] ??
+                                "secondary"
+                              }
+                            >
+                              {status}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-right font-semibold tabular-nums">
                             {formatCurrency(
@@ -398,12 +410,27 @@ export default function PortfolioValueReport() {
                           </TableCell>
                         </TableRow>
                         {group.map((r) => (
-                          <TableRow key={r.proposalId}>
+                          <TableRow key={r.proposalId} className="hover:bg-muted/50">
                             <TableCell className="font-medium">
-                              {r.proposalName}
+                              <Link
+                                href={`/proposals/${r.proposalId}`}
+                                className="text-primary hover:underline"
+                              >
+                                {r.proposalName}
+                              </Link>
                             </TableCell>
                             <TableCell>{r.customerName}</TableCell>
-                            <TableCell>{r.status}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  PROPOSAL_STATUS_VARIANT[
+                                    r.status as ProposalStatus
+                                  ] ?? "secondary"
+                                }
+                              >
+                                {r.status}
+                              </Badge>
+                            </TableCell>
                             <TableCell className="text-right tabular-nums">
                               {formatCurrency(r.scenarioTotal)}
                             </TableCell>

@@ -1,7 +1,7 @@
 // Shared status-history math for the Proposal Log / Time to Close /
 // Stale Proposals / Portfolio Value reports.
 //
-// Each report was tempted to do its own `find(row.new_status === "Won")`
+// Each report was tempted to do its own terminal-status lookup
 // logic inline; extracting it here means:
 //   1. one definition of "first sent", "first won", "days in current"
 //      that all reports share,
@@ -18,11 +18,11 @@ export type StatusHistoryRow = {
 };
 
 export type StatusMetrics = {
-  // ISO timestamp of the FIRST transition into "Proposal Sent" (null
+  // ISO timestamp of the FIRST transition into "Sent for Review" (null
   // if never sent). Used by Time to Close as the "clock start" and by
   // the expanded Proposal Log to surface Date Proposal Sent.
   firstSentAt: string | null;
-  // ISO timestamp of the FIRST transition into "Won" (null if not won).
+  // ISO timestamp of the FIRST transition into "Closed Won" (null if not won).
   firstWonAt: string | null;
   // ISO timestamp of the latest transition of any kind. For reports
   // that want "last activity" this beats proposals.updated_at, which
@@ -31,7 +31,7 @@ export type StatusMetrics = {
   // Whole-day count since lastChangedAt (0 if no history). Used for
   // Stale Proposals' red/green threshold at 21 days.
   daysInCurrentStatus: number | null;
-  // If the proposal has reached Won OR Lost, the whole-day count from
+  // If the proposal has reached Closed Won OR Closed Lost, the whole-day count from
   // firstSentAt to that terminal transition. Null otherwise (still
   // in-flight, or never sent).
   daysToClose: number | null;
@@ -82,13 +82,13 @@ export function computeStatusMetrics(
     };
   }
 
-  const firstSent = own.find((r) => r.new_status === "Proposal Sent");
-  const firstWon = own.find((r) => r.new_status === "Won");
-  // "Closed" = terminal transition into Won or Lost. We take the first
-  // such row so a re-opened proposal (Won → back to Draft → Won) still
+  const firstSent = own.find((r) => r.new_status === "Sent for Review");
+  const firstWon = own.find((r) => r.new_status === "Closed Won");
+  // "Closed" = terminal transition into Closed Won or Closed Lost. We take the first
+  // such row so a re-opened proposal still
   // measures time-to-close from the original close event.
   const firstClosed = own.find(
-    (r) => r.new_status === "Won" || r.new_status === "Lost"
+    (r) => r.new_status === "Closed Won" || r.new_status === "Closed Lost"
   );
   const last = own[own.length - 1];
   const nowIso = now.toISOString();

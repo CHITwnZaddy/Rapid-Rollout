@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { getScenarioDisplayName } from "@/lib/scenarios/display";
+import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 
 const tabs = [
   { label: "Summary", href: "" },
   { label: "Bid Sheet", href: "/bid-sheet" },
-  { label: getScenarioDisplayName("P1"), href: "/scenarios/P1" },
-  { label: getScenarioDisplayName("P2"), href: "/scenarios/P2" },
-  { label: getScenarioDisplayName("Opt1"), href: "/scenarios/Opt1" },
-  { label: getScenarioDisplayName("Opt2"), href: "/scenarios/Opt2" },
+  ...SCENARIO_ORDER.map((scenarioType) => ({
+    label: getScenarioDisplayName(scenarioType),
+    href: `/scenarios/${scenarioType}`,
+  })),
   { label: "Scoped Services", href: "/scoped-services" },
   { label: "Migration Services", href: "/migration" },
 ];

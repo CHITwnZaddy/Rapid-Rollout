@@ -3,13 +3,24 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { PROPOSAL_STATUSES, type ProposalStatus } from "@/lib/constants/statuses";
+import { isClosedProposalStatus } from "@/lib/proposals/status";
 import {
   buildRateCardMap,
   buildServiceHoursMap,
   type RateCardRow,
   type ServiceHoursRow,
 } from "@/lib/calculations/engine";
-import { assertAuthenticated, AuthError } from "@/lib/auth/require-admin";
+import {
+  assertAuthenticated,
+  assertManagerOrAdmin,
+  AuthError,
+} from "@/lib/auth/require-admin";
+import {
+  type ClosedLostCloseoutInput,
+  type ClosedWonCloseoutInput,
+  validateClosedLostCloseout,
+  validateClosedWonCloseout,
+} from "@/lib/proposals/closeout";
 import {
   buildCanonicalScenarioGridLines,
   buildScenarioGridRpcPayload,
@@ -31,6 +42,14 @@ export type UpdateComplexityFactorResult =
 export type UpdateProposalStatusResult =
   | { ok: true }
   | { ok: false; error: string };
+
+export type CloseProposalResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type CorrectClosedProposalFinancialsInput = ClosedWonCloseoutInput & {
+  correctionNote: string;
+};
 
 export type SaveScenarioGridResult =
   | { ok: true; lines: ScenarioGridPersistLine[] }
@@ -66,6 +85,17 @@ export async function updateProposalStatus(
     return { ok: false, error: `Invalid status: ${newStatus}` };
   }
 
+  if (isClosedProposalStatus(newStatus)) {
+    return { ok: false, error: `${newStatus} requires closeout details.` };
+  }
+
+  return transitionProposalStatus(proposalId, newStatus as ProposalStatus);
+}
+
+async function transitionProposalStatus(
+  proposalId: string,
+  newStatus: ProposalStatus
+): Promise<UpdateProposalStatusResult> {
   const supabase = await createClient();
   try {
     await assertAuthenticated();
@@ -90,6 +120,142 @@ export async function updateProposalStatus(
   if (!changed) {
     return { ok: true };
   }
+
+  revalidatePath(`/proposals/${proposalId}`);
+  revalidatePath("/proposals");
+  return { ok: true };
+}
+
+export async function closeProposalWon(
+  proposalId: string,
+  input: ClosedWonCloseoutInput
+): Promise<CloseProposalResult> {
+  const parsed = validateClosedWonCloseout(input);
+  if (!parsed.ok) return parsed;
+
+  try {
+    await assertAuthenticated();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return { ok: false, error: "You must be signed in to close a proposal." };
+    }
+    throw e;
+  }
+
+  const supabase = await createClient();
+  const { error: updateError } = await supabase
+    .from("proposals")
+    .update({
+      sold_price: parsed.data.soldPrice,
+      loe_value: parsed.data.loeValue,
+      loe_signed_date: parsed.data.loeSignedDate,
+      variance_reason_code: parsed.data.varianceReasonCode,
+      variance_note: parsed.data.varianceNote,
+      closed_lost_reason: null,
+      closed_lost_note: null,
+    })
+    .eq("id", proposalId);
+
+  if (updateError) return { ok: false, error: updateError.message };
+
+  const transitioned = await transitionProposalStatus(proposalId, "Closed Won");
+  if (!transitioned.ok) return transitioned;
+
+  return { ok: true };
+}
+
+export async function closeProposalLost(
+  proposalId: string,
+  input: ClosedLostCloseoutInput
+): Promise<CloseProposalResult> {
+  const parsed = validateClosedLostCloseout(input);
+  if (!parsed.ok) return parsed;
+
+  try {
+    await assertAuthenticated();
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return { ok: false, error: "You must be signed in to close a proposal." };
+    }
+    throw e;
+  }
+
+  const supabase = await createClient();
+  const { error: updateError } = await supabase
+    .from("proposals")
+    .update({
+      closed_lost_reason: parsed.data.closedLostReason,
+      closed_lost_note: parsed.data.closedLostNote,
+      loe_signed_date: null,
+      loe_value: null,
+      variance_reason_code: null,
+      variance_note: null,
+    })
+    .eq("id", proposalId);
+
+  if (updateError) return { ok: false, error: updateError.message };
+
+  const transitioned = await transitionProposalStatus(proposalId, "Closed Lost");
+  if (!transitioned.ok) return transitioned;
+
+  return { ok: true };
+}
+
+export async function correctClosedProposalFinancials(
+  proposalId: string,
+  input: CorrectClosedProposalFinancialsInput
+): Promise<CloseProposalResult> {
+  let managerId: string;
+  try {
+    const manager = await assertManagerOrAdmin();
+    managerId = manager.id;
+  } catch (e) {
+    if (e instanceof AuthError) return { ok: false, error: e.message };
+    throw e;
+  }
+
+  const parsed = validateClosedWonCloseout(input);
+  if (!parsed.ok) return parsed;
+
+  const correctionNote = input.correctionNote.trim();
+  if (correctionNote.length < 10) {
+    return { ok: false, error: "Correction note must be at least 10 characters." };
+  }
+
+  const supabase = await createClient();
+  const correctedAt = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from("proposals")
+    .update({
+      sold_price: parsed.data.soldPrice,
+      loe_value: parsed.data.loeValue,
+      loe_signed_date: parsed.data.loeSignedDate,
+      variance_reason_code: parsed.data.varianceReasonCode,
+      variance_note: parsed.data.varianceNote,
+      closed_financials_corrected_at: correctedAt,
+      closed_financials_corrected_by: managerId,
+    })
+    .eq("id", proposalId);
+
+  if (updateError) return { ok: false, error: updateError.message };
+
+  const { error: logError } = await supabase.from("change_log").insert({
+    proposal_id: proposalId,
+    table_name: "proposals",
+    record_id: proposalId,
+    action: "UPDATE",
+    changed_by: managerId,
+    old_values: null,
+    new_values: {
+      correction_note: correctionNote,
+      sold_price: parsed.data.soldPrice,
+      loe_value: parsed.data.loeValue,
+      loe_signed_date: parsed.data.loeSignedDate,
+      variance_reason_code: parsed.data.varianceReasonCode,
+    },
+  });
+
+  if (logError) return { ok: false, error: logError.message };
 
   revalidatePath(`/proposals/${proposalId}`);
   revalidatePath("/proposals");

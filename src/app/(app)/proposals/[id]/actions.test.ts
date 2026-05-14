@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   authAssertMock,
+  managerAssertMock,
+  changeLogInsertMock,
   fromMock,
+  proposalsEqByIdMock,
+  proposalsUpdateMock,
   rateCardsEqMock,
   rateCardsSelectMock,
   rateCardsReturnsMock,
@@ -21,7 +25,11 @@ const {
   serviceHoursSelectMock,
 } = vi.hoisted(() => ({
   authAssertMock: vi.fn(),
+  managerAssertMock: vi.fn(),
+  changeLogInsertMock: vi.fn(),
   fromMock: vi.fn(),
+  proposalsEqByIdMock: vi.fn(),
+  proposalsUpdateMock: vi.fn(),
   rateCardsEqMock: vi.fn(),
   rateCardsSelectMock: vi.fn(),
   rateCardsReturnsMock: vi.fn(),
@@ -55,6 +63,7 @@ vi.mock("@/lib/auth/require-admin", async () => {
   return {
     ...actual,
     assertAuthenticated: authAssertMock,
+    assertManagerOrAdmin: managerAssertMock,
   };
 });
 
@@ -63,12 +72,22 @@ vi.mock("next/cache", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
-import { saveScenarioGridSelections, updateProposalStatus } from "./actions";
+import {
+  closeProposalLost,
+  closeProposalWon,
+  correctClosedProposalFinancials,
+  saveScenarioGridSelections,
+  updateProposalStatus,
+} from "./actions";
 
 describe("proposal actions", () => {
   beforeEach(() => {
     authAssertMock.mockReset();
+    managerAssertMock.mockReset();
+    changeLogInsertMock.mockReset();
     fromMock.mockReset();
+    proposalsEqByIdMock.mockReset();
+    proposalsUpdateMock.mockReset();
     rateCardsEqMock.mockReset();
     rateCardsSelectMock.mockReset();
     rateCardsReturnsMock.mockReset();
@@ -87,6 +106,13 @@ describe("proposal actions", () => {
     serviceHoursSelectMock.mockReset();
 
     authAssertMock.mockResolvedValue({ id: "user-1" });
+    managerAssertMock.mockResolvedValue({ id: "manager-1" });
+
+    proposalsUpdateMock.mockReturnValue({
+      eq: proposalsEqByIdMock,
+    });
+    proposalsEqByIdMock.mockResolvedValue({ error: null });
+    changeLogInsertMock.mockResolvedValue({ error: null });
 
     scenarioEqByProposalMock.mockReturnValue({
       single: scenarioSingleMock,
@@ -135,6 +161,12 @@ describe("proposal actions", () => {
       if (table === "rate_cards") {
         return { select: rateCardsSelectMock };
       }
+      if (table === "proposals") {
+        return { update: proposalsUpdateMock };
+      }
+      if (table === "change_log") {
+        return { insert: changeLogInsertMock };
+      }
       throw new Error(`Unexpected table mock: ${table}`);
     });
   });
@@ -159,7 +191,7 @@ describe("proposal actions", () => {
         new AuthError("UNAUTHENTICATED", "You must be signed in.")
       );
 
-      const result = await updateProposalStatus("proposal-1", "Won");
+      const result = await updateProposalStatus("proposal-1", "Scoping");
 
       expect(result).toEqual({
         ok: false,
@@ -174,12 +206,12 @@ describe("proposal actions", () => {
         error: null,
       });
 
-      const result = await updateProposalStatus("proposal-1", "Won");
+      const result = await updateProposalStatus("proposal-1", "Scoping");
 
       expect(result).toEqual({ ok: true });
       expect(rpcMock).toHaveBeenCalledWith("transition_proposal_status", {
         p_proposal_id: "proposal-1",
-        p_new_status: "Won",
+        p_new_status: "Scoping",
       });
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals/proposal-1");
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals");
@@ -191,7 +223,7 @@ describe("proposal actions", () => {
         error: null,
       });
 
-      const result = await updateProposalStatus("proposal-1", "Draft");
+      const result = await updateProposalStatus("proposal-1", "Discovery");
 
       expect(result).toEqual({ ok: true });
       expect(revalidatePathMock).not.toHaveBeenCalled();
@@ -205,11 +237,155 @@ describe("proposal actions", () => {
         },
       });
 
-      const result = await updateProposalStatus("proposal-1", "Won");
+      const result = await updateProposalStatus("proposal-1", "Scoping");
 
       expect(result).toEqual({
         ok: false,
         error: "Proposal not found or you do not have permission to edit it.",
+      });
+    });
+
+    it("routes Closed Won through the closeout action", async () => {
+      const result = await updateProposalStatus("proposal-1", "Closed Won");
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Closed Won requires closeout details.",
+      });
+      expect(rpcMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("proposal closeout actions", () => {
+    beforeEach(() => {
+      rpcMock.mockResolvedValue({ data: true, error: null });
+    });
+
+    it("rejects closing won without an LoE date", async () => {
+      const result = await closeProposalWon("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 100000,
+        loeSignedDate: "",
+        varianceReasonCode: "",
+        varianceNote: "",
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "LoE signed date is required for Closed Won.",
+      });
+      expect(proposalsUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("rejects closing lost without reason and note", async () => {
+      const result = await closeProposalLost("proposal-1", {
+        closedLostReason: "",
+        closedLostNote: "",
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Closed Lost reason is required.",
+      });
+      expect(proposalsUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("requires reason and note when closing won under sold price", async () => {
+      const result = await closeProposalWon("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 90000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "",
+        varianceNote: "",
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Variance reason is required when LoE value is under sold price.",
+      });
+      expect(proposalsUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("saves Closed Won closeout fields and transitions status", async () => {
+      const result = await closeProposalWon("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 100000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "",
+        varianceNote: "",
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(proposalsUpdateMock).toHaveBeenCalledWith({
+        sold_price: 100000,
+        loe_value: 100000,
+        loe_signed_date: "2026-05-01",
+        variance_reason_code: null,
+        variance_note: null,
+        closed_lost_reason: null,
+        closed_lost_note: null,
+      });
+      expect(rpcMock).toHaveBeenCalledWith("transition_proposal_status", {
+        p_proposal_id: "proposal-1",
+        p_new_status: "Closed Won",
+      });
+    });
+
+    it("blocks SEs from correcting closed financials", async () => {
+      managerAssertMock.mockRejectedValue(
+        new AuthError("FORBIDDEN", "Manager or admin access required.")
+      );
+
+      const result = await correctClosedProposalFinancials("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 95000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "ae_discount",
+        varianceNote: "Sr. AE discounted before signature.",
+        correctionNote: "Fixing closeout typo.",
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Manager or admin access required.",
+      });
+      expect(proposalsUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("allows managers to correct closed financials and writes change log", async () => {
+      const result = await correctClosedProposalFinancials("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 95000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "ae_discount",
+        varianceNote: "Sr. AE discounted before signature.",
+        correctionNote: "Fixing closeout typo.",
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(proposalsUpdateMock).toHaveBeenCalledWith({
+        sold_price: 100000,
+        loe_value: 95000,
+        loe_signed_date: "2026-05-01",
+        variance_reason_code: "ae_discount",
+        variance_note: "Sr. AE discounted before signature.",
+        closed_financials_corrected_at: expect.any(String),
+        closed_financials_corrected_by: "manager-1",
+      });
+      expect(changeLogInsertMock).toHaveBeenCalledWith({
+        proposal_id: "proposal-1",
+        table_name: "proposals",
+        record_id: "proposal-1",
+        action: "UPDATE",
+        changed_by: "manager-1",
+        old_values: null,
+        new_values: {
+          correction_note: "Fixing closeout typo.",
+          sold_price: 100000,
+          loe_value: 95000,
+          loe_signed_date: "2026-05-01",
+          variance_reason_code: "ae_discount",
+        },
       });
     });
   });

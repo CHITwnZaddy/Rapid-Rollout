@@ -76,17 +76,17 @@ describe("proposal lifecycle actions", () => {
       name: "Revenue Flow",
       customerId: "",
     });
-    const statusResult = await updateProposalStatus("proposal-123", "Won");
+    const statusResult = await updateProposalStatus("proposal-123", "Scoping");
 
     expect(createResult).toEqual({ ok: true, proposalId: "proposal-123" });
     expect(statusResult).toEqual({ ok: true });
     expect(rpcMock).toHaveBeenNthCalledWith(1, "create_proposal_bundle", {
       p_name: "Revenue Flow",
-      p_customer_id: null,
+      p_customer_id: undefined,
     });
     expect(rpcMock).toHaveBeenNthCalledWith(2, "transition_proposal_status", {
       p_proposal_id: "proposal-123",
-      p_new_status: "Won",
+      p_new_status: "Scoping",
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/proposals");
     expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard");
@@ -125,7 +125,7 @@ describe("proposal lifecycle actions", () => {
 
     const statusResult = await updateProposalStatus(
       createResult.proposalId,
-      "Won"
+      "Scoping"
     );
 
     expect(statusResult).toEqual({ ok: true });
@@ -321,11 +321,11 @@ describe("proposal lifecycle actions", () => {
     expect(createResult).toEqual({ ok: true, proposalId });
     expect(rpcMock).toHaveBeenNthCalledWith(1, "create_proposal_bundle", {
       p_name: "Lifecycle Revenue Flow",
-      p_customer_id: null,
+      p_customer_id: undefined,
     });
     expect(rpcMock).toHaveBeenNthCalledWith(2, "transition_proposal_status", {
       p_proposal_id: proposalId,
-      p_new_status: "Won",
+      p_new_status: "Scoping",
     });
 
     expect(scenarioTotals.get(proposalId)).toBe(1870);

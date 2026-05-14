@@ -1,8 +1,7 @@
-// Phase 2.7 — admin landing is just a card grid of links. Almost
-// pure static; revalidate every 5 minutes is plenty.
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 import Link from "next/link";
+import { requireManagerOrAdminPage } from "@/lib/auth/page-guards";
 import {
   Card,
   CardDescription,
@@ -10,7 +9,30 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-const adminPages = [
+const managerPages = [
+  {
+    title: "Change Log",
+    description: "View audit trail of proposal and settings changes",
+    href: "/admin/change-log",
+  },
+  {
+    title: "KPI Targets",
+    description: "Set yearly team quota and SE targets",
+    href: "/admin/kpi-targets",
+  },
+  {
+    title: "Stale Thresholds",
+    description: "Set how long each active status can sit",
+    href: "/admin/stale-thresholds",
+  },
+  {
+    title: "Variance Reasons",
+    description: "Manage final price variance reason options",
+    href: "/admin/variance-reasons",
+  },
+];
+
+const adminOnlyPages = [
   {
     title: "Rate Cards",
     description: "Manage labor rates per role",
@@ -31,19 +53,23 @@ const adminPages = [
     description: "Manage user accounts and roles",
     href: "/admin/users",
   },
+  ...managerPages,
   {
-    title: "Change Log",
-    description: "View audit trail of changes",
-    href: "/admin/change-log",
+    title: "Theme",
+    description: "Manage local theme presets",
+    href: "/admin/theme",
   },
 ];
 
-export default function AdminPage() {
+export default async function AdminPage() {
+  const user = await requireManagerOrAdminPage();
+  const settingsPages = user.role === "admin" ? adminOnlyPages : managerPages;
+
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Admin</h1>
+      <h1 className="mb-6 text-2xl font-bold">Settings</h1>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {adminPages.map((page) => (
+        {settingsPages.map((page) => (
           <Link key={page.href} href={page.href}>
             <Card className="transition-colors hover:bg-muted/30">
               <CardHeader>
