@@ -88,7 +88,11 @@ export default async function StaleThresholdsPage() {
                     </select>
                   </TableCell>
                   <TableCell>
-                    <Button size="sm" form={`stale-threshold-${threshold.id}`}>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      form={`stale-threshold-${threshold.id}`}
+                    >
                       Save
                     </Button>
                   </TableCell>

@@ -52,6 +52,10 @@ function actionError(error: unknown): ActionResult {
   return { ok: false, error: "Unable to save KPI target." };
 }
 
+function throwIfActionFailed(result: ActionResult): void {
+  if (!result.ok) throw new Error(result.error);
+}
+
 export async function updateKpiYearTarget(
   formData: FormData
 ): Promise<ActionResult> {
@@ -66,7 +70,7 @@ export async function updateKpiYearTarget(
     });
 
     const supabase = await createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("kpi_year_targets")
       .update({
         year: parsed.year,
@@ -74,9 +78,12 @@ export async function updateKpiYearTarget(
         team_quota: parsed.teamQuota,
         is_active: parsed.isActive,
       })
-      .eq("id", parsed.id);
+      .eq("id", parsed.id)
+      .select("id")
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
+    if (!data) throw new Error("KPI year target was not updated.");
     revalidatePath("/admin/kpi-targets");
     return { ok: true };
   } catch (error) {
@@ -85,7 +92,7 @@ export async function updateKpiYearTarget(
 }
 
 export async function submitUpdateKpiYearTarget(formData: FormData): Promise<void> {
-  await updateKpiYearTarget(formData);
+  throwIfActionFailed(await updateKpiYearTarget(formData));
 }
 
 export async function deleteKpiYearTarget(
@@ -96,12 +103,15 @@ export async function deleteKpiYearTarget(
     const parsed = idSchema.parse({ id: getString(formData, "id") });
 
     const supabase = await createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("kpi_year_targets")
       .delete()
-      .eq("id", parsed.id);
+      .eq("id", parsed.id)
+      .select("id")
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
+    if (!data) throw new Error("KPI year target was not deleted.");
     revalidatePath("/admin/kpi-targets");
     return { ok: true };
   } catch (error) {
@@ -110,7 +120,7 @@ export async function deleteKpiYearTarget(
 }
 
 export async function submitDeleteKpiYearTarget(formData: FormData): Promise<void> {
-  await deleteKpiYearTarget(formData);
+  throwIfActionFailed(await deleteKpiYearTarget(formData));
 }
 
 export async function upsertKpiUserTarget(
@@ -128,18 +138,23 @@ export async function upsertKpiUserTarget(
     });
 
     const supabase = await createClient();
-    const { error } = await supabase.from("kpi_user_targets").upsert(
-      {
-        ...(parsed.id ? { id: parsed.id } : {}),
-        year: parsed.year,
-        user_id: parsed.userId,
-        target_amount: parsed.targetAmount,
-        is_active: parsed.isActive,
-      },
-      { onConflict: "year,user_id" }
-    );
+    const { data, error } = await supabase
+      .from("kpi_user_targets")
+      .upsert(
+        {
+          ...(parsed.id ? { id: parsed.id } : {}),
+          year: parsed.year,
+          user_id: parsed.userId,
+          target_amount: parsed.targetAmount,
+          is_active: parsed.isActive,
+        },
+        { onConflict: "year,user_id" }
+      )
+      .select("id")
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
+    if (!data) throw new Error("KPI SE target was not saved.");
     revalidatePath("/admin/kpi-targets");
     return { ok: true };
   } catch (error) {
@@ -148,7 +163,7 @@ export async function upsertKpiUserTarget(
 }
 
 export async function submitUpsertKpiUserTarget(formData: FormData): Promise<void> {
-  await upsertKpiUserTarget(formData);
+  throwIfActionFailed(await upsertKpiUserTarget(formData));
 }
 
 export async function deleteKpiUserTarget(
@@ -159,12 +174,15 @@ export async function deleteKpiUserTarget(
     const parsed = idSchema.parse({ id: getString(formData, "id") });
 
     const supabase = await createClient();
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("kpi_user_targets")
       .delete()
-      .eq("id", parsed.id);
+      .eq("id", parsed.id)
+      .select("id")
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
+    if (!data) throw new Error("KPI SE target was not deleted.");
     revalidatePath("/admin/kpi-targets");
     return { ok: true };
   } catch (error) {
@@ -173,5 +191,5 @@ export async function deleteKpiUserTarget(
 }
 
 export async function submitDeleteKpiUserTarget(formData: FormData): Promise<void> {
-  await deleteKpiUserTarget(formData);
+  throwIfActionFailed(await deleteKpiUserTarget(formData));
 }

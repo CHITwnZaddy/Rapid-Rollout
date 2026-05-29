@@ -105,7 +105,11 @@ export default async function VarianceReasonsPage() {
                     </select>
                   </TableCell>
                   <TableCell>
-                    <Button size="sm" form={`variance-reason-${reason.id}`}>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      form={`variance-reason-${reason.id}`}
+                    >
                       Save
                     </Button>
                   </TableCell>
