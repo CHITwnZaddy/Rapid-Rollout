@@ -113,7 +113,11 @@ export default async function KpiTargetsPage() {
                       <input type="hidden" name="id" value={target.id} />
                     </form>
                     <div className="flex gap-2">
-                      <Button size="sm" form={`year-target-${target.id}`}>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        form={`year-target-${target.id}`}
+                      >
                         Save
                       </Button>
                       <ConfirmSubmitButton
@@ -270,7 +274,7 @@ export default async function KpiTargetsPage() {
                           <input type="hidden" name="id" value={target.id} />
                         </form>
                         <div className="flex gap-2">
-                          <Button size="sm" form={formId}>
+                          <Button type="submit" size="sm" form={formId}>
                             Save
                           </Button>
                           <ConfirmSubmitButton

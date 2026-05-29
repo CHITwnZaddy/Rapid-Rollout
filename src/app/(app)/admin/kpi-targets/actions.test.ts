@@ -29,6 +29,7 @@ vi.mock("next/cache", () => ({
 import {
   deleteKpiUserTarget,
   deleteKpiYearTarget,
+  submitUpdateKpiYearTarget,
   updateKpiYearTarget,
   upsertKpiUserTarget,
 } from "./actions";
@@ -45,27 +46,33 @@ function form(values: Record<string, string>): FormData {
   return formData;
 }
 
-function mockUpdate() {
-  const eq = vi.fn(async () => ({ error: null }));
+function mockUpdate(data: { id: string } | null = { id: yearTargetId }) {
+  const maybeSingle = vi.fn(async () => ({ data, error: null }));
+  const select = vi.fn(() => ({ maybeSingle }));
+  const eq = vi.fn(() => ({ select }));
   const update = vi.fn(() => ({ eq }));
   const from = vi.fn(() => ({ update }));
   createClientMock.mockResolvedValue({ from });
-  return { from, update, eq };
+  return { from, update, eq, select, maybeSingle };
 }
 
-function mockUpsert() {
-  const upsert = vi.fn(async () => ({ error: null }));
+function mockUpsert(data: { id: string } | null = { id: userTargetId }) {
+  const maybeSingle = vi.fn(async () => ({ data, error: null }));
+  const select = vi.fn(() => ({ maybeSingle }));
+  const upsert = vi.fn(() => ({ select }));
   const from = vi.fn(() => ({ upsert }));
   createClientMock.mockResolvedValue({ from });
-  return { from, upsert };
+  return { from, upsert, select, maybeSingle };
 }
 
-function mockDelete() {
-  const eq = vi.fn(async () => ({ error: null }));
+function mockDelete(data: { id: string } | null = { id: yearTargetId }) {
+  const maybeSingle = vi.fn(async () => ({ data, error: null }));
+  const select = vi.fn(() => ({ maybeSingle }));
+  const eq = vi.fn(() => ({ select }));
   const deleteFn = vi.fn(() => ({ eq }));
   const from = vi.fn(() => ({ delete: deleteFn }));
   createClientMock.mockResolvedValue({ from });
-  return { from, deleteFn, eq };
+  return { from, deleteFn, eq, select, maybeSingle };
 }
 
 describe("KPI target actions", () => {
@@ -120,6 +127,44 @@ describe("KPI target actions", () => {
       is_active: true,
     });
     expect(eq).toHaveBeenCalledWith("id", yearTargetId);
+  });
+
+  it("reports when a yearly KPI target update does not touch a row", async () => {
+    mockUpdate(null);
+
+    const result = await updateKpiYearTarget(
+      form({
+        id: yearTargetId,
+        year: "2026",
+        label: "FY26",
+        teamQuota: "8000000",
+        isActive: "true",
+      })
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: "KPI year target was not updated.",
+    });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("throws from the form submit wrapper when a KPI target save fails", async () => {
+    assertManagerOrAdminMock.mockRejectedValue(
+      new AuthError("FORBIDDEN", "Manager or admin access required.")
+    );
+
+    await expect(
+      submitUpdateKpiYearTarget(
+        form({
+          id: yearTargetId,
+          year: "2026",
+          label: "FY26",
+          teamQuota: "8000000",
+          isActive: "true",
+        })
+      )
+    ).rejects.toThrow("Manager or admin access required.");
   });
 
   it("allows admins to save SE KPI targets", async () => {
