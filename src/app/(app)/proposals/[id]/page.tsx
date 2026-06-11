@@ -97,6 +97,35 @@ export default async function ProposalSummaryPage({
         ]),
     ]);
 
+  // Per-query error checks: a failed scenarios query previously fell
+  // through to the generic "Unable to load pricing data" rates error,
+  // which pointed debugging at the wrong table. Name the query that
+  // actually failed. (migration_config and bid_sheets use .single() and
+  // are intentionally tolerated when absent — handled below.)
+  if (proposalRes.error || !proposalRes.data) notFound();
+  const failedQuery = scenarioRes.error
+    ? "scenarios"
+    : scopedRes.error
+      ? "scoped services"
+      : migrationLinesRes.error
+        ? "migration detail lines"
+        : null;
+  if (failedQuery) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Unable to load proposal data</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          <p>
+            The {failedQuery} for this proposal could not be read. Refresh
+            the page to retry; if the problem persists, contact an admin.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const rateRows = ratesRes.data ?? [];
   const internalCostRateRow = rateRows.find(
     (r) => r.lookup_key === INTERNAL_COST_RATE_KEY

@@ -43,6 +43,33 @@ export async function assertAuthenticated(): Promise<User> {
   return user;
 }
 
+export type AuthResult =
+  | { ok: true; user: User }
+  | { ok: false; error: string };
+
+/**
+ * Result-object variant of assertAuthenticated for server actions that
+ * use the `{ ok, error }` contract. Never throws: AuthError becomes the
+ * caller-supplied message, anything unexpected is logged and returned
+ * as a generic failure instead of crashing the client component.
+ */
+export async function requireAuthenticatedResult(
+  message: string
+): Promise<AuthResult> {
+  try {
+    return { ok: true, user: await assertAuthenticated() };
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { ok: false, error: message };
+    }
+    console.error("Unexpected error during auth check:", error);
+    return {
+      ok: false,
+      error: "Something went wrong verifying your session. Please refresh and try again.",
+    };
+  }
+}
+
 /**
  * Assert the caller is an admin. Throws AuthError otherwise.
  * Use in any server action that performs an admin-only operation
@@ -54,6 +81,26 @@ export async function assertAdmin(): Promise<User> {
     throw new AuthError("FORBIDDEN", "Admin access required.");
   }
   return user;
+}
+
+/**
+ * Result-object variant of assertManagerOrAdmin. Never throws; the
+ * AuthError's own message ("You must be signed in." / "Manager or
+ * admin access required.") is returned as the error string.
+ */
+export async function requireManagerOrAdminResult(): Promise<AuthResult> {
+  try {
+    return { ok: true, user: await assertManagerOrAdmin() };
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { ok: false, error: error.message };
+    }
+    console.error("Unexpected error during auth check:", error);
+    return {
+      ok: false,
+      error: "Something went wrong verifying your session. Please refresh and try again.",
+    };
+  }
 }
 
 /**

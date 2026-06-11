@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { AuthError, assertAuthenticated } from "@/lib/auth/require-admin";
+import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
 import {
   bidSheetCustomerInputSchema,
   bidSheetDiscountDollarsInputSchema,
@@ -66,17 +66,8 @@ export async function updateBidSheetCustomer(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update the bid sheet customer.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet customer.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {
@@ -128,17 +119,8 @@ export async function updateBidSheetDiscountPercent(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update the bid sheet discount percent.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet discount percent.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {
@@ -176,17 +158,8 @@ export async function updateBidSheetCredit(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update the bid sheet credit.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet credit.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {
@@ -238,17 +211,8 @@ export async function updateBidSheetNotes(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update bid sheet notes.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update bid sheet notes.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {

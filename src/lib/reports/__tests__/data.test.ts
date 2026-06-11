@@ -167,14 +167,48 @@ describe("fetchReportProposals", () => {
       customerId: "customer-1",
       status: "Won",
       ownerId: "user-1",
-      excludeStatuses: ["Lost", "VOID"],
+      excludeStatuses: ["Closed Lost", "On Hold"],
     });
 
     const query = queries.get("proposals");
     expect(query?.eq).toHaveBeenCalledWith("customer_id", "customer-1");
     expect(query?.eq).toHaveBeenCalledWith("status", "Won");
     expect(query?.eq).toHaveBeenCalledWith("created_by", "user-1");
-    expect(query?.not).toHaveBeenCalledWith("status", "in", "(Lost,VOID)");
+    expect(query?.not).toHaveBeenCalledWith(
+      "status",
+      "in",
+      "(Closed Lost,On Hold)"
+    );
+  });
+
+  it("drops non-canonical statuses from the exclusion filter", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      excludeStatuses: ["Closed Lost", "VOID', 'injected"],
+    });
+
+    // Only whitelisted PROPOSAL_STATUSES values survive into the
+    // hand-built `(a,b)` filter string.
+    expect(queries.get("proposals")?.not).toHaveBeenCalledWith(
+      "status",
+      "in",
+      "(Closed Lost)"
+    );
+  });
+
+  it("skips the exclusion filter entirely when no statuses are canonical", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      excludeStatuses: ["NotARealStatus"],
+    });
+
+    expect(queries.get("proposals")?.not).not.toHaveBeenCalled();
   });
 
   it("applies multi-status filters with in()", async () => {
@@ -272,7 +306,7 @@ describe("fetchRevenueReportBaseRows", () => {
       customerId: "customer-1",
       status: "Won",
       ownerId: "user-1",
-      excludeStatuses: ["Lost", "VOID"],
+      excludeStatuses: ["Closed Lost", "On Hold"],
       orderBy: "created_at",
       ascending: false,
     });
@@ -284,7 +318,11 @@ describe("fetchRevenueReportBaseRows", () => {
     expect(query?.eq).toHaveBeenCalledWith("customer_id", "customer-1");
     expect(query?.eq).toHaveBeenCalledWith("status", "Won");
     expect(query?.eq).toHaveBeenCalledWith("created_by", "user-1");
-    expect(query?.not).toHaveBeenCalledWith("status", "in", "(Lost,VOID)");
+    expect(query?.not).toHaveBeenCalledWith(
+      "status",
+      "in",
+      "(Closed Lost,On Hold)"
+    );
     expect(query?.order).toHaveBeenCalledWith("created_at", {
       ascending: false,
     });
