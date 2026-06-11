@@ -9,6 +9,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useMigrationConfig } from "@/lib/hooks/use-migration-config";
+import { ClearTabButton } from "@/components/proposals/clear-tab-button";
+import { resetMigrationServices } from "./actions";
+import { toast } from "sonner";
 import { MigrationConfigForm } from "@/components/migration/migration-config-form";
 import { MigrationTotalsSummary } from "@/components/migration/migration-totals-summary";
 import { MigrationDetailSection } from "@/components/migration/migration-detail-section";
@@ -85,8 +88,25 @@ export default function MigrationPage() {
     );
   }
 
+  const handleClearTab = async () => {
+    const result = await resetMigrationServices(proposalId);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("Migration Services reset to defaults.");
+    retry();
+  };
+
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <ClearTabButton
+          description="All migration settings return to their defaults and every detail row is replaced with the standard starter rows."
+          onConfirm={handleClearTab}
+          disabled={loading || isMutatingRows}
+        />
+      </div>
       {(saveStatus !== "idle" || saveError) && (
         <Card>
           <CardHeader>

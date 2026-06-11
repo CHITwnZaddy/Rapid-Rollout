@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { ClearTabButton } from "@/components/proposals/clear-tab-button";
 import { sortScopeOptions } from "@/lib/ui/scope-option-sort";
 import { Button } from "@/components/ui/button";
 
@@ -270,6 +271,29 @@ export function ScenarioGrid({
     [serviceHoursMap, rateCardMap, scheduleSave]
   );
 
+  // Clear Tab: reset every line's scope selection to none and push the
+  // change through the normal save pipeline (mark all dirty, save now).
+  const handleClearAll = useCallback(() => {
+    setLines((prev) =>
+      prev.map((line) => {
+        const calc = calculateScenarioLine(
+          { module: line.module, scopeSelection: null },
+          serviceHoursMap,
+          rateCardMap
+        );
+        return { ...line, ...calc, scopeSelection: null };
+      })
+    );
+    for (const line of linesRef.current) {
+      dirtyLinesRef.current.add(line.id);
+    }
+    setSaveStatus("unsaved");
+    setSaveError(null);
+    scheduleSave(0);
+  }, [serviceHoursMap, rateCardMap, scheduleSave]);
+
+  const hasAnySelection = lines.some((line) => line.scopeSelection !== null);
+
   // Save immediately on unmount
   useEffect(() => {
     const dirtyLines = dirtyLinesRef.current;
@@ -289,6 +313,12 @@ export function ScenarioGrid({
         <h2 className="text-lg font-semibold">
           Scenario {scenarioType}
         </h2>
+        <div className="flex items-center gap-2">
+        <ClearTabButton
+          description="All scope selections on this tab will be reset, zeroing its hours and costs."
+          onConfirm={handleClearAll}
+          disabled={!hasAnySelection || saveStatus === "saving"}
+        />
         <Badge
           variant={
             saveStatus === "saved"
@@ -306,6 +336,7 @@ export function ScenarioGrid({
                 ? "Save failed"
                 : "Unsaved changes"}
         </Badge>
+        </div>
       </div>
 
       {(saveStatus === "error" || saveError) && (
