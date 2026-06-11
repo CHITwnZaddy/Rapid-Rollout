@@ -272,7 +272,7 @@ export default async function DashboardPage({
       (Number(proposal.p1_cost) || 0) +
         (Number(proposal.p2_cost) || 0) +
         (Number(proposal.p3_cost) || 0) +
-        (Number(proposal.p4_cost) || 0) +
+        (Number(proposal.opt3_cost) || 0) +
         (Number(proposal.opt1_cost) || 0) +
         (Number(proposal.opt2_cost) || 0) +
         (Number(proposal.scoped_total) || 0) +

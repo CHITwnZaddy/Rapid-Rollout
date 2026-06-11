@@ -44,10 +44,12 @@ import {
 } from "@/lib/rate-card-keys";
 import {
   addScopedServiceLine,
+  clearScopedServices,
   deleteScopedServiceLine,
   type ScopedServiceLine,
   updateScopedServiceLine,
 } from "./actions";
+import { ClearTabButton } from "@/components/proposals/clear-tab-button";
 
 function sortScopedLines(lines: ScopedServiceLine[]): ScopedServiceLine[] {
   return [...lines].sort((a, b) => {
@@ -157,6 +159,16 @@ export default function ScopedServicesPage() {
 
     syncServerLines(result.lines);
     toast.success("Scoped service line added.");
+  }, [proposalId, syncServerLines]);
+
+  const handleClearTab = useCallback(async () => {
+    const result = await clearScopedServices(proposalId);
+    if (!result.ok) {
+      toast.error(`Couldn't clear scoped services. ${result.error}`);
+      return;
+    }
+    syncServerLines(result.lines);
+    toast.success("Scoped services cleared.");
   }, [proposalId, syncServerLines]);
 
   const saveLineOnBlur = useCallback(
@@ -283,9 +295,16 @@ export default function ScopedServicesPage() {
       </div>
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Scoped Services</h2>
-        <Button onClick={addLine} size="sm" disabled={isMutating}>
-          {isAdding ? "Adding..." : "Add Line"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <ClearTabButton
+            description="All scoped service lines will be deleted."
+            onConfirm={handleClearTab}
+            disabled={isMutating || lines.length === 0}
+          />
+          <Button onClick={addLine} size="sm" disabled={isMutating}>
+            {isAdding ? "Adding..." : "Add Line"}
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-md border">

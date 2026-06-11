@@ -146,6 +146,18 @@ vi.mock("@/lib/supabase/server", () => ({
           delete() {
             return {
               eq(column: string, value: string) {
+                // Bulk clear path: delete().eq("proposal_id", id) resolves
+                // directly; per-line path chains a second eq for proposal_id.
+                if (column === "proposal_id") {
+                  scopedServiceRows = scopedServiceRows.filter(
+                    (row) => row.proposal_id !== value
+                  );
+                  return {
+                    then(resolve: (result: { error: null }) => void) {
+                      resolve({ error: null });
+                    },
+                  };
+                }
                 if (column !== "id") {
                   throw new Error(`Unexpected delete eq column ${column}`);
                 }
@@ -201,6 +213,7 @@ vi.mock("next/cache", () => ({
 import { AuthError } from "@/lib/auth/require-admin";
 import {
   addScopedServiceLine,
+  clearScopedServices,
   deleteScopedServiceLine,
   updateScopedServiceLine,
 } from "./actions";
@@ -344,5 +357,27 @@ describe("scoped services actions", () => {
         row_order: 0,
       }),
     ]);
+  });
+
+  it("clears every scoped service line for the proposal", async () => {
+    const result = await clearScopedServices(proposalId);
+
+    expect(result).toEqual({ ok: true, lines: [] });
+    expect(scopedServiceRows.filter((r) => r.proposal_id === proposalId)).toEqual([]);
+    expect(revalidatePathMock).toHaveBeenCalledWith(`/proposals/${proposalId}`);
+  });
+
+  it("rejects unauthenticated clear requests", async () => {
+    authAssertMock.mockRejectedValue(
+      new AuthError("UNAUTHENTICATED", "You must be signed in.")
+    );
+
+    const result = await clearScopedServices(proposalId);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "You must be signed in to clear scoped services.",
+    });
+    expect(scopedServiceRows.length).toBeGreaterThan(0);
   });
 });

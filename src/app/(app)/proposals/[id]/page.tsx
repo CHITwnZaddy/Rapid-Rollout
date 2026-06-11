@@ -342,6 +342,17 @@ export default async function ProposalSummaryPage({
     migrationInternalCost
   );
 
+  // Team request (2026-06-10): only show line items that have work in
+  // them. A row hides when BOTH hours and cost are zero — hours alone
+  // would wrongly hide cost-only rows (e.g. migration travel).
+  const visibleScenarios = allocated.filter(
+    (s) => s.totalHours > 0 || s.totalCost > 0
+  );
+  const showScoped = scopedTotalHours > 0 || scopedTotal > 0;
+  const showMigration = migrationTotalHours > 0 || migrationTotal > 0;
+  const hasComparisonRows =
+    visibleScenarios.length > 0 || showScoped || showMigration;
+
   return (
     <div className="space-y-6">
       <Card>
@@ -422,6 +433,12 @@ export default async function ProposalSummaryPage({
           <CardTitle>Scenario Comparison</CardTitle>
         </CardHeader>
         <CardContent>
+          {!hasComparisonRows ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No scenarios configured yet — add hours on a Phase or Option
+              tab, Scoped Services, or Migration Services.
+            </p>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -434,7 +451,7 @@ export default async function ProposalSummaryPage({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {allocated.map((s) => (
+              {visibleScenarios.map((s) => (
                 <TableRow key={s.scenarioType} className="hover:bg-muted/50">
                   <TableCell className="font-medium">
                     <Link
@@ -470,6 +487,7 @@ export default async function ProposalSummaryPage({
                 </TableRow>
               ))}
 
+              {showScoped && (
               <TableRow className="hover:bg-muted/50">
                 <TableCell className="font-medium">
                   <Link
@@ -499,7 +517,9 @@ export default async function ProposalSummaryPage({
                   )}
                 </TableCell>
               </TableRow>
+              )}
 
+              {showMigration && (
               <TableRow className="hover:bg-muted/50">
                 <TableCell className="font-medium">
                   <Link
@@ -531,8 +551,10 @@ export default async function ProposalSummaryPage({
                   )}
                 </TableCell>
               </TableRow>
+              )}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
     </div>

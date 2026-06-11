@@ -97,7 +97,7 @@ export type RevenueReportBaseRow = {
   p1_cost: unknown;
   p2_cost: unknown;
   p3_cost: unknown;
-  p4_cost: unknown;
+  opt3_cost: unknown;
   opt1_cost: unknown;
   opt2_cost: unknown;
   scenario_total: unknown;
@@ -259,7 +259,7 @@ export async function fetchRevenueReportBaseRows(
   let query = client
     .from("proposal_revenue_report_base")
     .select(
-      "proposal_id, proposal_name, status, customer_id, customer_name, created_by, created_at, updated_at, scoped_complexity_factor, p1_cost, p2_cost, p3_cost, p4_cost, opt1_cost, opt2_cost, scenario_total, scoped_total"
+      "proposal_id, proposal_name, status, customer_id, customer_name, created_by, created_at, updated_at, scoped_complexity_factor, p1_cost, p2_cost, p3_cost, opt1_cost, opt2_cost, opt3_cost, scenario_total, scoped_total"
     );
 
   if (filters.customerId) {

@@ -4,6 +4,10 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Branch workflow
+
+Two Vercel environments: **staging** (deploys from the `staging` branch) and **production** (deploys from `main`). All PRs target `staging` by default — never main directly. Promote staging → main with a separate PR only after Austin verifies the Vercel staging deploy.
+
 # Pull/merge caveat
 
 Claude may pull and merge PRs autonomously (the relevant `git pull`, `gh pr merge`, and `git branch -d` commands are pre-approved in `.claude/settings.local.json`).

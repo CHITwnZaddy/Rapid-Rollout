@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -379,26 +378,32 @@ export default function BidSheetPage() {
     discountPercent,
   });
   const finalTotal = pricing.finalTotal;
+  // Team request (2026-06-10): line items with no work in them stay off
+  // the bid sheet (screen AND export). A row hides only when BOTH hours
+  // and cost are zero — hours alone would wrongly hide cost-only rows.
   const bidLineItems = [
-    ...scenarios.map((scenario) => ({
-      label: scenario.scenario_type,
-      displayLabel: getScenarioDisplayName(scenario.scenario_type),
-      clientPrice: applyComplexity(
-        Number(scenario.summary_total_cost),
-        Number(scenario.complexity_factor ?? 1)
-      ),
-    })),
+    ...scenarios.map((scenario) => {
+      const cf = Number(scenario.complexity_factor ?? 1);
+      return {
+        label: scenario.scenario_type,
+        displayLabel: getScenarioDisplayName(scenario.scenario_type),
+        clientPrice: applyComplexity(Number(scenario.summary_total_cost), cf),
+        totalHours: applyComplexity(Number(scenario.summary_total_hours), cf),
+      };
+    }),
     {
       label: "Scoped Services",
       displayLabel: "Scoped Services",
       clientPrice: scopedTotal,
+      totalHours: 0,
     },
     {
       label: "Migration Services",
       displayLabel: "Migration Services",
       clientPrice: migrationTotal,
+      totalHours: 0,
     },
-  ];
+  ].filter((item) => item.clientPrice > 0 || item.totalHours > 0);
 
   const handleExport = async () => {
     const ExcelJS = (await import("exceljs")).default;
@@ -655,6 +660,12 @@ export default function BidSheetPage() {
           </Button>
         </CardHeader>
         <CardContent>
+          {bidLineItems.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No scenarios configured yet — add hours on a Phase or Option
+              tab, Scoped Services, or Migration Services.
+            </p>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -663,38 +674,16 @@ export default function BidSheetPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {scenarios.map((s) => (
-                <TableRow key={s.scenario_type}>
+              {bidLineItems.map((item) => (
+                <TableRow key={item.label}>
                   <TableCell className="font-medium">
-                    {getScenarioDisplayName(s.scenario_type)}
-                    {Number(s.summary_total_cost) === 0 && (
-                      <Badge variant="secondary" className="ml-2">
-                        Empty
-                      </Badge>
-                    )}
+                    {item.displayLabel}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrency(
-                      applyComplexity(
-                        Number(s.summary_total_cost),
-                        Number(s.complexity_factor ?? 1)
-                      )
-                    )}
+                    {formatCurrency(item.clientPrice)}
                   </TableCell>
                 </TableRow>
               ))}
-              <TableRow>
-                <TableCell className="font-medium">Scoped Services</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatCurrency(scopedTotal)}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium">Migration Services</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatCurrency(migrationTotal)}
-                </TableCell>
-              </TableRow>
               <TableRow className="bg-muted/50 font-semibold">
                 <TableCell>Subtotal</TableCell>
                 <TableCell className="text-right tabular-nums">
@@ -703,6 +692,7 @@ export default function BidSheetPage() {
               </TableRow>
             </TableBody>
           </Table>
+          )}
 
           <div className="mt-4 flex flex-wrap items-end gap-4">
             <div className="space-y-1">

@@ -10,6 +10,7 @@ interface ProposalData {
   status: string;
   sold_price: number | null;
   loe_value: number | null;
+  created_by: string | null;
   customers: { company_name: string } | { company_name: string }[] | null;
 }
 
@@ -26,7 +27,7 @@ export default async function ProposalLayout({
   const [{ data }, { data: varianceReasons }] = await Promise.all([
     supabase
     .from("proposals")
-      .select("id, name, status, sold_price, loe_value, customers ( company_name )")
+      .select("id, name, status, sold_price, loe_value, created_by, customers ( company_name )")
     .eq("id", id)
       .single(),
     supabase
@@ -43,6 +44,20 @@ export default async function ProposalLayout({
     ? proposal.customers[0]
     : proposal.customers;
 
+  // "Scoped by" = the proposal creator's display name. Separate query
+  // because proposals.created_by references auth.users, not profiles,
+  // so PostgREST can't embed the join. Fails soft: no profile row just
+  // means the name is omitted from the header.
+  let scopedBy: string | null = null;
+  if (proposal.created_by) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", proposal.created_by)
+      .maybeSingle();
+    scopedBy = profile?.display_name ?? null;
+  }
+
   return (
     <div>
       <div className="mb-1 flex items-start justify-between gap-4">
@@ -50,6 +65,7 @@ export default async function ProposalLayout({
           <h1 className="text-2xl font-bold">{proposal.name}</h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {customer?.company_name ?? "No customer"} &middot;{" "}
+            {scopedBy && <>Scoped by {scopedBy} &middot;{" "}</>}
             <ProposalStatus
               proposalId={id}
               initialStatus={proposal.status}
