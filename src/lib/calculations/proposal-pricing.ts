@@ -3,6 +3,7 @@ import {
   calculateBidSheetPricing,
   type BidSheetPricing,
 } from "@/lib/calculations/bid-sheet-pricing";
+import { ceilHours } from "@/lib/calculations/rounding";
 
 export type ProposalPricingScenarioRow = {
   summary_total_cost: unknown;
@@ -58,7 +59,9 @@ export function calculateProposalPricingSummary(
 
   return {
     scenarioSubtotal,
-    totalHours,
+    // Client-facing hour total: always ceil to the whole hour so the
+    // estimation error lands in our favor (rounding policy 2026-06-10).
+    totalHours: ceilHours(totalHours),
     proposalSubtotal,
     pricing: calculateBidSheetPricing(
       proposalSubtotal,

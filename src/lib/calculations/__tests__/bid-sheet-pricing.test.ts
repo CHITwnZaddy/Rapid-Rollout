@@ -165,12 +165,13 @@ describe("estimatedMargin — INTERNAL_COST_RATE pin (SA-APP-01)", () => {
     // Workshop preset: 132 Sr.IM hrs + 8 PM hrs.
     // Client price = 132*200 + 8*300 = 26400 + 2400 = 28800
     // Total hours = 140; blendedRate = 28800/140 ≈ 205.7142857
-    // Margin = 1 - 135/205.7142857 ≈ 0.34375
+    // Raw margin = 1 - 135/205.7142857 = 0.34375. Rounding policy rounds
+    // the percent edge to 2 decimals: 34.375% → 34.38% → 0.3438.
     expect(totals.totalSrImHours).toBe(132);
     expect(totals.totalPmHours).toBe(8);
     expect(totals.clientPrice).toBe(28800);
     expect(totals.blendedRate).toBeCloseTo(205.7142857, 4);
-    expect(totals.estimatedMargin).toBeCloseTo(0.34375, 5);
+    expect(totals.estimatedMargin).toBeCloseTo(0.3438, 5);
   });
 
   it("estimatedMargin is exactly 0 when clientPrice is 0 (no NaN, no Infinity)", () => {

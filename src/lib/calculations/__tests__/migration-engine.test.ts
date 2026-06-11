@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { roundPercent } from "@/lib/calculations/rounding";
 import {
   calculateLineImports,
   effectiveTotalLineItems,
@@ -319,7 +320,12 @@ describe("calculateMigrationTotals", () => {
       [], [], [], 200, 300, 2000, 135
     );
     expect(t.estimatedMargin).toBeGreaterThan(0);
-    expect(t.estimatedMargin).toBeCloseTo(1 - 135 / t.blendedRate, 6);
+    // estimatedMargin derives from calculateMarginPercent, which rounds
+    // the percent edge to 2 decimals (rounding policy) before /100.
+    expect(t.estimatedMargin).toBeCloseTo(
+      roundPercent((1 - 135 / t.blendedRate) * 100) / 100,
+      9
+    );
   });
 
   it("estimatedMargin goes negative when blendedRate < 135", () => {
