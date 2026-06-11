@@ -21,6 +21,25 @@ describe("calculateBidSheetPricing", () => {
     expect(result.finalTotal).toBe(810);
   });
 
+  // Canonical business case (confirmed with Austin 2026-06-10): an LoE
+  // credit of $1,125 (5 hrs × $225 already paid) comes off an $18,000
+  // proposal FIRST, then a 15% competitive discount applies to the rest.
+  //   (18000 − 1125) × (1 − 0.15) = 16875 × 0.85 = 14343.75, exactly.
+  it("matches the canonical LoE-credit-then-percent case to the cent", () => {
+    const result = calculateBidSheetPricing(18000, 1125, 15);
+
+    expect(result.subtotal).toBe(18000);
+    expect(result.afterCredit).toBe(16875);
+    expect(result.finalTotal).toBe(14343.75);
+  });
+
+  it("rounds the final total to the cent", () => {
+    // 999.99 − 0 at 33% → 669.9933 raw; client-facing edge → 669.99
+    const result = calculateBidSheetPricing(999.99, 0, 33);
+
+    expect(result.finalTotal).toBe(669.99);
+  });
+
   it("skips the credit effect when credit is zero", () => {
     const result = calculateBidSheetPricing(1000, 0, 10);
 

@@ -9,6 +9,7 @@ import {
   bidSheetDiscountPercentInputSchema,
   bidSheetNotesInputSchema,
 } from "@/lib/validation/bid-sheet";
+import { fetchProposalSubtotal } from "@/lib/proposals/proposal-subtotal";
 
 export type UpdateBidSheetResult =
   | { ok: true }
@@ -193,6 +194,24 @@ export async function updateBidSheetCredit(
   }
 
   const supabase = await createClient();
+
+  // Business rule: the credit is prepaid LoE money deducted from the
+  // proposal, so it can never exceed what the proposal is worth. Computed
+  // server-side — the client-displayed subtotal is not trusted.
+  const subtotalResult = await fetchProposalSubtotal(
+    supabase,
+    parsed.data.proposalId
+  );
+  if (!subtotalResult.ok) {
+    return { ok: false, error: subtotalResult.error };
+  }
+  if (parsed.data.discountDollars > subtotalResult.subtotal) {
+    return {
+      ok: false,
+      error: `Credit ($${parsed.data.discountDollars.toLocaleString()}) cannot exceed the proposal subtotal ($${subtotalResult.subtotal.toLocaleString()}).`,
+    };
+  }
+
   const { error } = await supabase
     .from("bid_sheets")
     .update({ discount_dollars: parsed.data.discountDollars })

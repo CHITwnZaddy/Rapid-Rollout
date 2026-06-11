@@ -12,7 +12,9 @@ const {
   customerSelectMock,
   fromMock,
   revalidatePathMock,
+  fetchProposalSubtotalMock,
 } = vi.hoisted(() => ({
+  fetchProposalSubtotalMock: vi.fn(),
   authAssertMock: vi.fn(),
   bidSheetEqMock: vi.fn(),
   bidSheetMaybeSingleMock: vi.fn(),
@@ -47,6 +49,10 @@ vi.mock("next/cache", () => ({
   revalidatePath: revalidatePathMock,
 }));
 
+vi.mock("@/lib/proposals/proposal-subtotal", () => ({
+  fetchProposalSubtotal: fetchProposalSubtotalMock,
+}));
+
 import { AuthError } from "@/lib/auth/require-admin";
 import {
   updateBidSheetCredit,
@@ -73,6 +79,8 @@ describe("bid sheet actions", () => {
     revalidatePathMock.mockReset();
 
     authAssertMock.mockResolvedValue({ id: "user-1" });
+    fetchProposalSubtotalMock.mockReset();
+    fetchProposalSubtotalMock.mockResolvedValue({ ok: true, subtotal: 10000 });
 
     bidSheetEqMock.mockReturnValue({
       maybeSingle: bidSheetMaybeSingleMock,
@@ -169,6 +177,39 @@ describe("bid sheet actions", () => {
     expect(creditResult).toEqual({ ok: true });
     expect(bidSheetUpdateMock).toHaveBeenCalledWith({ discount_percent: 12.5 });
     expect(bidSheetUpdateMock).toHaveBeenCalledWith({ discount_dollars: 1500 });
+  });
+
+  it("rejects a credit larger than the proposal subtotal", async () => {
+    fetchProposalSubtotalMock.mockResolvedValue({ ok: true, subtotal: 1000 });
+
+    const result = await updateBidSheetCredit(proposalId, 1500);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("cannot exceed the proposal subtotal");
+    }
+    expect(bidSheetUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("allows a credit equal to the proposal subtotal", async () => {
+    fetchProposalSubtotalMock.mockResolvedValue({ ok: true, subtotal: 1500 });
+
+    const result = await updateBidSheetCredit(proposalId, 1500);
+
+    expect(result).toEqual({ ok: true });
+    expect(bidSheetUpdateMock).toHaveBeenCalledWith({ discount_dollars: 1500 });
+  });
+
+  it("fails closed when the subtotal cannot be computed", async () => {
+    fetchProposalSubtotalMock.mockResolvedValue({
+      ok: false,
+      error: "Pricing-critical rate card rows are missing; cannot compute the proposal subtotal.",
+    });
+
+    const result = await updateBidSheetCredit(proposalId, 100);
+
+    expect(result.ok).toBe(false);
+    expect(bidSheetUpdateMock).not.toHaveBeenCalled();
   });
 
   it("surfaces missing bid sheet rows cleanly", async () => {
