@@ -24,6 +24,7 @@ import {
 import { newProposalSchema } from "@/lib/validation/proposal";
 import { toast } from "sonner";
 import { createProposal } from "./actions";
+import { NewCustomerDialog } from "@/components/customers/new-customer-dialog";
 
 type Customer = {
   id: string;
@@ -37,8 +38,20 @@ export default function NewProposalPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customerLoadError, setCustomerLoadError] = useState(false);
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+
+  // Inline customer creation: drop the new customer into the list
+  // (keeping alphabetical order) and select it immediately.
+  const handleCustomerCreated = (customer: Customer) => {
+    setCustomers((prev) =>
+      [...prev, customer].sort((a, b) =>
+        a.company_name.localeCompare(b.company_name)
+      )
+    );
+    setCustomerId(customer.id);
+  };
 
   const loadCustomers = useCallback(async () => {
     setCustomerLoadError(false);
@@ -130,20 +143,30 @@ export default function NewProposalPage() {
                   </Button>
                 </div>
               ) : (
-                <Select value={customerId} onValueChange={(v) => setCustomerId(v ?? "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a customer">
-                      {customers.find((c) => c.id === customerId)?.company_name ?? "Select a customer"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.company_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <Select value={customerId} onValueChange={(v) => setCustomerId(v ?? "")}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select a customer">
+                        {customers.find((c) => c.id === customerId)?.company_name ?? "Select a customer"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.company_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCustomerDialogOpen(true)}
+                  >
+                    + New Customer
+                  </Button>
+                </div>
               )}
             </div>
           </CardContent>
@@ -161,6 +184,11 @@ export default function NewProposalPage() {
           </CardFooter>
         </form>
       </Card>
+      <NewCustomerDialog
+        open={customerDialogOpen}
+        onOpenChange={setCustomerDialogOpen}
+        onCreated={handleCustomerCreated}
+      />
     </div>
   );
 }
