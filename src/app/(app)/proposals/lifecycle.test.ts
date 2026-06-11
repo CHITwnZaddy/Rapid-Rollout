@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
+import { roundMoney } from "@/lib/calculations/rounding";
 import {
   buildMigrationCostMap,
   buildMigrationHoursMap,
@@ -352,8 +353,9 @@ describe("proposal lifecycle actions", () => {
         migrationTotal
     );
     expect(pricing.pricing.afterCredit).toBe(pricing.proposalSubtotal - 100);
+    // finalTotal is a client-facing edge value: rounded to the cent.
     expect(pricing.pricing.finalTotal).toBe(
-      pricing.pricing.afterCredit * 0.9
+      roundMoney(pricing.pricing.afterCredit * 0.9)
     );
   });
 });

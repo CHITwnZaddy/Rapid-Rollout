@@ -21,6 +21,8 @@ export type RolePricingBreakout = ContingencyPricingBreakout &
     totalClientCost: number;
   };
 
+import { roundPercent } from "@/lib/calculations/rounding";
+
 function finiteNumber(value: number): number {
   return Number.isFinite(value) ? value : 0;
 }
@@ -30,7 +32,9 @@ export function calculateMarginPercent(
   internalCost: number
 ): number | null {
   if (clientPrice <= 0) return null;
-  return ((clientPrice - internalCost) / clientPrice) * 100;
+  // Margin is a client-facing edge value — rounding policy applies here
+  // so display, export, and any persisted copy always agree.
+  return roundPercent(((clientPrice - internalCost) / clientPrice) * 100);
 }
 
 export function calculateContingencyPricingBreakout(

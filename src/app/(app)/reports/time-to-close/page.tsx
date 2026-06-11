@@ -1,24 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -32,19 +15,27 @@ import {
   fetchReportProposals,
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
-import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
+import { formatDateShort } from "@/lib/reports/format";
 import { withinRange } from "@/lib/ui/helpers";
 import {
   PROPOSAL_STATUSES,
   PROPOSAL_STATUS_VARIANT,
   type ProposalStatus,
 } from "@/lib/constants/statuses";
-import type ExcelJS from "exceljs";
-
-type Customer = { id: string; company_name: string };
+import type { ReportConfig } from "@/lib/reports/report-config";
+import { exportReportXLSX } from "@/lib/reports/export-xlsx";
+import {
+  ReportFilterBar,
+  type FilterSpec,
+} from "@/components/reports/report-filter-bar";
+import { ReportResultsCard } from "@/components/reports/report-results-card";
+import {
+  useReportFilterData,
+  useReportState,
+} from "@/lib/hooks/use-report-state";
 
 type ReportRow = {
-  proposalId: string;
+  id: string;
   proposalName: string;
   customerName: string;
   createdBy: string | null;
@@ -53,6 +44,7 @@ type ReportRow = {
   dateClosed: string | null;
   daysToClose: number | null;
   threshold: "slow" | "on-track" | null;
+  [key: string]: string | number | null;
 };
 
 // Threshold (days) used by both the on-screen row color and the XLSX
@@ -63,92 +55,88 @@ const STATUSES = ["All", ...PROPOSAL_STATUSES];
 
 type OwnerFilter = "all" | "mine";
 
+// XLSX-only config: the screen table stays bespoke (tints + inline
+// badges) but the export goes through the shared workbook engine.
+const REPORT_CONFIG: ReportConfig = {
+  title: "Time to Close Report",
+  xlsxTitle: "Rapid Rollout – Time to Close",
+  sheetName: "Time to Close",
+  fileSlug: "time-to-close",
+  rowTint: { key: "threshold", tints: { slow: "red", "on-track": "green" } },
+  columns: [
+    { key: "proposalName", header: "Proposal Name", width: 32, format: "text" },
+    { key: "customerName", header: "Customer", width: 26, format: "text" },
+    { key: "status", header: "Proposal Status", width: 20, format: "text" },
+    { key: "dateSent", header: "Date Sent", width: 14, format: "date" },
+    { key: "dateClosed", header: "Date Closed", width: 14, format: "date" },
+    { key: "daysToClose", header: "Days to Close", width: 16, format: "integer" },
+  ],
+};
+
 export default function TimeToCloseReport() {
-  const supabase = createClient();
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const { supabase, customers, currentUserId } = useReportFilterData();
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [rows, setRows] = useState<ReportRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [hasRun, setHasRun] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
-    });
-    supabase
-      .from("customers")
-      .select("id, company_name")
-      .order("company_name")
-      .then(({ data }) => {
-        if (data) setCustomers(data);
-      });
-  }, [supabase]);
+  const { rows, loading, hasRun, run } = useReportState<ReportRow>(
+    "Time to Close report failed to load."
+  );
 
   const runReport = useCallback(async () => {
-    setLoading(true);
-    setHasRun(true);
+    await run(async () => {
+      const proposals = await fetchReportProposals(supabase, {
+        customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
+        status: selectedStatus !== "All" ? selectedStatus : undefined,
+        ownerId:
+          ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
+        includeCreatedBy: true,
+        orderBy: "updated_at",
+        ascending: false,
+      });
+      if (proposals.length === 0) return [];
 
-    const proposals = await fetchReportProposals(supabase, {
-      customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
-      status: selectedStatus !== "All" ? selectedStatus : undefined,
-      ownerId:
-        ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
-      includeCreatedBy: true,
-      orderBy: "updated_at",
-      ascending: false,
+      const proposalIds = proposals.map((p) => p.id);
+      const metricsMap = await fetchStatusHistoryMap(supabase, proposalIds);
+      const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
+
+      return proposals
+        .map((p): ReportRow => {
+          const m = metricsMap.get(p.id);
+          // The terminal date prefers Closed Won, then falls back to the
+          // last transition when the proposal is currently Closed Lost.
+          const dateClosed =
+            m?.firstWonAt ??
+            (p.status === "Closed Lost" ? (m?.lastChangedAt ?? null) : null);
+
+          const threshold: ReportRow["threshold"] =
+            m?.daysToClose == null
+              ? null
+              : m.daysToClose > CLOSE_THRESHOLD_DAYS
+                ? "slow"
+                : "on-track";
+
+          return {
+            id: p.id,
+            proposalName: p.name,
+            customerName: customerMap.get(p.customer_id ?? "") ?? "—",
+            createdBy: p.created_by ?? null,
+            status: p.status,
+            dateSent: m?.firstSentAt ?? null,
+            dateClosed,
+            daysToClose: m?.daysToClose ?? null,
+            threshold,
+          };
+        })
+        // Date-range filter operates on the "sent" date — the clock-start
+        // for time-to-close — not on created_at.
+        .filter((r) =>
+          fromDate || toDate ? withinRange(r.dateSent, fromDate, toDate) : true
+        );
     });
-    if (proposals.length === 0) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-
-    const proposalIds = proposals.map((p) => p.id);
-    const metricsMap = await fetchStatusHistoryMap(supabase, proposalIds);
-    const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
-
-    const reportRows: ReportRow[] = proposals
-      .map((p) => {
-        const m = metricsMap.get(p.id);
-        // The terminal date prefers Closed Won, then falls back to the last
-        // transition when the proposal is currently Closed Lost.
-        const dateClosed =
-          m?.firstWonAt ??
-          (p.status === "Closed Lost" ? (m?.lastChangedAt ?? null) : null);
-
-        const threshold: ReportRow["threshold"] =
-          m?.daysToClose == null
-            ? null
-            : m.daysToClose > CLOSE_THRESHOLD_DAYS
-              ? "slow"
-              : "on-track";
-
-        return {
-          proposalId: p.id,
-          proposalName: p.name,
-          customerName: customerMap.get(p.customer_id ?? "") ?? "—",
-          createdBy: p.created_by ?? null,
-          status: p.status,
-          dateSent: m?.firstSentAt ?? null,
-          dateClosed,
-          daysToClose: m?.daysToClose ?? null,
-          threshold,
-        };
-      })
-      // Date-range filter operates on the "sent" date — the clock-start
-      // for time-to-close — not on created_at, so "Q2 sends" means exactly that.
-      .filter((r) =>
-        fromDate || toDate ? withinRange(r.dateSent, fromDate, toDate) : true
-      );
-
-    setRows(reportRows);
-    setLoading(false);
   }, [
+    run,
     supabase,
     selectedCustomer,
     selectedStatus,
@@ -159,138 +147,8 @@ export default function TimeToCloseReport() {
     toDate,
   ]);
 
-  const exportXLSX = useCallback(async () => {
-    if (rows.length === 0) return;
-    const ExcelJS = (await import("exceljs")).default;
-
-    // Matches the on-screen sort: longest daysToClose first, open proposals
-    // (null) sink to the bottom.
-    const sorted = [...rows].sort((a, b) => {
-      const aDays = a.daysToClose ?? Number.NEGATIVE_INFINITY;
-      const bDays = b.daysToClose ?? Number.NEGATIVE_INFINITY;
-      return bDays - aDays;
-    });
-
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Time to Close");
-
-    const TITLE_BG = "FFC1C1DE";
-    const HEADER_BG = "FFD5D6E9";
-    const RED_BG = "FFFBD5D5";
-    const GREEN_BG = "FFD5F5E3";
-    const WHITE = "FFFFFFFF";
-    const ALT_ROW_BG = "FFEAEAF4";
-
-    sheet.columns = [
-      { width: 32 }, // A Proposal
-      { width: 26 }, // B Customer
-      { width: 20 }, // C Status
-      { width: 14 }, // D Date Sent
-      { width: 14 }, // E Date Closed
-      { width: 16 }, // F Days to Close
-    ];
-
-    sheet.mergeCells("A1:F1");
-    const title = sheet.getCell("A1");
-    title.value = "Rapid Rollout – Time to Close";
-    title.font = { bold: true, size: 22 };
-    title.alignment = { horizontal: "center", vertical: "middle" };
-    title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: TITLE_BG } };
-    sheet.getRow(1).height = 40;
-
-    sheet.mergeCells("A2:F2");
-    const filters = sheet.getCell("A2");
-    const customerLabel =
-      selectedCustomer === "all"
-        ? "All Customers"
-        : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
-          "All Customers");
-    const rangeLabel =
-      fromDate || toDate
-        ? `${fromDate || "…"} → ${toDate || "…"}`
-        : "All dates";
-    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "All owners"} · Sent ${rangeLabel}`;
-    filters.font = { italic: true, size: 11 };
-    filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-    sheet.getRow(2).height = 20;
-
-    sheet.getRow(3).height = 8;
-
-    const headers = ["Proposal Name", "Customer", "Proposal Status", "Date Sent", "Date Closed", "Days to Close"];
-    const hr = sheet.getRow(4);
-    headers.forEach((h, i) => {
-      const c = hr.getCell(i + 1);
-      c.value = h;
-      c.font = { bold: true, size: 12 };
-      c.alignment = { horizontal: "center", vertical: "middle" };
-      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_BG } };
-    });
-    hr.height = 22;
-
-    const DATA_START = 5;
-    sorted.forEach((r, idx) => {
-      const row = sheet.getRow(DATA_START + idx);
-      const fillArgb =
-        r.threshold === "slow"
-          ? RED_BG
-          : r.threshold === "on-track"
-            ? GREEN_BG
-            : idx % 2 === 0
-              ? ALT_ROW_BG
-              : WHITE;
-      const fill: ExcelJS.Fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: fillArgb },
-      };
-
-      // A-C: text. D/E: real Date cells. F: integer.
-      const textValues = [r.proposalName, r.customerName, r.status];
-      textValues.forEach((v, i) => {
-        const c = row.getCell(i + 1);
-        c.value = v;
-        c.font = { size: 12 };
-        c.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-        c.fill = fill;
-      });
-      const dateValues: (Date | null)[] = [
-        toDateOrNull(r.dateSent),
-        toDateOrNull(r.dateClosed),
-      ];
-      dateValues.forEach((d, i) => {
-        const c = row.getCell(4 + i);
-        if (d) {
-          c.value = d;
-          c.numFmt = "dd mmm yy";
-        } else {
-          c.value = "—";
-        }
-        c.font = { size: 12 };
-        c.alignment = { horizontal: "center", vertical: "middle" };
-        c.fill = fill;
-      });
-      const daysCell = row.getCell(6);
-      daysCell.value = r.daysToClose ?? "";
-      daysCell.font = { size: 12 };
-      daysCell.alignment = { horizontal: "right", vertical: "middle" };
-      daysCell.fill = fill;
-      row.height = 18;
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `time-to-close-${new Date().toISOString().slice(0, 10)}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [rows, selectedCustomer, selectedStatus, ownerFilter, fromDate, toDate, customers]);
-
-  // Screen + XLSX share one sort: worst offenders (longest daysToClose) first.
-  // Open proposals (null daysToClose) sink to the bottom so the top of the
+  // Screen + XLSX share one sort: worst offenders (longest daysToClose)
+  // first. Open proposals (null) sink to the bottom so the top of the
   // table is always actionable.
   const sortedRows = [...rows].sort((a, b) => {
     const aDays = a.daysToClose ?? Number.NEGATIVE_INFINITY;
@@ -298,187 +156,154 @@ export default function TimeToCloseReport() {
     return bDays - aDays;
   });
 
+  const exportXLSX = useCallback(async () => {
+    const sorted = [...rows].sort((a, b) => {
+      const aDays = a.daysToClose ?? Number.NEGATIVE_INFINITY;
+      const bDays = b.daysToClose ?? Number.NEGATIVE_INFINITY;
+      return bDays - aDays;
+    });
+    const customerLabel =
+      selectedCustomer === "all"
+        ? "All Customers"
+        : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
+          "All Customers");
+    const rangeLabel =
+      fromDate || toDate ? `${fromDate || "…"} → ${toDate || "…"}` : "All dates";
+    await exportReportXLSX(
+      REPORT_CONFIG,
+      sorted,
+      `${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "All owners"} · Sent ${rangeLabel}`
+    );
+  }, [rows, selectedCustomer, selectedStatus, ownerFilter, fromDate, toDate, customers]);
+
+  const filterSpecs: FilterSpec[] = [
+    {
+      kind: "select",
+      key: "customer",
+      label: "Customer",
+      widthClass: "w-[220px]",
+      options: [
+        { label: "All Customers", value: "all" },
+        ...customers.map((c) => ({ label: c.company_name, value: c.id })),
+      ],
+    },
+    {
+      kind: "select",
+      key: "status",
+      label: "Status",
+      widthClass: "w-[180px]",
+      options: STATUSES.map((s) => ({ label: s, value: s })),
+    },
+    {
+      kind: "select",
+      key: "owner",
+      label: "Owner",
+      widthClass: "w-[160px]",
+      options: [
+        { label: "All Owners", value: "all" },
+        { label: "My Proposals", value: "mine" },
+      ],
+    },
+    { kind: "date", key: "fromDate", label: "Sent From" },
+    { kind: "date", key: "toDate", label: "Sent To" },
+  ];
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Time to Close Report</h1>
+      <h1 className="text-2xl font-bold">{REPORT_CONFIG.title}</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1">
-              <Label className="text-xs">Customer</Label>
-              <Select
-                value={selectedCustomer}
-                onValueChange={(v) => setSelectedCustomer(v ?? "all")}
-              >
-                <SelectTrigger className="h-8 w-[220px]">
-                  <SelectValue>
-                    {selectedCustomer === "all"
-                      ? "All Customers"
-                      : (customers.find((c) => c.id === selectedCustomer)
-                          ?.company_name ?? "All Customers")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.company_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Status</Label>
-              <Select
-                value={selectedStatus}
-                onValueChange={(v) => setSelectedStatus(v ?? "All")}
-              >
-                <SelectTrigger className="h-8 w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Owner</Label>
-              <Select
-                value={ownerFilter}
-                onValueChange={(v) =>
-                  setOwnerFilter((v ?? "all") as OwnerFilter)
-                }
-              >
-                <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue>
-                    {ownerFilter === "mine" ? "My Proposals" : "All Owners"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Owners</SelectItem>
-                  <SelectItem value="mine">My Proposals</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Sent From</Label>
-              <Input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="h-8 w-[160px]"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Sent To</Label>
-              <Input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="h-8 w-[160px]"
-              />
-            </div>
-            <Button size="sm" onClick={runReport} disabled={loading}>
-              {loading ? "Running..." : "Run Report"}
-            </Button>
-            {rows.length > 0 && (
-              <Button size="sm" variant="outline" onClick={exportXLSX}>
-                Export XLSX
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <ReportFilterBar
+        specs={filterSpecs}
+        values={{
+          customer: selectedCustomer,
+          status: selectedStatus,
+          owner: ownerFilter,
+          fromDate,
+          toDate,
+        }}
+        onChange={(key, value) => {
+          if (key === "customer") setSelectedCustomer(String(value));
+          if (key === "status") setSelectedStatus(String(value));
+          if (key === "owner") setOwnerFilter(value as OwnerFilter);
+          if (key === "fromDate") setFromDate(String(value));
+          if (key === "toDate") setToDate(String(value));
+        }}
+        onRun={runReport}
+        onExport={exportXLSX}
+        loading={loading}
+        canExport={rows.length > 0}
+      />
 
       {hasRun && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Results ({rows.length} proposal{rows.length !== 1 ? "s" : ""}) —
-              amber rows closed in &gt;{CLOSE_THRESHOLD_DAYS} days
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {rows.length === 0 ? (
-              <p className="py-8 text-center text-muted-foreground">
-                No proposals match these filters.
-              </p>
-            ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[760px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Proposal</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Date Sent</TableHead>
-                      <TableHead>Date Closed</TableHead>
-                      <TableHead className="text-right">Days to Close</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedRows.map((r) => (
-                      <TableRow
-                        key={r.proposalId}
-                        className={
-                          r.threshold === "slow"
-                            ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
-                            : r.threshold === "on-track"
-                              ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
-                              : "hover:bg-muted/50"
+        <ReportResultsCard
+          count={rows.length}
+          titleSuffix={`amber rows closed in >${CLOSE_THRESHOLD_DAYS} days`}
+          emptyMessage="No proposals match these filters."
+        >
+          <div className="overflow-x-auto rounded-md border">
+            <Table className="min-w-[760px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Proposal</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Date Sent</TableHead>
+                  <TableHead>Date Closed</TableHead>
+                  <TableHead className="text-right">Days to Close</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedRows.map((r) => (
+                  <TableRow
+                    key={r.id}
+                    className={
+                      r.threshold === "slow"
+                        ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
+                        : r.threshold === "on-track"
+                          ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
+                          : "hover:bg-muted/50"
+                    }
+                  >
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/proposals/${r.id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {r.proposalName}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{r.customerName}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          PROPOSAL_STATUS_VARIANT[r.status as ProposalStatus] ??
+                          "secondary"
                         }
                       >
-                        <TableCell className="font-medium">
-                          <Link
-                            href={`/proposals/${r.proposalId}`}
-                            className="text-primary hover:underline"
-                          >
-                            {r.proposalName}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{r.customerName}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              PROPOSAL_STATUS_VARIANT[r.status as ProposalStatus] ??
-                              "secondary"
-                            }
-                          >
-                            {r.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="tabular-nums text-xs">
-                          {formatDateShort(r.dateSent)}
-                        </TableCell>
-                        <TableCell className="tabular-nums text-xs">
-                          {formatDateShort(r.dateClosed)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <span className="mr-2">{r.daysToClose ?? "—"}</span>
-                          {r.threshold === "slow" && (
-                            <Badge variant="amber">Slow close</Badge>
-                          )}
-                          {r.threshold === "on-track" && (
-                            <Badge variant="sage">On track</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        {r.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="tabular-nums text-xs">
+                      {formatDateShort(r.dateSent)}
+                    </TableCell>
+                    <TableCell className="tabular-nums text-xs">
+                      {formatDateShort(r.dateClosed)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <span className="mr-2">{r.daysToClose ?? "—"}</span>
+                      {r.threshold === "slow" && (
+                        <Badge variant="amber">Slow close</Badge>
+                      )}
+                      {r.threshold === "on-track" && (
+                        <Badge variant="sage">On track</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </ReportResultsCard>
       )}
     </div>
   );

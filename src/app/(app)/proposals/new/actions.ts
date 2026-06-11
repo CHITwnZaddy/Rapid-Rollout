@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { AuthError, assertAuthenticated } from "@/lib/auth/require-admin";
+import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
 import { newProposalSchema } from "@/lib/validation/proposal";
 
 export type CreateProposalResult =
@@ -20,14 +20,8 @@ export async function createProposal(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) {
-      return { ok: false, error: "You must be logged in." };
-    }
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be logged in.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const { name, customerId } = parsed.data;

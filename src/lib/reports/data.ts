@@ -18,6 +18,7 @@ import {
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
+import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
 
 // Shared report fetchers. Every report page needs a customer lookup,
 // and four of them need status history. Centralizing the query shape
@@ -205,6 +206,16 @@ function applyDateRange<TQuery extends { gte: (column: string, value: string) =>
   return query;
 }
 
+// Build the PostgREST `not in` filter from a whitelist of canonical
+// statuses. Filtering through PROPOSAL_STATUSES means a caller (or a
+// future user-controlled filter) can never smuggle arbitrary strings
+// into the hand-built `(a,b)` filter expression.
+function validExcludeStatuses(excludeStatuses?: string[]): string[] {
+  return (excludeStatuses ?? []).filter((s) =>
+    (PROPOSAL_STATUSES as readonly string[]).includes(s)
+  );
+}
+
 export async function fetchReportProposals(
   client: SupabaseClient,
   filters: ReportProposalFilters
@@ -226,8 +237,9 @@ export async function fetchReportProposals(
     query = query.eq("created_by", ownerId);
   }
   query = applyDateRange(query, filters);
-  if (filters.excludeStatuses && filters.excludeStatuses.length > 0) {
-    query = query.not("status", "in", `(${filters.excludeStatuses.join(",")})`);
+  const excluded = validExcludeStatuses(filters.excludeStatuses);
+  if (excluded.length > 0) {
+    query = query.not("status", "in", `(${excluded.join(",")})`);
   }
   if (filters.orderBy) {
     query = query.order(filters.orderBy, {
@@ -263,8 +275,9 @@ export async function fetchRevenueReportBaseRows(
     query = query.eq("created_by", ownerId);
   }
   query = applyDateRange(query, filters);
-  if (filters.excludeStatuses && filters.excludeStatuses.length > 0) {
-    query = query.not("status", "in", `(${filters.excludeStatuses.join(",")})`);
+  const excluded = validExcludeStatuses(filters.excludeStatuses);
+  if (excluded.length > 0) {
+    query = query.not("status", "in", `(${excluded.join(",")})`);
   }
   if (filters.orderBy) {
     query = query.order(filters.orderBy, {

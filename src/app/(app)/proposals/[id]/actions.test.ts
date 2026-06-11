@@ -64,6 +64,25 @@ vi.mock("@/lib/auth/require-admin", async () => {
     ...actual,
     assertAuthenticated: authAssertMock,
     assertManagerOrAdmin: managerAssertMock,
+    // Mirror the real helpers but drive them from the same mocks so
+    // existing resolve/reject setups keep working.
+    requireAuthenticatedResult: async (message: string) => {
+      try {
+        const user = await authAssertMock();
+        return { ok: true, user };
+      } catch {
+        return { ok: false, error: message };
+      }
+    },
+    requireManagerOrAdminResult: async () => {
+      try {
+        const user = await managerAssertMock();
+        return { ok: true, user };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+
   };
 });
 

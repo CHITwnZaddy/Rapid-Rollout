@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { AuthError, assertAuthenticated } from "@/lib/auth/require-admin";
+import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
 import {
   bidSheetCustomerInputSchema,
   bidSheetDiscountDollarsInputSchema,
   bidSheetDiscountPercentInputSchema,
   bidSheetNotesInputSchema,
 } from "@/lib/validation/bid-sheet";
+import { fetchProposalSubtotal } from "@/lib/proposals/proposal-subtotal";
 
 export type UpdateBidSheetResult =
   | { ok: true }
@@ -65,17 +66,8 @@ export async function updateBidSheetCustomer(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update the bid sheet customer.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet customer.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {
@@ -127,17 +119,8 @@ export async function updateBidSheetDiscountPercent(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update the bid sheet discount percent.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet discount percent.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {
@@ -175,17 +158,8 @@ export async function updateBidSheetCredit(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update the bid sheet credit.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet credit.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {
@@ -193,6 +167,24 @@ export async function updateBidSheetCredit(
   }
 
   const supabase = await createClient();
+
+  // Business rule: the credit is prepaid LoE money deducted from the
+  // proposal, so it can never exceed what the proposal is worth. Computed
+  // server-side — the client-displayed subtotal is not trusted.
+  const subtotalResult = await fetchProposalSubtotal(
+    supabase,
+    parsed.data.proposalId
+  );
+  if (!subtotalResult.ok) {
+    return { ok: false, error: subtotalResult.error };
+  }
+  if (parsed.data.discountDollars > subtotalResult.subtotal) {
+    return {
+      ok: false,
+      error: `Credit ($${parsed.data.discountDollars.toLocaleString()}) cannot exceed the proposal subtotal ($${subtotalResult.subtotal.toLocaleString()}).`,
+    };
+  }
+
   const { error } = await supabase
     .from("bid_sheets")
     .update({ discount_dollars: parsed.data.discountDollars })
@@ -219,17 +211,8 @@ export async function updateBidSheetNotes(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update bid sheet notes.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update bid sheet notes.");
+  if (!auth.ok) return auth;
 
   const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
   if (!bidSheetResult.ok) {

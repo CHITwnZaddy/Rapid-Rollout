@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { AuthError, assertAuthenticated } from "@/lib/auth/require-admin";
+import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
 import { buildRateCardMap, calculateScopedServiceCost } from "@/lib/calculations/engine";
 import {
   addScopedServiceLineInputSchema,
@@ -169,17 +169,8 @@ export async function addScopedServiceLine(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to add scoped service lines.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to add scoped service lines.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const proposalResult = await loadProposal(supabase, parsed.data.proposalId);
@@ -262,17 +253,8 @@ export async function updateScopedServiceLine(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to update scoped service lines.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to update scoped service lines.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const proposalResult = await loadProposal(supabase, parsed.data.proposalId);
@@ -357,17 +339,8 @@ export async function deleteScopedServiceLine(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to delete scoped service lines.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to delete scoped service lines.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const proposalResult = await loadProposal(supabase, parsed.data.proposalId);

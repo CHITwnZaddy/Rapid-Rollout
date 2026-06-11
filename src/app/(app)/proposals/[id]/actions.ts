@@ -11,9 +11,8 @@ import {
   type ServiceHoursRow,
 } from "@/lib/calculations/engine";
 import {
-  assertAuthenticated,
-  assertManagerOrAdmin,
-  AuthError,
+  requireAuthenticatedResult,
+  requireManagerOrAdminResult,
 } from "@/lib/auth/require-admin";
 import {
   type ClosedLostCloseoutInput,
@@ -97,14 +96,8 @@ async function transitionProposalStatus(
   newStatus: ProposalStatus
 ): Promise<UpdateProposalStatusResult> {
   const supabase = await createClient();
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) {
-      return { ok: false, error: "You must be signed in to change status." };
-    }
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to change status.");
+  if (!auth.ok) return auth;
 
   const { data: changed, error } = await supabase.rpc(
     "transition_proposal_status",
@@ -133,14 +126,8 @@ export async function closeProposalWon(
   const parsed = validateClosedWonCloseout(input);
   if (!parsed.ok) return parsed;
 
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) {
-      return { ok: false, error: "You must be signed in to close a proposal." };
-    }
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to close a proposal.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const { error: updateError } = await supabase
@@ -171,14 +158,8 @@ export async function closeProposalLost(
   const parsed = validateClosedLostCloseout(input);
   if (!parsed.ok) return parsed;
 
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) {
-      return { ok: false, error: "You must be signed in to close a proposal." };
-    }
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to close a proposal.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const { error: updateError } = await supabase
@@ -205,14 +186,9 @@ export async function correctClosedProposalFinancials(
   proposalId: string,
   input: CorrectClosedProposalFinancialsInput
 ): Promise<CloseProposalResult> {
-  let managerId: string;
-  try {
-    const manager = await assertManagerOrAdmin();
-    managerId = manager.id;
-  } catch (e) {
-    if (e instanceof AuthError) return { ok: false, error: e.message };
-    throw e;
-  }
+  const auth = await requireManagerOrAdminResult();
+  if (!auth.ok) return auth;
+  const managerId = auth.user.id;
 
   const parsed = validateClosedWonCloseout(input);
   if (!parsed.ok) return parsed;
@@ -277,12 +253,8 @@ export async function updateScenarioComplexityFactor(
   const err = validateFactor(value);
   if (err) return { ok: false, error: err };
 
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) return { ok: false, error: e.message };
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const rounded = Math.round(value * 100) / 100;
@@ -310,12 +282,8 @@ export async function updateScopedComplexityFactor(
   const err = validateFactor(value);
   if (err) return { ok: false, error: err };
 
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) return { ok: false, error: e.message };
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
   const rounded = Math.round(value * 100) / 100;
@@ -351,14 +319,8 @@ export async function saveScenarioGridSelections(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) {
-      return { ok: false, error: "You must be signed in to save scenario changes." };
-    }
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to save scenario changes.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
 
@@ -504,14 +466,8 @@ export async function deleteProposal(
   justification: string,
   confirmationText: string
 ): Promise<DeleteProposalResult> {
-  try {
-    await assertAuthenticated();
-  } catch (e) {
-    if (e instanceof AuthError) {
-      return { ok: false, error: "You must be signed in to delete a proposal." };
-    }
-    throw e;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to delete a proposal.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
 

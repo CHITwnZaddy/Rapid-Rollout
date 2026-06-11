@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { AuthError, assertAuthenticated } from "@/lib/auth/require-admin";
+import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 import {
   INTERNAL_COST_RATE_KEY,
@@ -227,17 +227,8 @@ export async function addMigrationDetailLine(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to add migration rows.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to add migration rows.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
 
@@ -319,17 +310,8 @@ export async function removeMigrationDetailLine(
     };
   }
 
-  try {
-    await assertAuthenticated();
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        ok: false,
-        error: "You must be signed in to remove migration rows.",
-      };
-    }
-    throw error;
-  }
+  const auth = await requireAuthenticatedResult("You must be signed in to remove migration rows.");
+  if (!auth.ok) return auth;
 
   const supabase = await createClient();
 
