@@ -27,6 +27,10 @@ export function ClearTabButton({
   onConfirm: () => Promise<void> | void;
   disabled?: boolean;
 }) {
+  // Controlled open state: AlertDialogAction is a plain button (unlike
+  // Cancel, which is a Close primitive), so the dialog must be closed
+  // explicitly once the clear finishes.
+  const [open, setOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   const handleConfirm = async () => {
@@ -35,11 +39,12 @@ export function ClearTabButton({
       await onConfirm();
     } finally {
       setClearing(false);
+      setOpen(false);
     }
   };
 
   return (
-    <AlertDialog>
+    <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger
         render={
           <Button
@@ -63,9 +68,10 @@ export function ClearTabButton({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => void handleConfirm()}
+            disabled={clearing}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            Clear
+            {clearing ? "Clearing..." : "Clear"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
