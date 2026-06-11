@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { type MigrationTotals } from "@/lib/calculations/migration-engine";
+import {
+  lineItemsBoundsError,
+  type MigrationTotals,
+} from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 import { createMigrationPersistenceController } from "./migration-persistence";
@@ -310,6 +313,24 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const updateLine = useCallback(
     (lineId: string, field: keyof DbLine, value: string | number) => {
       setSaveError(null);
+
+      // Bounds guard: reject quantity/items-per-object edits that would
+      // blow past MAX_TOTAL_LINE_ITEMS before they reach state or the DB.
+      if (field === "quantity" || field === "items_per_object") {
+        const current = linesRef.current.find((l) => l.id === lineId);
+        if (current) {
+          const candidate = { ...current, [field]: NUM(value) };
+          const boundsError = lineItemsBoundsError(
+            NUM(candidate.quantity),
+            NUM(candidate.items_per_object)
+          );
+          if (boundsError) {
+            setSaveError(boundsError);
+            return;
+          }
+        }
+      }
+
       setLines((prev) => {
         const next = prev.map((l) =>
           l.id === lineId ? { ...l, [field]: value } : l

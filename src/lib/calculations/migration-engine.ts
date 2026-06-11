@@ -94,6 +94,35 @@ export function effectiveTotalLineItems(
 }
 
 /**
+ * Upper bound on quantity × items_per_object for a single line.
+ * Excel had an implicit ceiling (nobody pastes 100M rows); this tool
+ * doesn't, so a fat-fingered quantity silently produces an absurd hour
+ * estimate. 1M items ≈ 500 import files at the default 2,000 lines per
+ * file — beyond any real rollout. Tune the constant if the business
+ * ever genuinely scopes bigger.
+ */
+export const MAX_TOTAL_LINE_ITEMS = 1_000_000;
+
+/**
+ * Returns a user-facing error when a line's quantity × items_per_object
+ * exceeds MAX_TOTAL_LINE_ITEMS, or null when the line is within bounds.
+ * Input boundaries (the migration grid and any future save path) call
+ * this BEFORE accepting the edit.
+ */
+export function lineItemsBoundsError(
+  quantity: number,
+  itemsPerObject: number
+): string | null {
+  const qty = Number.isFinite(quantity) ? quantity : 0;
+  const per = Number.isFinite(itemsPerObject) ? itemsPerObject : 0;
+  const total = qty * per;
+  if (total > MAX_TOTAL_LINE_ITEMS) {
+    return `Total line items (${total.toLocaleString()}) exceed the maximum of ${MAX_TOTAL_LINE_ITEMS.toLocaleString()}. Check quantity and items per object.`;
+  }
+  return null;
+}
+
+/**
  * For a single detail line, return the full LineCalc (effective total,
  * # of imports, hrs/import, total hours). This is the canonical way to
  * compute per-row hours: both the UI row renderer and the section-total
