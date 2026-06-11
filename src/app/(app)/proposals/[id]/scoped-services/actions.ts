@@ -11,6 +11,7 @@ import {
   deleteScopedServiceLineInputSchema,
 } from "@/lib/validation/scoped-services";
 import type { Database } from "@/types/database";
+import { z } from "zod";
 
 export type ScopedServiceLine = Pick<
   Database["public"]["Tables"]["scoped_services"]["Row"],
@@ -390,4 +391,39 @@ export async function deleteScopedServiceLine(
 
   await revalidateScopedServicePaths(parsed.data.proposalId);
   return { ok: true, lines: resequenceResult.lines };
+}
+
+// Clear Tab: remove every scoped service line for the proposal in one
+// bulk delete (team request, 2026-06-10). RLS on scoped_services limits
+// the delete to proposals the caller can edit.
+export async function clearScopedServices(
+  proposalId: string
+): Promise<ScopedServiceActionResult> {
+  const parsed = z.uuid("Invalid proposal id").safeParse(proposalId);
+  if (!parsed.success) {
+    return { ok: false, error: "Invalid proposal id" };
+  }
+
+  const auth = await requireAuthenticatedResult(
+    "You must be signed in to clear scoped services."
+  );
+  if (!auth.ok) return auth;
+
+  const supabase = await createClient();
+  const proposalResult = await loadProposal(supabase, parsed.data);
+  if (!proposalResult.ok) {
+    return { ok: false, error: proposalResult.error };
+  }
+
+  const { error } = await supabase
+    .from("scoped_services")
+    .delete()
+    .eq("proposal_id", parsed.data);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  await revalidateScopedServicePaths(parsed.data);
+  return { ok: true, lines: [] };
 }

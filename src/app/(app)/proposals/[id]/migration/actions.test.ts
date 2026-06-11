@@ -65,6 +65,7 @@ import { AuthError } from "@/lib/auth/require-admin";
 import {
   addMigrationDetailLine,
   removeMigrationDetailLine,
+  resetMigrationServices,
 } from "./actions";
 
 type ConfigRow = {
@@ -233,21 +234,26 @@ describe("migration actions", () => {
               error: null,
             }),
           }),
-          insert: async (payload: Record<string, unknown>) => {
-            lineInserts.push(payload);
-            lineRows = [
-              ...lineRows,
-              {
-                id: `new-line-${lineInserts.length}`,
-                proposal_id: String(payload.proposal_id),
-                section: payload.section as LineRow["section"],
-                label: String(payload.label),
-                quantity: Number(payload.quantity),
-                items_per_object: Number(payload.items_per_object),
-                total_line_items: Number(payload.total_line_items),
-                row_order: Number(payload.row_order),
-              },
-            ];
+          insert: async (
+            payload: Record<string, unknown> | Record<string, unknown>[]
+          ) => {
+            const items = Array.isArray(payload) ? payload : [payload];
+            for (const item of items) {
+              lineInserts.push(item);
+              lineRows = [
+                ...lineRows,
+                {
+                  id: `new-line-${lineInserts.length}`,
+                  proposal_id: String(item.proposal_id),
+                  section: item.section as LineRow["section"],
+                  label: String(item.label),
+                  quantity: Number(item.quantity),
+                  items_per_object: Number(item.items_per_object),
+                  total_line_items: Number(item.total_line_items),
+                  row_order: Number(item.row_order),
+                },
+              ];
+            }
             return { error: null };
           },
           update: (payload: Record<string, unknown>) => ({
@@ -266,9 +272,12 @@ describe("migration actions", () => {
             },
           }),
           delete: () => ({
-            eq: async (_field: string, id: string) => {
-              lineDeletes.push(id);
-              lineRows = lineRows.filter((line) => line.id !== id);
+            eq: async (field: string, value: string) => {
+              lineDeletes.push(value);
+              lineRows =
+                field === "proposal_id"
+                  ? lineRows.filter((line) => line.proposal_id !== value)
+                  : lineRows.filter((line) => line.id !== value);
               return { error: null };
             },
           }),
@@ -466,5 +475,44 @@ describe("migration actions", () => {
     expect(lineDeletes).toEqual([]);
     expect(lineUpdates).toEqual([]);
     expect(configUpdates).toEqual([]);
+  });
+
+  it("resets config to defaults and restores the seeded detail rows", async () => {
+    const result = await resetMigrationServices(proposalId);
+
+    expect(result).toEqual({ ok: true });
+    // Config reset back to bootstrap defaults.
+    expect(configUpdates).toHaveLength(1);
+    expect(configUpdates[0].payload).toMatchObject({
+      num_projects: 0,
+      hrs_per_import: 0.75,
+      lines_per_import_file: 2550,
+      is_effort_included: false,
+      is_workshop_included: false,
+      complexity_factor: 1.0,
+      computed_total_cost: 0,
+    });
+    // Old rows replaced by the 22 seeded defaults (2 project + 11
+    // workflow + 9 cost), mirroring create_proposal_bundle.
+    const remaining = lineRows.filter((l) => l.proposal_id === proposalId);
+    expect(remaining).toHaveLength(22);
+    expect(remaining.filter((l) => l.section === "project")).toHaveLength(2);
+    expect(remaining.filter((l) => l.section === "workflow")).toHaveLength(11);
+    expect(remaining.filter((l) => l.section === "cost")).toHaveLength(9);
+  });
+
+  it("rejects unauthenticated reset requests before mutating", async () => {
+    authAssertMock.mockRejectedValue(
+      new AuthError("UNAUTHENTICATED", "You must be signed in.")
+    );
+
+    const result = await resetMigrationServices(proposalId);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "You must be signed in to clear migration services.",
+    });
+    expect(configUpdates).toEqual([]);
+    expect(lineDeletes).toEqual([]);
   });
 });
