@@ -14,14 +14,14 @@
     "db:push:staging": "npm run db:link:staging && supabase db push",
     "db:push:prod": "npm run db:link:prod && supabase db push",
     "db:status": "supabase migration list --linked",
-    "db:diff": "supabase db diff --linked"
+    "db:diff": "supabase db diff --linked",
+    "db:gen-types": "supabase gen types typescript --linked > src/types/database.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
     "@react-pdf/renderer": "^4.4.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.0",
-    "@tanstack/react-query": "^5.99.0",
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -43,7 +43,7 @@
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^20",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.5",
