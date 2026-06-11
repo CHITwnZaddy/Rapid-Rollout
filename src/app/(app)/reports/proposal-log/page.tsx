@@ -31,9 +31,9 @@ type ReportRow = {
   p1Cost: number;
   p2Cost: number;
   p3Cost: number;
-  p4Cost: number;
   opt1Cost: number;
   opt2Cost: number;
+  opt3Cost: number;
   scopedCost: number;
   migrationCost: number;
   grandTotal: number;
@@ -70,9 +70,9 @@ const REPORT_CONFIG: ReportConfig = {
     { key: "p1Cost", header: "Phase 1", width: 15, format: "currency", dashWhenZero: true, sum: true },
     { key: "p2Cost", header: "Phase 2", width: 15, format: "currency", dashWhenZero: true, sum: true },
     { key: "p3Cost", header: "Phase 3", width: 15, format: "currency", dashWhenZero: true, sum: true },
-    { key: "p4Cost", header: "Phase 4", width: 15, format: "currency", dashWhenZero: true, sum: true },
     { key: "opt1Cost", header: "Option 1", width: 15, format: "currency", dashWhenZero: true, sum: true },
     { key: "opt2Cost", header: "Option 2", width: 15, format: "currency", dashWhenZero: true, sum: true },
+    { key: "opt3Cost", header: "Option 3", width: 15, format: "currency", dashWhenZero: true, sum: true },
     { key: "scopedCost", header: "Scoped Services", xlsxHeader: "Ad-hoc Services", width: 20, format: "currency", dashWhenZero: true, sum: true },
     { key: "migrationCost", header: "Migration Services", width: 22, format: "currency", dashWhenZero: true, sum: true },
     { key: "grandTotal", header: "Grand Total", width: 18, format: "currency", bold: true, sum: true },
@@ -153,7 +153,7 @@ export default function ProposalLogReport() {
         const p1 = Number(p.p1_cost) || 0;
         const p2 = Number(p.p2_cost) || 0;
         const p3 = Number(p.p3_cost) || 0;
-        const p4 = Number(p.p4_cost) || 0;
+        const opt3 = Number(p.opt3_cost) || 0;
         const opt1 = Number(p.opt1_cost) || 0;
         const opt2 = Number(p.opt2_cost) || 0;
         const scoped = Number(p.scoped_total) || 0;
@@ -168,12 +168,12 @@ export default function ProposalLogReport() {
           p1Cost: p1,
           p2Cost: p2,
           p3Cost: p3,
-          p4Cost: p4,
+          opt3Cost: opt3,
           opt1Cost: opt1,
           opt2Cost: opt2,
           scopedCost: scoped,
           migrationCost: migration,
-          grandTotal: p1 + p2 + p3 + p4 + opt1 + opt2 + scoped + migration,
+          grandTotal: p1 + p2 + p3 + opt1 + opt2 + opt3 + scoped + migration,
           dateCreated: p.created_at ?? null,
           dateProposalSent: metrics?.firstSentAt ?? null,
           dateWon: metrics?.firstWonAt ?? null,

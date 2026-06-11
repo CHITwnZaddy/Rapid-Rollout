@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+// Pin the LATEST migration that redefines create_proposal_bundle —
+// it supersedes earlier versions of the function.
 const migrationPath = join(
   process.cwd(),
-  "supabase/migrations/20260601042929_restore_migration_detail_bootstrap.sql"
+  "supabase/migrations/20260610140000_remove_phase_4_add_option_3.sql"
 );
 
 describe("create_proposal_bundle migration", () => {
@@ -14,9 +16,10 @@ describe("create_proposal_bundle migration", () => {
     expect(sql).toContain("(v_proposal_id, 'P1', true)");
     expect(sql).toContain("(v_proposal_id, 'P2', false)");
     expect(sql).toContain("(v_proposal_id, 'P3', false)");
-    expect(sql).toContain("(v_proposal_id, 'P4', false)");
     expect(sql).toContain("(v_proposal_id, 'Opt1', false)");
     expect(sql).toContain("(v_proposal_id, 'Opt2', false)");
+    expect(sql).toContain("(v_proposal_id, 'Opt3', false)");
+    expect(sql).not.toContain("(v_proposal_id, 'P4', false)");
   });
 
   it("restores default migration detail rows during proposal creation", () => {
@@ -32,10 +35,12 @@ describe("create_proposal_bundle migration", () => {
     expect(sql).toContain("(v_proposal_id, 'cost', 'TBD', 0, 0, 0, 8)");
   });
 
-  it("backfills proposals that have no migration detail rows", () => {
-    expect(sql).toContain("WITH target_proposals AS");
-    expect(sql).toContain("FROM public.proposals p");
-    expect(sql).toContain("FROM public.migration_detail_lines mdl");
-    expect(sql).toContain("CROSS JOIN default_lines");
+  it("guards the P4 delete and backfills Opt3 for existing proposals", () => {
+    expect(sql).toContain("RAISE EXCEPTION");
+    expect(sql).toContain("WITH missing_scenarios AS");
+    expect(sql).toContain("SELECT proposal_id, 'Opt3', false");
+    expect(sql).toContain(
+      "CHECK (scenario_type IN ('P1', 'P2', 'P3', 'Opt1', 'Opt2', 'Opt3'))"
+    );
   });
 });

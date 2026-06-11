@@ -888,10 +888,10 @@ export type Database = {
           customer_name: string | null
           opt1_cost: number | null
           opt2_cost: number | null
+          opt3_cost: number | null
           p1_cost: number | null
           p2_cost: number | null
           p3_cost: number | null
-          p4_cost: number | null
           proposal_id: string | null
           proposal_name: string | null
           scenario_total: number | null

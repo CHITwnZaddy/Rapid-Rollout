@@ -313,7 +313,7 @@ describe("fetchRevenueReportBaseRows", () => {
 
     const query = queries.get("proposal_revenue_report_base");
     expect(query?.select).toHaveBeenCalledWith(
-      "proposal_id, proposal_name, status, customer_id, customer_name, created_by, created_at, updated_at, scoped_complexity_factor, p1_cost, p2_cost, p3_cost, p4_cost, opt1_cost, opt2_cost, scenario_total, scoped_total"
+      "proposal_id, proposal_name, status, customer_id, customer_name, created_by, created_at, updated_at, scoped_complexity_factor, p1_cost, p2_cost, p3_cost, opt1_cost, opt2_cost, opt3_cost, scenario_total, scoped_total"
     );
     expect(query?.eq).toHaveBeenCalledWith("customer_id", "customer-1");
     expect(query?.eq).toHaveBeenCalledWith("status", "Won");
