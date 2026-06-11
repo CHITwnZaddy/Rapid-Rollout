@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -37,6 +38,12 @@ export type FilterSpec =
       kind: "checkbox";
       key: string;
       label: string;
+    }
+  | {
+      kind: "date";
+      key: string;
+      label: string;
+      widthClass?: string;
     };
 
 export type FilterValues = Record<string, string | boolean>;
@@ -96,6 +103,19 @@ export function ReportFilterBar({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            ) : spec.kind === "date" ? (
+              <div key={spec.key} className="space-y-1">
+                <Label className="text-xs" htmlFor={`filter-${spec.key}`}>
+                  {spec.label}
+                </Label>
+                <Input
+                  id={`filter-${spec.key}`}
+                  type="date"
+                  value={String(values[spec.key] ?? "")}
+                  onChange={(e) => onChange(spec.key, e.target.value)}
+                  className={`h-8 ${spec.widthClass ?? "w-[160px]"}`}
+                />
               </div>
             ) : (
               <label

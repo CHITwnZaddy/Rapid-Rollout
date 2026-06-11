@@ -1,32 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import type ExcelJS from "exceljs";
+import { useCallback, useState } from "react";
 import {
   buildMigrationHoursMap,
   buildScopedHoursMap,
@@ -36,22 +10,59 @@ import {
   fetchReportProposals,
 } from "@/lib/reports/data";
 import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
-import { toast } from "sonner";
+import type { ReportConfig } from "@/lib/reports/report-config";
+import { exportReportXLSX } from "@/lib/reports/export-xlsx";
+import {
+  ReportFilterBar,
+  type FilterSpec,
+} from "@/components/reports/report-filter-bar";
+import { ReportResultsCard } from "@/components/reports/report-results-card";
+import { ReportTable } from "@/components/reports/report-table";
+import {
+  useReportFilterData,
+  useReportState,
+} from "@/lib/hooks/use-report-state";
 
-type Customer = { id: string; company_name: string };
 type OwnerFilter = "all" | "mine";
 
-// A single (proposal, scenario-or-bucket) row. "scenario" stores the internal
-// scenario code or synthetic bucket; display labels are derived at render/export.
+// A single (proposal, scenario-or-bucket) row. "scenario" stores the
+// internal code or synthetic bucket; "scenarioLabel" is the display name.
 type HoursRow = {
-  proposalId: string;
+  id: string;
   proposalName: string;
   customerName: string;
   scenario: string;
+  scenarioLabel: string;
   srImHours: number;
   pmHours: number;
   baHours: number;
   totalHours: number;
+  [key: string]: string | number | null;
+};
+
+const REPORT_CONFIG: ReportConfig = {
+  title: "Proposal Hours Report",
+  xlsxTitle: "Rapid Rollout – Proposal Hours",
+  sheetName: "Proposal Hours",
+  fileSlug: "proposal-hours",
+  totalsRow: true,
+  totalsLabel: "Totals",
+  columns: [
+    {
+      key: "proposalName",
+      header: "Proposal Name",
+      width: 32,
+      format: "link",
+      hrefBase: "/proposals",
+      hrefKey: "id",
+    },
+    { key: "customerName", header: "Customer", width: 26, format: "text" },
+    { key: "scenarioLabel", header: "Scenario", width: 20, format: "text" },
+    { key: "srImHours", header: "Sr IM Hours", width: 14, format: "hours", sum: true },
+    { key: "pmHours", header: "PM Hours", width: 14, format: "hours", sum: true },
+    { key: "baHours", header: "BA Hours", width: 14, format: "hours", sum: true },
+    { key: "totalHours", header: "Total Hours", width: 14, format: "hours", sum: true },
+  ],
 };
 
 const SCENARIO_FILTER = [
@@ -66,43 +77,23 @@ function scenarioFilterLabel(value: string): string {
 }
 
 export default function ProposalHoursReport() {
-  const supabase = createClient();
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const { supabase, customers, currentUserId } = useReportFilterData();
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedScenario, setSelectedScenario] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
-  const [rows, setRows] = useState<HoursRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [hasRun, setHasRun] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
-    });
-    supabase
-      .from("customers")
-      .select("id, company_name")
-      .order("company_name")
-      .then(({ data }) => {
-        if (data) setCustomers(data);
-      });
-  }, [supabase]);
+  const { rows, loading, hasRun, run } = useReportState<HoursRow>(
+    "Proposal Hours report failed to load."
+  );
 
   const runReport = useCallback(async () => {
-    setLoading(true);
-    setHasRun(true);
-    try {
+    await run(async () => {
       const proposals = await fetchReportProposals(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
         ownerId:
           ownerFilter === "mine" && currentUserId ? currentUserId : undefined,
         includeCreatedBy: true,
       });
-      if (proposals.length === 0) {
-        setRows([]);
-        return;
-      }
+      if (proposals.length === 0) return [];
 
       const proposalIds = proposals.map((p) => p.id);
       const aggregateInputs = await fetchHoursAggregateInputs(
@@ -133,6 +124,26 @@ export default function ProposalHoursReport() {
       const out: HoursRow[] = [];
       const customerName = (cid: string | null) =>
         customerMap.get(cid ?? "") ?? "—";
+      const pushRow = (
+        p: { id: string; name: string; customer_id: string | null },
+        scenario: string,
+        sr: number,
+        pm: number,
+        ba: number
+      ) => {
+        out.push({
+          id: p.id,
+          proposalName: p.name,
+          customerName: customerName(p.customer_id),
+          scenario,
+          scenarioLabel: getScenarioDisplayName(scenario),
+          srImHours: sr,
+          pmHours: pm,
+          baHours: ba,
+          totalHours: sr + pm + ba,
+        });
+      };
+
       const scenariosByProposal = new Map<
         string,
         { id: string; type: string }[]
@@ -149,72 +160,31 @@ export default function ProposalHoursReport() {
         a.name.localeCompare(b.name)
       );
       for (const p of sortedProposals) {
-        const cname = customerName(p.customer_id);
         const pScenarios = (scenariosByProposal.get(p.id) ?? []).sort(
           (a, b) =>
-            SCENARIO_ORDER.indexOf(
-              a.type as (typeof SCENARIO_ORDER)[number]
-            ) -
+            SCENARIO_ORDER.indexOf(a.type as (typeof SCENARIO_ORDER)[number]) -
             SCENARIO_ORDER.indexOf(b.type as (typeof SCENARIO_ORDER)[number])
         );
         for (const s of pScenarios) {
           const sums = lineSumByScenario.get(s.id) ?? { sr: 0, pm: 0, ba: 0 };
-          out.push({
-            proposalId: p.id,
-            proposalName: p.name,
-            customerName: cname,
-            scenario: s.type,
-            srImHours: sums.sr,
-            pmHours: sums.pm,
-            baHours: sums.ba,
-            totalHours: sums.sr + sums.pm + sums.ba,
-          });
+          pushRow(p, s.type, sums.sr, sums.pm, sums.ba);
         }
         const sc = scopedByProposal.get(p.id);
         if (sc && (sc.sr || sc.pm || sc.ba)) {
-          out.push({
-            proposalId: p.id,
-            proposalName: p.name,
-            customerName: cname,
-            scenario: "Scoped Services",
-            srImHours: sc.sr,
-            pmHours: sc.pm,
-            baHours: sc.ba,
-            totalHours: sc.sr + sc.pm + sc.ba,
-          });
+          pushRow(p, "Scoped Services", sc.sr, sc.pm, sc.ba);
         }
         const mig = migrationByProposal.get(p.id);
         if (mig && (mig.pm || mig.srIm)) {
-          out.push({
-            proposalId: p.id,
-            proposalName: p.name,
-            customerName: cname,
-            scenario: "Migration Services",
-            srImHours: mig.srIm,
-            pmHours: mig.pm,
-            baHours: 0,
-            totalHours: mig.pm + mig.srIm,
-          });
+          pushRow(p, "Migration Services", mig.srIm, mig.pm, 0);
         }
       }
 
-      const filtered =
-        selectedScenario === "All"
-          ? out
-          : out.filter((r) => r.scenario === selectedScenario);
-
-      setRows(filtered);
-    } catch (error) {
-      setRows([]);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Proposal Hours report failed to load."
-      );
-    } finally {
-      setLoading(false);
-    }
+      return selectedScenario === "All"
+        ? out
+        : out.filter((r) => r.scenario === selectedScenario);
+    });
   }, [
+    run,
     supabase,
     selectedCustomer,
     selectedScenario,
@@ -224,315 +194,81 @@ export default function ProposalHoursReport() {
   ]);
 
   const exportXLSX = useCallback(async () => {
-    if (rows.length === 0) return;
-    const ExcelJS = (await import("exceljs")).default;
-
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Proposal Hours");
-    const TITLE_BG = "FFC1C1DE";
-    const HEADER_BG = "FFD5D6E9";
-    const WHITE = "FFFFFFFF";
-    const ALT_ROW_BG = "FFEAEAF4";
-    const NUM_FMT = "#,##0.00";
-
-    sheet.columns = [
-      { width: 32 }, // A Proposal
-      { width: 26 }, // B Customer
-      { width: 20 }, // C Scenario
-      { width: 14 }, // D Sr IM Hours
-      { width: 14 }, // E PM Hours
-      { width: 14 }, // F BA Hours
-      { width: 14 }, // G Total Hours
-    ];
-
-    sheet.mergeCells("A1:G1");
-    const title = sheet.getCell("A1");
-    title.value = "Rapid Rollout – Proposal Hours";
-    title.font = { bold: true, size: 22 };
-    title.alignment = { horizontal: "center", vertical: "middle" };
-    title.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: TITLE_BG },
-    };
-    sheet.getRow(1).height = 40;
-
-    sheet.mergeCells("A2:G2");
-    const filters = sheet.getCell("A2");
     const customerLabel =
       selectedCustomer === "all"
         ? "All Customers"
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
-    filters.value = `Filtered by: ${customerLabel} · ${scenarioFilterLabel(selectedScenario)} · ${ownerFilter === "mine" ? "My proposals" : "All owners"}`;
-    filters.font = { italic: true, size: 11 };
-    filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-    sheet.getRow(2).height = 20;
-    sheet.getRow(3).height = 8;
-
-    const headers = [
-      "Proposal Name",
-      "Customer",
-      "Scenario",
-      "Sr IM Hours",
-      "PM Hours",
-      "BA Hours",
-      "Total Hours",
-    ];
-    const hr = sheet.getRow(4);
-    headers.forEach((h, i) => {
-      const c = hr.getCell(i + 1);
-      c.value = h;
-      c.font = { bold: true, size: 12 };
-      c.alignment = { horizontal: "center", vertical: "middle" };
-      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_BG } };
-    });
-    hr.height = 22;
-
-    const DATA_START = 5;
-    rows.forEach((r, idx) => {
-      const row = sheet.getRow(DATA_START + idx);
-      const fill: ExcelJS.Fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: idx % 2 === 0 ? ALT_ROW_BG : WHITE },
-      };
-      const textVals = [
-        r.proposalName,
-        r.customerName,
-        getScenarioDisplayName(r.scenario),
-      ];
-      textVals.forEach((v, i) => {
-        const c = row.getCell(i + 1);
-        c.value = v;
-        c.font = { size: 12 };
-        c.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-        c.fill = fill;
-      });
-      const numVals = [r.srImHours, r.pmHours, r.baHours, r.totalHours];
-      numVals.forEach((v, i) => {
-        const c = row.getCell(4 + i);
-        c.value = v;
-        c.numFmt = NUM_FMT;
-        c.font = { size: 12 };
-        c.alignment = { horizontal: "right", vertical: "middle" };
-        c.fill = fill;
-      });
-      row.height = 18;
-    });
-
-    // Grand total row
-    const gtRow = sheet.getRow(DATA_START + rows.length);
-    sheet.mergeCells(`A${DATA_START + rows.length}:C${DATA_START + rows.length}`);
-    const gtLabel = gtRow.getCell(1);
-    gtLabel.value = "Total";
-    gtLabel.font = { bold: true, size: 12 };
-    gtLabel.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
-    gtLabel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_BG } };
-    const totals = rows.reduce(
-      (t, r) => {
-        t.sr += r.srImHours;
-        t.pm += r.pmHours;
-        t.ba += r.baHours;
-        t.total += r.totalHours;
-        return t;
-      },
-      { sr: 0, pm: 0, ba: 0, total: 0 }
+    await exportReportXLSX(
+      REPORT_CONFIG,
+      rows,
+      `${customerLabel} · ${scenarioFilterLabel(selectedScenario)} · ${ownerFilter === "mine" ? "My proposals" : "All owners"}`
     );
-    [totals.sr, totals.pm, totals.ba, totals.total].forEach((v, i) => {
-      const c = gtRow.getCell(4 + i);
-      c.value = v;
-      c.numFmt = NUM_FMT;
-      c.font = { bold: true, size: 12 };
-      c.alignment = { horizontal: "right", vertical: "middle" };
-      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_BG } };
-    });
-    gtRow.height = 22;
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `proposal-hours-${new Date().toISOString().slice(0, 10)}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
   }, [rows, selectedCustomer, selectedScenario, ownerFilter, customers]);
 
-  const totals = rows.reduce(
-    (t, r) => {
-      t.sr += r.srImHours;
-      t.pm += r.pmHours;
-      t.ba += r.baHours;
-      t.total += r.totalHours;
-      return t;
+  const filterSpecs: FilterSpec[] = [
+    {
+      kind: "select",
+      key: "customer",
+      label: "Customer",
+      widthClass: "w-[220px]",
+      options: [
+        { label: "All Customers", value: "all" },
+        ...customers.map((c) => ({ label: c.company_name, value: c.id })),
+      ],
     },
-    { sr: 0, pm: 0, ba: 0, total: 0 }
-  );
-  const fmt = (n: number) => n.toFixed(2);
+    {
+      kind: "select",
+      key: "scenario",
+      label: "Scenario",
+      widthClass: "w-[180px]",
+      options: SCENARIO_FILTER.map((s) => ({
+        label: scenarioFilterLabel(s),
+        value: s,
+      })),
+    },
+    {
+      kind: "select",
+      key: "owner",
+      label: "Owner",
+      widthClass: "w-[160px]",
+      options: [
+        { label: "All Owners", value: "all" },
+        { label: "My Proposals", value: "mine" },
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Proposal Hours Report</h1>
+      <h1 className="text-2xl font-bold">{REPORT_CONFIG.title}</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1">
-              <Label className="text-xs">Customer</Label>
-              <Select
-                value={selectedCustomer}
-                onValueChange={(v) => setSelectedCustomer(v ?? "all")}
-              >
-                <SelectTrigger className="h-8 w-[220px]">
-                  <SelectValue>
-                    {selectedCustomer === "all"
-                      ? "All Customers"
-                      : (customers.find((c) => c.id === selectedCustomer)
-                          ?.company_name ?? "All Customers")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.company_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Scenario</Label>
-              <Select
-                value={selectedScenario}
-                onValueChange={(v) => setSelectedScenario(v ?? "All")}
-              >
-                <SelectTrigger className="h-8 w-[180px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SCENARIO_FILTER.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {scenarioFilterLabel(s)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Owner</Label>
-              <Select
-                value={ownerFilter}
-                onValueChange={(v) =>
-                  setOwnerFilter((v ?? "all") as OwnerFilter)
-                }
-              >
-                <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue>
-                    {ownerFilter === "mine" ? "My Proposals" : "All Owners"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Owners</SelectItem>
-                  <SelectItem value="mine">My Proposals</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button size="sm" onClick={runReport} disabled={loading}>
-              {loading ? "Running..." : "Run Report"}
-            </Button>
-            {rows.length > 0 && (
-              <Button size="sm" variant="outline" onClick={exportXLSX}>
-                Export XLSX
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <ReportFilterBar
+        specs={filterSpecs}
+        values={{
+          customer: selectedCustomer,
+          scenario: selectedScenario,
+          owner: ownerFilter,
+        }}
+        onChange={(key, value) => {
+          if (key === "customer") setSelectedCustomer(String(value));
+          if (key === "scenario") setSelectedScenario(String(value));
+          if (key === "owner") setOwnerFilter(value as OwnerFilter);
+        }}
+        onRun={runReport}
+        onExport={exportXLSX}
+        loading={loading}
+        canExport={rows.length > 0}
+      />
 
       {hasRun && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Results ({rows.length} row{rows.length !== 1 ? "s" : ""})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {rows.length === 0 ? (
-              <p className="py-8 text-center text-muted-foreground">
-                No hours data matches these filters.
-              </p>
-            ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Proposal Name</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Scenario</TableHead>
-                      <TableHead className="text-right">Sr IM Hours</TableHead>
-                      <TableHead className="text-right">PM Hours</TableHead>
-                      <TableHead className="text-right">BA Hours</TableHead>
-                      <TableHead className="text-right">Total Hours</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((r, i) => (
-                      <TableRow
-                        key={`${r.proposalId}-${r.scenario}-${i}`}
-                        className="hover:bg-muted/50"
-                      >
-                        <TableCell className="font-medium">
-                          <Link
-                            href={`/proposals/${r.proposalId}`}
-                            className="text-primary hover:underline"
-                          >
-                            {r.proposalName}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{r.customerName}</TableCell>
-                        <TableCell>{getScenarioDisplayName(r.scenario)}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmt(r.srImHours)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmt(r.pmHours)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmt(r.baHours)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {fmt(r.totalHours)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    <TableRow className="bg-muted/50 font-semibold">
-                      <TableCell colSpan={3}>Totals</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmt(totals.sr)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmt(totals.pm)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmt(totals.ba)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {fmt(totals.total)}
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <ReportResultsCard
+          count={rows.length}
+          noun="row"
+          emptyMessage="No hours data matches these filters."
+        >
+          <ReportTable config={REPORT_CONFIG} rows={rows} />
+        </ReportResultsCard>
       )}
     </div>
   );

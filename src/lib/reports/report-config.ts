@@ -16,6 +16,7 @@ export type ReportColumnFormat =
   | "integer"
   | "factor" // 0.00 fixed decimals
   | "currency"
+  | "hours" // #,##0.00 — summable
   | "number";
 
 export type ReportColumn = {
@@ -57,6 +58,23 @@ export type ReportConfig = {
    * header rows.
    */
   groupBy?: string;
+  /**
+   * Where per-group subtotals render: in the group header row itself
+   * ("header", e.g. Portfolio Value) or as a separate row after the
+   * group ("footer"). Default: "footer".
+   */
+  groupTotals?: "header" | "footer";
+  /** Render the group label as a status badge on screen. */
+  groupLabelBadge?: boolean;
+  /** Grand-total row label. Default: "Grand Total" (XLSX) / "Totals" (screen). */
+  totalsLabel?: string;
+  /**
+   * Conditional row tinting: reads row[key] and applies the named tint
+   * ("red" | "green") when it matches. Rows without a match keep the
+   * default alternating fill. Used by Stale Proposals (stale → red,
+   * fresh → green in the XLSX).
+   */
+  rowTint?: { key: string; tints: Record<string, "red" | "green"> };
 };
 
 /** One report row: plain data keyed by column key. */

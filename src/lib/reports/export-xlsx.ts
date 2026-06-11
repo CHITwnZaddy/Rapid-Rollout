@@ -18,6 +18,10 @@ const TITLE_BG = "FFC1C1DE"; // #313392 tint — title row
 const HEADER_BG = "FFD5D6E9"; // #313392 tint — column headers + totals
 const ALT_ROW_BG = "FFEAEAF4"; // #313392 tint — alternating data rows
 const WHITE = "FFFFFFFF";
+const TINT_ARGB: Record<"red" | "green", string> = {
+  red: "FFFBD5D5",
+  green: "FFD5F5E3",
+};
 
 function colLetter(n: number): string {
   // 1 → A, 26 → Z, 27 → AA …
@@ -72,6 +76,12 @@ function writeDataCell(
       cell.alignment = { horizontal: "right", vertical: "middle" };
       break;
     }
+    case "hours": {
+      cell.value = Number(value) || 0;
+      cell.numFmt = "#,##0.00";
+      cell.alignment = { horizontal: "right", vertical: "middle" };
+      break;
+    }
     case "integer":
     case "number": {
       cell.value = value === null || value === "" ? "" : Number(value);
@@ -111,7 +121,7 @@ function writeTotalsRow(
     if (!column.sum) return;
     const cell = row.getCell(i + 1);
     cell.value = rows.reduce((sum, r) => sum + (Number(r[column.key]) || 0), 0);
-    cell.numFmt = column.format === "currency" ? CURRENCY_FMT : "0";
+    cell.numFmt = column.format === "currency" ? CURRENCY_FMT : column.format === "hours" ? "#,##0.00" : "0";
     cell.font = { bold: true, size: 12 };
     cell.alignment = { horizontal: "right", vertical: "middle" };
     cell.fill = fill;
@@ -176,7 +186,12 @@ export async function exportReportXLSX(
   const writeRows = (groupRows: ReportRowData[]) => {
     groupRows.forEach((r, idx) => {
       const row = sheet.getRow(rowNum);
-      const fill = fillOf(idx % 2 === 0 ? ALT_ROW_BG : WHITE);
+      const tintName = config.rowTint
+        ? config.rowTint.tints[String(r[config.rowTint.key] ?? "")]
+        : undefined;
+      const fill = fillOf(
+        tintName ? TINT_ARGB[tintName] : idx % 2 === 0 ? ALT_ROW_BG : WHITE
+      );
       columns.forEach((column, i) => {
         writeDataCell(row.getCell(i + 1), column, r[column.key] ?? null, fill);
       });
@@ -194,20 +209,42 @@ export async function exportReportXLSX(
       else groups.set(key, [r]);
     });
 
+    const totalsInHeader = config.groupTotals === "header";
+    const firstSumIdx = columns.findIndex((c) => c.sum);
+    const labelSpan = firstSumIdx === -1 ? columns.length : firstSumIdx;
+
     for (const [groupName, groupRows] of groups) {
-      // Group header row
-      sheet.mergeCells(`A${rowNum}:${lastCol}${rowNum}`);
-      const groupCell = sheet.getCell(`A${rowNum}`);
+      // Group header row: label (+ subtotals when groupTotals: "header")
+      const headerSpan = totalsInHeader ? labelSpan : columns.length;
+      if (headerSpan > 1) {
+        sheet.mergeCells(`A${rowNum}:${colLetter(headerSpan)}${rowNum}`);
+      }
+      const groupRow = sheet.getRow(rowNum);
+      const groupCell = groupRow.getCell(1);
       groupCell.value = groupName;
-      groupCell.font = { bold: true, size: 13 };
+      groupCell.font = { bold: true, size: totalsInHeader ? 12 : 13 };
       groupCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
       groupCell.fill = fillOf(HEADER_BG);
+      if (totalsInHeader) {
+        columns.forEach((column, i) => {
+          if (!column.sum) return;
+          const cell = groupRow.getCell(i + 1);
+          cell.value = groupRows.reduce(
+            (sum, r) => sum + (Number(r[column.key]) || 0),
+            0
+          );
+          cell.numFmt = column.format === "currency" ? CURRENCY_FMT : column.format === "hours" ? "#,##0.00" : "0";
+          cell.font = { bold: true, size: 12 };
+          cell.alignment = { horizontal: "right", vertical: "middle" };
+          cell.fill = fillOf(HEADER_BG);
+        });
+      }
       sheet.getRow(rowNum).height = 20;
       rowNum += 1;
 
       writeRows(groupRows);
 
-      if (config.totalsRow) {
+      if (config.totalsRow && !totalsInHeader) {
         writeTotalsRow(sheet, rowNum, `${groupName} Total`, columns, groupRows);
         rowNum += 1;
       }
@@ -217,7 +254,13 @@ export async function exportReportXLSX(
   }
 
   if (config.totalsRow) {
-    writeTotalsRow(sheet, rowNum, "Grand Total", columns, rows);
+    writeTotalsRow(
+      sheet,
+      rowNum,
+      config.totalsLabel ?? "Grand Total",
+      columns,
+      rows
+    );
   }
 
   // Write buffer → trigger browser download

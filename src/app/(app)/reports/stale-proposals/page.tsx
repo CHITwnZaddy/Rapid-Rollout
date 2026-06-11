@@ -1,24 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -28,32 +12,41 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Fragment } from "react";
 import {
   fetchReportProposals,
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
-import { formatDateShort, toDateOrNull } from "@/lib/reports/format";
+import { formatDateShort } from "@/lib/reports/format";
 import {
   PROPOSAL_STATUSES,
   PROPOSAL_STATUS_VARIANT,
   type ProposalStatus,
 } from "@/lib/constants/statuses";
 import { STALE_TRACKED_STATUSES } from "@/lib/proposals/status";
-import type ExcelJS from "exceljs";
+import type { ReportConfig } from "@/lib/reports/report-config";
+import { exportReportXLSX } from "@/lib/reports/export-xlsx";
+import {
+  ReportFilterBar,
+  type FilterSpec,
+} from "@/components/reports/report-filter-bar";
+import { ReportResultsCard } from "@/components/reports/report-results-card";
+import {
+  useReportFilterData,
+  useReportState,
+} from "@/lib/hooks/use-report-state";
 
-type Customer = { id: string; company_name: string };
 type OwnerFilter = "team" | "mine";
 type StaleBucket = "all" | "stale" | "fresh";
 
 type ReportRow = {
-  proposalId: string;
+  id: string;
   proposalName: string;
   customerName: string;
   status: string;
   daysInStatus: number | null;
   lastActivity: string | null;
   threshold: "stale" | "fresh" | null;
+  [key: string]: string | number | null;
 };
 
 // Anything sitting more than this in its current status is "stale".
@@ -64,8 +57,26 @@ const STALE_THRESHOLD_DAYS = 21;
 const IN_FLIGHT_STATUSES = [...STALE_TRACKED_STATUSES];
 const STATUS_OPTIONS = ["All", ...IN_FLIGHT_STATUSES];
 
+// XLSX-only config: the screen table stays bespoke (per-row stale/fresh
+// tints, inline badges, group counts) but the export goes through the
+// shared workbook engine with conditional row tinting.
+const REPORT_CONFIG: ReportConfig = {
+  title: "Stale Proposals Report",
+  xlsxTitle: "Rapid Rollout – Stale Proposals",
+  sheetName: "Stale Proposals",
+  fileSlug: "stale-proposals",
+  rowTint: { key: "threshold", tints: { stale: "red", fresh: "green" } },
+  columns: [
+    { key: "proposalName", header: "Proposal Name", width: 32, format: "text" },
+    { key: "customerName", header: "Customer", width: 26, format: "text" },
+    { key: "status", header: "Current Status", width: 20, format: "text" },
+    { key: "daysInStatus", header: "Days in Status", width: 16, format: "integer" },
+    { key: "lastActivity", header: "Last Activity", width: 14, format: "date" },
+  ],
+};
+
 export default function StaleProposalsReport() {
-  const supabase = createClient();
+  const { supabase, customers, currentUserId } = useReportFilterData();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();
   const { scopePreset, bucketPreset, statusPreset, fromDashboard } = useMemo(() => {
@@ -77,92 +88,75 @@ export default function StaleProposalsReport() {
       fromDashboard: params.get("from") === "dashboard",
     };
   }, [searchParamString]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState(
     STATUS_OPTIONS.includes(statusPreset) ? statusPreset : "All"
   );
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>(scopePreset);
   const [staleBucket, setStaleBucket] = useState<StaleBucket>(bucketPreset);
-  const [rows, setRows] = useState<ReportRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [hasRun, setHasRun] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
-    });
-    supabase
-      .from("customers")
-      .select("id, company_name")
-      .order("company_name")
-      .then(({ data }) => {
-        if (data) setCustomers(data);
-      });
-  }, [supabase]);
+  const { rows, loading, hasRun, run } = useReportState<ReportRow>(
+    "Stale Proposals report failed to load."
+  );
 
   const runReport = useCallback(async () => {
-    setLoading(true);
-    setHasRun(true);
-
-    const proposals = await fetchReportProposals(supabase, {
-      customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
-      statuses: selectedStatus === "All" ? IN_FLIGHT_STATUSES : [selectedStatus],
-      ownerScope: ownerFilter,
-      currentUserId: currentUserId ?? undefined,
-      includeCreatedBy: true,
-    });
-    if (proposals.length === 0) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-
-    const proposalIds = proposals.map((p) => p.id);
-    const metricsMap = await fetchStatusHistoryMap(supabase, proposalIds);
-    const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
-
-    const reportRows: ReportRow[] = proposals
-      .map((p) => {
-        const m = metricsMap.get(p.id);
-        const days = m?.daysInCurrentStatus ?? null;
-        const threshold: ReportRow["threshold"] =
-          days == null ? null : days >= STALE_THRESHOLD_DAYS ? "stale" : "fresh";
-        return {
-          proposalId: p.id,
-          proposalName: p.name,
-          customerName: customerMap.get(p.customer_id ?? "") ?? "—",
-          status: p.status,
-          daysInStatus: days,
-          lastActivity: m?.lastChangedAt ?? null,
-          threshold,
-        };
-      })
-      .filter((row) => {
-        if (staleBucket === "stale") return row.threshold === "stale";
-        if (staleBucket === "fresh") return row.threshold === "fresh";
-        return true;
-      })
-      // Group by status in the canonical PROPOSAL_STATUSES order, then sort
-      // by Proposal Name A→Z within each group. Only stale-tracked statuses
-      // populate, so the other groups will simply render empty.
-      .sort((a, b) => {
-        const ai = PROPOSAL_STATUSES.indexOf(
-          a.status as (typeof PROPOSAL_STATUSES)[number]
-        );
-        const bi = PROPOSAL_STATUSES.indexOf(
-          b.status as (typeof PROPOSAL_STATUSES)[number]
-        );
-        const aIdx = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-        const bIdx = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
-        if (aIdx !== bIdx) return aIdx - bIdx;
-        return a.proposalName.localeCompare(b.proposalName);
+    await run(async () => {
+      const proposals = await fetchReportProposals(supabase, {
+        customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
+        statuses:
+          selectedStatus === "All" ? IN_FLIGHT_STATUSES : [selectedStatus],
+        ownerScope: ownerFilter,
+        currentUserId: currentUserId ?? undefined,
+        includeCreatedBy: true,
       });
+      if (proposals.length === 0) return [];
 
-    setRows(reportRows);
-    setLoading(false);
+      const proposalIds = proposals.map((p) => p.id);
+      const metricsMap = await fetchStatusHistoryMap(supabase, proposalIds);
+      const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
+
+      return proposals
+        .map((p): ReportRow => {
+          const m = metricsMap.get(p.id);
+          const days = m?.daysInCurrentStatus ?? null;
+          const threshold: ReportRow["threshold"] =
+            days == null
+              ? null
+              : days >= STALE_THRESHOLD_DAYS
+                ? "stale"
+                : "fresh";
+          return {
+            id: p.id,
+            proposalName: p.name,
+            customerName: customerMap.get(p.customer_id ?? "") ?? "—",
+            status: p.status,
+            daysInStatus: days,
+            lastActivity: m?.lastChangedAt ?? null,
+            threshold,
+          };
+        })
+        .filter((row) => {
+          if (staleBucket === "stale") return row.threshold === "stale";
+          if (staleBucket === "fresh") return row.threshold === "fresh";
+          return true;
+        })
+        // Group by status in the canonical PROPOSAL_STATUSES order, then
+        // sort by Proposal Name A→Z within each group.
+        .sort((a, b) => {
+          const ai = PROPOSAL_STATUSES.indexOf(
+            a.status as (typeof PROPOSAL_STATUSES)[number]
+          );
+          const bi = PROPOSAL_STATUSES.indexOf(
+            b.status as (typeof PROPOSAL_STATUSES)[number]
+          );
+          const aIdx = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
+          const bIdx = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+          if (aIdx !== bIdx) return aIdx - bIdx;
+          return a.proposalName.localeCompare(b.proposalName);
+        });
+    });
   }, [
+    run,
     supabase,
     selectedCustomer,
     selectedStatus,
@@ -179,133 +173,20 @@ export default function StaleProposalsReport() {
   }, [currentUserId, ownerFilter, runReport, searchParamString]);
 
   const exportXLSX = useCallback(async () => {
-    if (rows.length === 0) return;
-    const ExcelJS = (await import("exceljs")).default;
-
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Stale Proposals");
-
-    const TITLE_BG = "FFC1C1DE";
-    const HEADER_BG = "FFD5D6E9";
-    const RED_BG = "FFFBD5D5";
-    const GREEN_BG = "FFD5F5E3";
-    const WHITE = "FFFFFFFF";
-    const ALT_ROW_BG = "FFEAEAF4";
-
-    sheet.columns = [
-      { width: 32 }, // A Proposal
-      { width: 26 }, // B Customer
-      { width: 20 }, // C Current Status
-      { width: 16 }, // D Days in Status
-      { width: 14 }, // E Last Activity
-    ];
-
-    sheet.mergeCells("A1:E1");
-    const title = sheet.getCell("A1");
-    title.value = "Rapid Rollout – Stale Proposals";
-    title.font = { bold: true, size: 22 };
-    title.alignment = { horizontal: "center", vertical: "middle" };
-    title.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: TITLE_BG },
-    };
-    sheet.getRow(1).height = 40;
-
-    sheet.mergeCells("A2:E2");
-    const filters = sheet.getCell("A2");
     const customerLabel =
       selectedCustomer === "all"
         ? "All Customers"
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
-    filters.value = `Filtered by: ${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "Team proposals"} · ${staleBucket}  |  Stale when Days in Status >= ${STALE_THRESHOLD_DAYS}`;
-    filters.font = { italic: true, size: 11 };
-    filters.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-    sheet.getRow(2).height = 20;
-    sheet.getRow(3).height = 8;
-
-    const headers = [
-      "Proposal Name",
-      "Customer",
-      "Current Status",
-      "Days in Status",
-      "Last Activity",
-    ];
-    const hr = sheet.getRow(4);
-    headers.forEach((h, i) => {
-      const c = hr.getCell(i + 1);
-      c.value = h;
-      c.font = { bold: true, size: 12 };
-      c.alignment = { horizontal: "center", vertical: "middle" };
-      c.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: HEADER_BG },
-      };
-    });
-    hr.height = 22;
-
-    const DATA_START = 5;
-    rows.forEach((r, idx) => {
-      const row = sheet.getRow(DATA_START + idx);
-      const fillArgb =
-        r.threshold === "stale"
-          ? RED_BG
-          : r.threshold === "fresh"
-            ? GREEN_BG
-            : idx % 2 === 0
-              ? ALT_ROW_BG
-              : WHITE;
-      const fill: ExcelJS.Fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: fillArgb },
-      };
-      // A-C: text. D: days. E: real Date cell so Excel sort still works.
-      const textValues = [r.proposalName, r.customerName, r.status];
-      textValues.forEach((v, i) => {
-        const c = row.getCell(i + 1);
-        c.value = v;
-        c.font = { size: 12 };
-        c.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-        c.fill = fill;
-      });
-      const daysCell = row.getCell(4);
-      daysCell.value = r.daysInStatus ?? "";
-      daysCell.font = { size: 12 };
-      daysCell.alignment = { horizontal: "center", vertical: "middle" };
-      daysCell.fill = fill;
-
-      const dateCell = row.getCell(5);
-      const d = toDateOrNull(r.lastActivity);
-      if (d) {
-        dateCell.value = d;
-        dateCell.numFmt = "dd mmm yy";
-      } else {
-        dateCell.value = "—";
-      }
-      dateCell.font = { size: 12 };
-      dateCell.alignment = { horizontal: "center", vertical: "middle" };
-      dateCell.fill = fill;
-      row.height = 18;
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stale-proposals-${new Date().toISOString().slice(0, 10)}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportReportXLSX(
+      REPORT_CONFIG,
+      rows,
+      `${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "Team proposals"} · ${staleBucket}  |  Stale when Days in Status >= ${STALE_THRESHOLD_DAYS}`
+    );
   }, [rows, selectedCustomer, selectedStatus, ownerFilter, staleBucket, customers]);
 
-  // Rows come in PROPOSAL_STATUSES order already. Reduce into a Map so we
-  // can render group-header rows — Map preserves insertion order, so the
-  // render order matches the status constant.
+  // Rows come in PROPOSAL_STATUSES order already. Map preserves insertion
+  // order, so the render order matches the status constant.
   const groupedStale = rows.reduce<Map<string, ReportRow[]>>((map, r) => {
     if (!map.has(r.status)) map.set(r.status, []);
     map.get(r.status)!.push(r);
@@ -315,10 +196,50 @@ export default function StaleProposalsReport() {
     ? `Scope: ${scopePreset} | Bucket: ${bucketPreset} | Status: ${statusPreset}`
     : null;
 
+  const filterSpecs: FilterSpec[] = [
+    {
+      kind: "select",
+      key: "customer",
+      label: "Customer",
+      widthClass: "w-[220px]",
+      options: [
+        { label: "All Customers", value: "all" },
+        ...customers.map((c) => ({ label: c.company_name, value: c.id })),
+      ],
+    },
+    {
+      kind: "select",
+      key: "status",
+      label: "Status",
+      options: STATUS_OPTIONS.map((s) => ({ label: s, value: s })),
+    },
+    {
+      kind: "select",
+      key: "owner",
+      label: "Owner",
+      widthClass: "w-[160px]",
+      options: [
+        { label: "Team Proposals", value: "team" },
+        { label: "My Proposals", value: "mine" },
+      ],
+    },
+    {
+      kind: "select",
+      key: "bucket",
+      label: "Bucket",
+      widthClass: "w-[150px]",
+      options: [
+        { label: "All", value: "all" },
+        { label: "Stale", value: "stale" },
+        { label: "Fresh", value: "fresh" },
+      ],
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold">Stale Proposals Report</h1>
+        <h1 className="text-2xl font-bold">{REPORT_CONFIG.title}</h1>
         {fromDashboard && (
           <Link
             href="/dashboard"
@@ -334,190 +255,102 @@ export default function StaleProposalsReport() {
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1">
-              <Label className="text-xs">Customer</Label>
-              <Select
-                value={selectedCustomer}
-                onValueChange={(v) => setSelectedCustomer(v ?? "all")}
-              >
-                <SelectTrigger className="h-8 w-[220px]">
-                  <SelectValue>
-                    {selectedCustomer === "all"
-                      ? "All Customers"
-                      : (customers.find((c) => c.id === selectedCustomer)
-                          ?.company_name ?? "All Customers")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.company_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Status</Label>
-              <Select
-                value={selectedStatus}
-                onValueChange={(v) => setSelectedStatus(v ?? "All")}
-              >
-                <SelectTrigger className="h-8 w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Owner</Label>
-              <Select
-                value={ownerFilter}
-                onValueChange={(v) =>
-                  setOwnerFilter((v ?? "all") as OwnerFilter)
-                }
-              >
-                <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue>
-                    {ownerFilter === "mine" ? "My Proposals" : "Team Proposals"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="team">Team Proposals</SelectItem>
-                  <SelectItem value="mine">My Proposals</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Bucket</Label>
-              <Select
-                value={staleBucket}
-                onValueChange={(v) =>
-                  setStaleBucket((v ?? "all") as StaleBucket)
-                }
-              >
-                <SelectTrigger className="h-8 w-[150px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="stale">Stale</SelectItem>
-                  <SelectItem value="fresh">Fresh</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <Button size="sm" onClick={runReport} disabled={loading}>
-              {loading ? "Running..." : "Run Report"}
-            </Button>
-            {rows.length > 0 && (
-              <Button size="sm" variant="outline" onClick={exportXLSX}>
-                Export XLSX
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <ReportFilterBar
+        specs={filterSpecs}
+        values={{
+          customer: selectedCustomer,
+          status: selectedStatus,
+          owner: ownerFilter,
+          bucket: staleBucket,
+        }}
+        onChange={(key, value) => {
+          if (key === "customer") setSelectedCustomer(String(value));
+          if (key === "status") setSelectedStatus(String(value));
+          if (key === "owner") setOwnerFilter(value as OwnerFilter);
+          if (key === "bucket") setStaleBucket(value as StaleBucket);
+        }}
+        onRun={runReport}
+        onExport={exportXLSX}
+        loading={loading}
+        canExport={rows.length > 0}
+      />
 
       {hasRun && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Results ({rows.length} proposal{rows.length !== 1 ? "s" : ""}) —
-              Amber stale labels indicate proposals that have been in the same status for{" "}
-              {STALE_THRESHOLD_DAYS} days or more.
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {rows.length === 0 ? (
-              <p className="py-8 text-center text-muted-foreground">
-                No in-flight proposals match these filters.
-              </p>
-            ) : (
-              <div className="overflow-x-auto rounded-md border">
-                <Table className="min-w-[760px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Proposal Name</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Current Status</TableHead>
-                      <TableHead className="text-center">Days in Status</TableHead>
-                      <TableHead>Last Activity</TableHead>
+        <ReportResultsCard
+          count={rows.length}
+          titleSuffix={`Amber stale labels indicate proposals that have been in the same status for ${STALE_THRESHOLD_DAYS} days or more.`}
+          emptyMessage="No in-flight proposals match these filters."
+        >
+          <div className="overflow-x-auto rounded-md border">
+            <Table className="min-w-[760px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Proposal Name</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Current Status</TableHead>
+                  <TableHead className="text-center">Days in Status</TableHead>
+                  <TableHead>Last Activity</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from(groupedStale.entries()).map(([status, group]) => (
+                  <Fragment key={`group-${status}`}>
+                    <TableRow className="bg-muted/40">
+                      <TableCell colSpan={5} className="font-semibold">
+                        {status} ({group.length})
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {Array.from(groupedStale.entries()).map(([status, group]) => (
-                      <Fragment key={`group-${status}`}>
-                        <TableRow className="bg-muted/40">
-                          <TableCell colSpan={5} className="font-semibold">
-                            {status} ({group.length})
-                          </TableCell>
-                        </TableRow>
-                        {group.map((r) => (
-                          <TableRow
-                            key={r.proposalId}
-                            className={
-                              r.threshold === "stale"
-                                ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
-                                : r.threshold === "fresh"
-                                  ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
-                                  : "hover:bg-muted/50"
+                    {group.map((r) => (
+                      <TableRow
+                        key={r.id}
+                        className={
+                          r.threshold === "stale"
+                            ? "bg-amber-50 hover:bg-amber-50/80 dark:bg-amber-950/30 dark:hover:bg-amber-950/40"
+                            : r.threshold === "fresh"
+                              ? "bg-emerald-50 hover:bg-emerald-50/80 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35"
+                              : "hover:bg-muted/50"
+                        }
+                      >
+                        <TableCell className="font-medium">
+                          <Link
+                            href={`/proposals/${r.id}`}
+                            className="text-primary hover:underline"
+                          >
+                            {r.proposalName}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{r.customerName}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              PROPOSAL_STATUS_VARIANT[
+                                r.status as ProposalStatus
+                              ] ?? "secondary"
                             }
                           >
-                            <TableCell className="font-medium">
-                              <Link
-                                href={`/proposals/${r.proposalId}`}
-                                className="text-primary hover:underline"
-                              >
-                                {r.proposalName}
-                              </Link>
-                            </TableCell>
-                            <TableCell>{r.customerName}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant={
-                                  PROPOSAL_STATUS_VARIANT[
-                                    r.status as ProposalStatus
-                                  ] ?? "secondary"
-                                }
-                              >
-                                {r.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-center tabular-nums">
-                              <span className="mr-2">{r.daysInStatus ?? "—"}</span>
-                              {r.threshold === "stale" && (
-                                <Badge variant="amber">Stale</Badge>
-                              )}
-                              {r.threshold === "fresh" && (
-                                <Badge variant="sage">Fresh</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="tabular-nums text-xs">
-                              {formatDateShort(r.lastActivity)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </Fragment>
+                            {r.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          <span className="mr-2">{r.daysInStatus ?? "—"}</span>
+                          {r.threshold === "stale" && (
+                            <Badge variant="amber">Stale</Badge>
+                          )}
+                          {r.threshold === "fresh" && (
+                            <Badge variant="sage">Fresh</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="tabular-nums text-xs">
+                          {formatDateShort(r.lastActivity)}
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  </Fragment>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </ReportResultsCard>
       )}
     </div>
   );

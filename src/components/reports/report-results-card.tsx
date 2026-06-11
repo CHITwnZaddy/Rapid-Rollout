@@ -10,11 +10,13 @@ import {
 // Results wrapper shared by all reports: count headline + empty state.
 export function ReportResultsCard({
   count,
+  noun = "proposal",
   titleSuffix,
   emptyMessage,
   children,
 }: {
   count: number;
+  noun?: string;
   titleSuffix?: string;
   emptyMessage: string;
   children: React.ReactNode;
@@ -23,7 +25,8 @@ export function ReportResultsCard({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Results ({count} proposal{count !== 1 ? "s" : ""})
+          Results ({count} {noun}
+          {count !== 1 ? "s" : ""})
           {titleSuffix ? ` — ${titleSuffix}` : ""}
         </CardTitle>
       </CardHeader>

@@ -68,6 +68,7 @@ function CellValue({
       return <>{formatCurrency(n)}</>;
     }
     case "factor":
+    case "hours":
       return <>{(Number(value) || 0).toFixed(2)}</>;
     case "integer":
     case "number":
@@ -127,7 +128,14 @@ export function ReportTable({
                     0
                   )
                 )
-              : sourceRows.reduce((s, r) => s + (Number(r[column.key]) || 0), 0)
+              : column.format === "hours"
+                ? sourceRows
+                    .reduce((s, r) => s + (Number(r[column.key]) || 0), 0)
+                    .toFixed(2)
+                : sourceRows.reduce(
+                    (s, r) => s + (Number(r[column.key]) || 0),
+                    0
+                  )
             : null}
         </TableCell>
       ))}
@@ -157,14 +165,53 @@ export function ReportTable({
               group={group}
               columns={columns}
               colSpan={columns.length}
+              headerTotals={
+                config.groupTotals === "header" && group.name !== null ? (
+                  <TableRow className="bg-muted/40">
+                    <TableCell colSpan={labelSpan} className="font-semibold">
+                      {config.groupLabelBadge ? (
+                        <Badge
+                          variant={
+                            PROPOSAL_STATUS_VARIANT[
+                              group.name as ProposalStatus
+                            ] ?? "secondary"
+                          }
+                        >
+                          {group.name}
+                        </Badge>
+                      ) : (
+                        group.name
+                      )}
+                    </TableCell>
+                    {columns.slice(labelSpan).map((column) => (
+                      <TableCell
+                        key={column.key}
+                        className="text-right font-semibold tabular-nums"
+                      >
+                        {column.sum && column.format === "currency"
+                          ? formatCurrency(
+                              group.rows.reduce(
+                                (s, r) => s + (Number(r[column.key]) || 0),
+                                0
+                              )
+                            )
+                          : null}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ) : null
+              }
               totalsRow={
-                config.groupBy && hasSums && group.name !== null
+                config.groupBy &&
+                hasSums &&
+                config.groupTotals !== "header" &&
+                group.name !== null
                   ? totalsCells(group.rows, `${group.name} Total`)
                   : null
               }
             />
           ))}
-          {hasSums ? totalsCells(rows, "Totals") : null}
+          {hasSums ? totalsCells(rows, config.totalsLabel ?? "Totals") : null}
         </TableBody>
       </Table>
     </div>
@@ -175,16 +222,19 @@ function ReportGroup({
   group,
   columns,
   colSpan,
+  headerTotals,
   totalsRow,
 }: {
   group: { name: string | null; rows: ReportRowData[] };
   columns: ReportColumn[];
   colSpan: number;
+  headerTotals: React.ReactNode;
   totalsRow: React.ReactNode;
 }) {
   return (
     <>
-      {group.name !== null && (
+      {headerTotals}
+      {group.name !== null && !headerTotals && (
         <TableRow className="bg-muted/30">
           <TableCell colSpan={colSpan} className="font-semibold">
             {group.name}
