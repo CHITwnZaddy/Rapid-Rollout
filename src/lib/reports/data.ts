@@ -142,6 +142,11 @@ export type HoursAggregateInputs = {
   rateMap: Map<string, number>;
 };
 
+type ReportQueryResult<T> = {
+  data: T | null;
+  error?: { message?: string } | null;
+};
+
 function reportProposalColumns(filters: ReportProposalFilters): string {
   const columns = ["id", "name", "status", "customer_id"];
   if (filters.includeScopedComplexity) columns.push("scoped_complexity_factor");
@@ -216,6 +221,23 @@ function validExcludeStatuses(excludeStatuses?: string[]): string[] {
   );
 }
 
+function requireReportData<T>(
+  result: ReportQueryResult<T>,
+  source: string
+): T {
+  if (result.error) {
+    throw new Error(
+      `Could not load ${source}: ${result.error.message ?? "unknown error"}`
+    );
+  }
+
+  if (result.data == null) {
+    throw new Error(`Could not load ${source}: no data returned.`);
+  }
+
+  return result.data;
+}
+
 export async function fetchReportProposals(
   client: SupabaseClient,
   filters: ReportProposalFilters
@@ -247,9 +269,8 @@ export async function fetchReportProposals(
     });
   }
 
-  const { data, error } = await query;
-  if (error || !data) return [];
-  return data as unknown as ReportProposalRow[];
+  const result = await query;
+  return requireReportData(result, "report proposals") as unknown as ReportProposalRow[];
 }
 
 export async function fetchRevenueReportBaseRows(
@@ -285,9 +306,11 @@ export async function fetchRevenueReportBaseRows(
     });
   }
 
-  const { data, error } = await query;
-  if (error || !data) return [];
-  return data as unknown as RevenueReportBaseRow[];
+  const result = await query;
+  return requireReportData(
+    result,
+    "revenue report base"
+  ) as unknown as RevenueReportBaseRow[];
 }
 
 export async function fetchMigrationCostInputs(
@@ -313,9 +336,20 @@ export async function fetchMigrationCostInputs(
   ]);
 
   return {
-    migrationConfigRows: (migrationRes.data ?? []) as MigrationConfigRow[],
-    migrationLineRows: (migrationLineRes.data ?? []) as MigrationLineRow[],
-    rateMap: buildRateMap(rateRes.data ?? []),
+    migrationConfigRows: requireReportData(
+      migrationRes,
+      "migration config"
+    ) as MigrationConfigRow[],
+    migrationLineRows: requireReportData(
+      migrationLineRes,
+      "migration detail lines"
+    ) as MigrationLineRow[],
+    rateMap: buildRateMap(
+      requireReportData(rateRes, "rate cards") as {
+        lookup_key: string;
+        rate: unknown;
+      }[]
+    ),
   };
 }
 
@@ -356,11 +390,28 @@ export async function fetchRevenueAggregateInputs(
   ]);
 
   return {
-    scenarioRows: (scenarioRes.data ?? []) as ScenarioCostRow[],
-    scopedRows: (scopedRes.data ?? []) as ScopedCostRow[],
-    migrationConfigRows: (migrationRes.data ?? []) as MigrationConfigRow[],
-    migrationLineRows: (migrationLineRes.data ?? []) as MigrationLineRow[],
-    rateMap: buildRateMap(rateRes.data ?? []),
+    scenarioRows: requireReportData(
+      scenarioRes,
+      "scenarios"
+    ) as ScenarioCostRow[],
+    scopedRows: requireReportData(
+      scopedRes,
+      "scoped services"
+    ) as ScopedCostRow[],
+    migrationConfigRows: requireReportData(
+      migrationRes,
+      "migration config"
+    ) as MigrationConfigRow[],
+    migrationLineRows: requireReportData(
+      migrationLineRes,
+      "migration detail lines"
+    ) as MigrationLineRow[],
+    rateMap: buildRateMap(
+      requireReportData(rateRes, "rate cards") as {
+        lookup_key: string;
+        rate: unknown;
+      }[]
+    ),
   };
 }
 
@@ -370,11 +421,14 @@ export async function fetchHoursAggregateInputs(
 ): Promise<HoursAggregateInputs> {
   if (proposalIds.length === 0) return emptyHoursAggregateInputs();
 
-  const { data: scenarios } = await client
+  const scenarioRes = await client
     .from("scenarios")
     .select("id, proposal_id, scenario_type")
     .in("proposal_id", proposalIds);
-  const scenarioRows = (scenarios ?? []) as HoursScenarioRow[];
+  const scenarioRows = requireReportData(
+    scenarioRes,
+    "hours scenarios"
+  ) as HoursScenarioRow[];
   const scenarioIds = scenarioRows.map((scenario) => scenario.id);
 
   const [scenarioLineRes, scopedRes, migrationRes, migrationLineRes, rateRes] =
@@ -384,7 +438,7 @@ export async function fetchHoursAggregateInputs(
             .from("scenario_lines")
             .select("scenario_id, sr_im_hours, pm_hours, ba_hours")
             .in("scenario_id", scenarioIds)
-        : Promise.resolve({ data: [] as HoursScenarioLineRow[] }),
+        : Promise.resolve({ data: [] as HoursScenarioLineRow[], error: null }),
       client
         .from("scoped_services")
         .select("proposal_id, hours, rate_card_lookup_key")
@@ -406,20 +460,32 @@ export async function fetchHoursAggregateInputs(
 
   return {
     scenarioRows,
-    scenarioLineRows: (scenarioLineRes.data ?? []) as HoursScenarioLineRow[],
-    scopedRows: (scopedRes.data ?? []) as ScopedHoursRow[],
-    migrationConfigRows: (migrationRes.data ?? []) as MigrationConfigRow[],
-    migrationLineRows: (migrationLineRes.data ?? []) as MigrationLineRow[],
-    rateMap: buildRateMap(rateRes.data ?? []),
+    scenarioLineRows: requireReportData(
+      scenarioLineRes,
+      "scenario lines"
+    ) as HoursScenarioLineRow[],
+    scopedRows: requireReportData(
+      scopedRes,
+      "scoped services"
+    ) as ScopedHoursRow[],
+    migrationConfigRows: requireReportData(
+      migrationRes,
+      "migration config"
+    ) as MigrationConfigRow[],
+    migrationLineRows: requireReportData(
+      migrationLineRes,
+      "migration detail lines"
+    ) as MigrationLineRow[],
+    rateMap: buildRateMap(
+      requireReportData(rateRes, "rate cards") as {
+        lookup_key: string;
+        rate: unknown;
+      }[]
+    ),
   };
 }
 
-/**
- * All customers keyed by id → company_name. Returns an empty Map on
- * error so reports render an empty state instead of crashing — the
- * page-level UX that already exists (empty result list) handles this
- * gracefully.
- */
+/** All customers keyed by id -> company_name. */
 export async function fetchCustomerMap(
   client: SupabaseClient
 ): Promise<CustomerMap> {
@@ -427,8 +493,11 @@ export async function fetchCustomerMap(
     .from("customers")
     .select("id, company_name")
     .order("company_name");
-  if (error || !data) return new Map();
-  return new Map(data.map((c) => [c.id as string, c.company_name as string]));
+  const customers = requireReportData({ data, error }, "customers") as {
+    id: string;
+    company_name: string;
+  }[];
+  return new Map(customers.map((c) => [c.id, c.company_name]));
 }
 
 /**
@@ -447,6 +516,11 @@ export async function fetchStatusHistoryMap(
     .from("proposal_status_history")
     .select("proposal_id, old_status, new_status, changed_at")
     .in("proposal_id", proposalIds);
-  if (error || !data) return new Map();
-  return buildStatusMetricsMap(data as StatusHistoryRow[], now);
+  return buildStatusMetricsMap(
+    requireReportData(
+      { data, error },
+      "proposal status history"
+    ) as StatusHistoryRow[],
+    now
+  );
 }

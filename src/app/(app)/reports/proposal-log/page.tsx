@@ -116,7 +116,7 @@ export default function ProposalLogReport() {
   const [selectedStatus, setSelectedStatus] = useState(
     statusPreset?.length === 1 ? statusPreset[0] : "All"
   );
-  const { rows, loading, hasRun, run } = useReportState<ReportRow>(
+  const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
     "Proposal Log report failed to load."
   );
 
@@ -297,6 +297,7 @@ export default function ProposalLogReport() {
         <ReportResultsCard
           count={rows.length}
           emptyMessage="No proposals found matching your filters."
+          errorMessage={error}
         >
           <ReportTable
             config={REPORT_CONFIG}

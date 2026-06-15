@@ -13,16 +13,20 @@ export function useReportState<Row>(failureMessage: string) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasRun, setHasRun] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const run = useCallback(
     async (fetchRows: () => Promise<Row[]>) => {
       setLoading(true);
       setHasRun(true);
+      setError(null);
       try {
         setRows(await fetchRows());
       } catch (error) {
+        const message = error instanceof Error ? error.message : failureMessage;
         setRows([]);
-        toast.error(error instanceof Error ? error.message : failureMessage);
+        setError(message);
+        toast.error(message);
       } finally {
         setLoading(false);
       }
@@ -30,7 +34,7 @@ export function useReportState<Row>(failureMessage: string) {
     [failureMessage]
   );
 
-  return { rows, setRows, loading, hasRun, run };
+  return { rows, setRows, loading, hasRun, error, run };
 }
 
 export type CustomerOption = { id: string; company_name: string };

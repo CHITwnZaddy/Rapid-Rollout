@@ -13,12 +13,14 @@ export function ReportResultsCard({
   noun = "proposal",
   titleSuffix,
   emptyMessage,
+  errorMessage,
   children,
 }: {
   count: number;
   noun?: string;
   titleSuffix?: string;
   emptyMessage: string;
+  errorMessage?: string | null;
   children: React.ReactNode;
 }) {
   return (
@@ -31,7 +33,11 @@ export function ReportResultsCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {count === 0 ? (
+        {errorMessage ? (
+          <p className="py-8 text-center text-sm text-destructive">
+            {errorMessage}
+          </p>
+        ) : count === 0 ? (
           <p className="py-8 text-center text-muted-foreground">
             {emptyMessage}
           </p>
