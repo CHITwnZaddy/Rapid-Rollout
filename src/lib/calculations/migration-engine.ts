@@ -57,6 +57,16 @@ export type LineCalc = {
   totalHours: number;
 };
 
+export function validImportCapacity(value: number): number | null {
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function importCapacityError(value: number): string | null {
+  return validImportCapacity(value)
+    ? null
+    : "Lines per import file must be greater than 0.";
+}
+
 /**
  * For a single detail line, compute # of imports and total hours.
  *
@@ -69,10 +79,11 @@ export function calculateLineImports(
   linesPerImportFile: number,
   hrsPerImport: number
 ): LineCalc {
+  const importCapacity = validImportCapacity(linesPerImportFile);
   const numImports =
-    totalLineItems === 0
+    totalLineItems === 0 || importCapacity === null
       ? 0
-      : Math.max(2, Math.ceil(totalLineItems / linesPerImportFile));
+      : Math.max(2, Math.ceil(totalLineItems / importCapacity));
   return {
     totalLineItems,
     numImports,

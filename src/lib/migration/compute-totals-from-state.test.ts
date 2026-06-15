@@ -85,6 +85,24 @@ describe("computeMigrationTotalsFromState", () => {
     ).toBeNull();
   });
 
+  it.each([0, -1, NaN, Infinity])(
+    "returns null when lines_per_import_file is invalid: %s",
+    (capacity) => {
+      expect(
+        computeMigrationTotalsFromState(
+          { ...configFixture, lines_per_import_file: capacity },
+          lineFixture,
+          {
+            srImRate: 100,
+            pmRate: 150,
+            travelRate: 1000,
+            internalCostRate: 135,
+          }
+        )
+      ).toBeNull();
+    }
+  );
+
   it("returns stable totals for a known config and line set", () => {
     const totals = computeMigrationTotalsFromState(configFixture, lineFixture, {
       srImRate: 100,

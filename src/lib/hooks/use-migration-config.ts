@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  importCapacityError,
   lineItemsBoundsError,
   type MigrationTotals,
 } from "@/lib/calculations/migration-engine";
@@ -143,6 +144,11 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         setSaveError(message);
       },
       saveConfig: async (updated, currentLines) => {
+        const capacityError = importCapacityError(NUM(updated.lines_per_import_file));
+        if (capacityError) {
+          throw new Error(capacityError);
+        }
+
         const totals = computeMigrationTotalsFromState(
           updated,
           currentLines,
@@ -193,6 +199,11 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         }
       },
       saveComputedTotal: async (updated, currentLines) => {
+        const capacityError = importCapacityError(NUM(updated.lines_per_import_file));
+        if (capacityError) {
+          throw new Error(capacityError);
+        }
+
         const totals = computeMigrationTotalsFromState(
           updated,
           currentLines,
@@ -294,6 +305,15 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     (field: keyof DbConfig, value: number | boolean | string) => {
       if (!config) return;
       setSaveError(null);
+
+      if (field === "lines_per_import_file") {
+        const capacityError = importCapacityError(NUM(value));
+        if (capacityError) {
+          setSaveError(capacityError);
+          return;
+        }
+      }
+
       const updated = { ...config, [field]: value };
 
       if (field === "is_effort_included" && value === true) {

@@ -1,5 +1,6 @@
 import {
   calculateMigrationTotals,
+  validImportCapacity,
   type MigrationConfig,
   type MigrationTotals,
 } from "@/lib/calculations/migration-engine";
@@ -57,10 +58,15 @@ export function computeMigrationTotalsFromState(
   }
 
   const numProjects = NUM(config.num_projects);
+  const linesPerImportFile = NUM(config.lines_per_import_file);
+  if (validImportCapacity(linesPerImportFile) === null) {
+    return null;
+  }
+
   const migrationConfig: MigrationConfig = {
     num_projects: numProjects,
     hrs_per_import: NUM(config.hrs_per_import),
-    lines_per_import_file: NUM(config.lines_per_import_file),
+    lines_per_import_file: linesPerImportFile,
     is_effort_included: config.is_effort_included,
     is_workshop_included: config.is_workshop_included,
     complexity_factor: NUM(config.complexity_factor),
