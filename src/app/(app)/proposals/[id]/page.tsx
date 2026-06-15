@@ -89,6 +89,7 @@ export default async function ProposalSummaryPage({
       supabase
         .from("rate_cards")
         .select("lookup_key, rate")
+        .eq("status", "Active")
         .in("lookup_key", [
           INTERNAL_COST_RATE_KEY,
           SR_IM_RATE_KEY,
