@@ -414,6 +414,10 @@ describe("fetchRevenueAggregateInputs", () => {
     expect(queries.get("scenarios")?.in).toHaveBeenCalledWith("proposal_id", [
       "p1",
     ]);
+    expect(queries.get("rate_cards")?.eq).toHaveBeenCalledWith(
+      "status",
+      "Active"
+    );
     expect(queries.get("rate_cards")?.in).toHaveBeenCalledWith("lookup_key", [
       "Master|Sr. Implementation Manager",
       "Master|Program Manager",
@@ -455,6 +459,10 @@ describe("fetchMigrationCostInputs", () => {
       "proposal_id",
       ["p1"]
     );
+    expect(queries.get("rate_cards")?.eq).toHaveBeenCalledWith(
+      "status",
+      "Active"
+    );
     expect(queries.get("rate_cards")?.in).toHaveBeenCalledWith("lookup_key", [
       "Master|Sr. Implementation Manager",
       "Master|Program Manager",
@@ -479,7 +487,7 @@ describe("fetchHoursAggregateInputs", () => {
   });
 
   it("fetches scenarios before scenario lines and skips scenario lines when none exist", async () => {
-    const { client } = mockTableClient({
+    const { client, queries } = mockTableClient({
       scenarios: { data: [], error: null },
       scoped_services: { data: [], error: null },
       migration_config: { data: [], error: null },
@@ -491,6 +499,10 @@ describe("fetchHoursAggregateInputs", () => {
 
     expect(client.from).toHaveBeenCalledWith("scenarios");
     expect(client.from).not.toHaveBeenCalledWith("scenario_lines");
+    expect(queries.get("rate_cards")?.eq).toHaveBeenCalledWith(
+      "status",
+      "Active"
+    );
   });
 
   it("fetches scenario lines when scenarios exist", async () => {

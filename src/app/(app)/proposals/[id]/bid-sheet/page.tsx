@@ -117,6 +117,7 @@ export default function BidSheetPage() {
           supabase
             .from("rate_cards")
             .select("lookup_key, rate")
+            .eq("status", "Active")
             .in("lookup_key", [
               SR_IM_RATE_KEY,
               PM_RATE_KEY,

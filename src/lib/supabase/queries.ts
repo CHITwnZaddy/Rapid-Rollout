@@ -18,6 +18,7 @@ export async function fetchRequiredRates(
   const { data, error } = await client
     .from("rate_cards")
     .select("lookup_key, rate")
+    .eq("status", "Active")
     .in("lookup_key", requiredKeys);
 
   if (error || !data) {

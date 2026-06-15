@@ -5,14 +5,30 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 function mockClient(response: { data: unknown; error: unknown }) {
   const query = {
     select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
     in: vi.fn().mockResolvedValue(response),
   };
-  return {
+  return Object.assign({
     from: vi.fn().mockReturnValue(query),
-  } as unknown as SupabaseClient;
+  } as unknown as SupabaseClient, { __query: query });
 }
 
 describe("fetchRequiredRates", () => {
+  it("loads only active required rate rows", async () => {
+    const client = mockClient({
+      data: [{ lookup_key: "Master|Business Analyst", rate: 140 }],
+      error: null,
+    });
+
+    await fetchRequiredRates(client, ["Master|Business Analyst"]);
+
+    expect(client.from).toHaveBeenCalledWith("rate_cards");
+    expect(client.__query.eq).toHaveBeenCalledWith("status", "Active");
+    expect(client.__query.in).toHaveBeenCalledWith("lookup_key", [
+      "Master|Business Analyst",
+    ]);
+  });
+
   it("returns all rates when every required key is present", async () => {
     const client = mockClient({
       data: [

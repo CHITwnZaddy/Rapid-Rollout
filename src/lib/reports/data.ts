@@ -308,6 +308,7 @@ export async function fetchMigrationCostInputs(
     client
       .from("rate_cards")
       .select("lookup_key, rate")
+      .eq("status", "Active")
       .in("lookup_key", REQUIRED_MIGRATION_RATE_KEYS),
   ]);
 
@@ -350,6 +351,7 @@ export async function fetchRevenueAggregateInputs(
     client
       .from("rate_cards")
       .select("lookup_key, rate")
+      .eq("status", "Active")
       .in("lookup_key", REQUIRED_MIGRATION_RATE_KEYS),
   ]);
 
@@ -398,6 +400,7 @@ export async function fetchHoursAggregateInputs(
       client
         .from("rate_cards")
         .select("lookup_key, rate")
+        .eq("status", "Active")
         .in("lookup_key", REQUIRED_MIGRATION_RATE_KEYS),
     ]);
 
