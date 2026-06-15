@@ -81,7 +81,7 @@ export default function PortfolioValueReport() {
   // Default to "mine" — the plan called this out as "My Portfolio Value".
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("mine");
   const [includeLost, setIncludeLost] = useState(false);
-  const { rows, loading, hasRun, run } = useReportState<PortfolioRow>(
+  const { rows, loading, hasRun, error, run } = useReportState<PortfolioRow>(
     "Portfolio Value report failed to load."
   );
 
@@ -171,6 +171,7 @@ export default function PortfolioValueReport() {
           count={rows.length}
           titleSuffix={`Portfolio Total ${formatCurrency(overallTotal)}`}
           emptyMessage="No proposals match these filters."
+          errorMessage={error}
         >
           <ReportTable
             config={REPORT_CONFIG}

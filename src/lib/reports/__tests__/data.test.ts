@@ -85,10 +85,12 @@ describe("fetchCustomerMap", () => {
     expect(map.size).toBe(2);
   });
 
-  it("returns empty map on error", async () => {
+  it("throws on query error", async () => {
     const client = mockCustomersClient({ data: null, error: { message: "x" } });
-    const map = await fetchCustomerMap(client);
-    expect(map.size).toBe(0);
+
+    await expect(fetchCustomerMap(client)).rejects.toThrow(
+      "Could not load customers: x"
+    );
   });
 });
 
@@ -126,13 +128,15 @@ describe("fetchStatusHistoryMap", () => {
     expect(metrics?.daysInCurrentStatus).toBe(15);
   });
 
-  it("returns empty map on error", async () => {
+  it("throws on query error", async () => {
     const client = mockHistoryClient({
       data: null,
       error: { message: "timeout" },
     });
-    const map = await fetchStatusHistoryMap(client, ["p1"]);
-    expect(map.size).toBe(0);
+
+    await expect(fetchStatusHistoryMap(client, ["p1"])).rejects.toThrow(
+      "Could not load proposal status history: timeout"
+    );
   });
 });
 
@@ -294,6 +298,19 @@ describe("fetchReportProposals", () => {
       "2026-03-31"
     );
   });
+
+  it("throws on query error", async () => {
+    const { client } = mockTableClient({
+      proposals: {
+        data: null,
+        error: { message: "permission denied" },
+      },
+    });
+
+    await expect(fetchReportProposals(client, {})).rejects.toThrow(
+      "Could not load report proposals: permission denied"
+    );
+  });
 });
 
 describe("fetchRevenueReportBaseRows", () => {
@@ -367,7 +384,7 @@ describe("fetchRevenueReportBaseRows", () => {
     expect(query?.lte).toHaveBeenCalledWith("created_at", "2026-12-31");
   });
 
-  it("returns empty rows on error", async () => {
+  it("throws on query error", async () => {
     const { client } = mockTableClient({
       proposal_revenue_report_base: {
         data: null,
@@ -375,7 +392,9 @@ describe("fetchRevenueReportBaseRows", () => {
       },
     });
 
-    await expect(fetchRevenueReportBaseRows(client, {})).resolves.toEqual([]);
+    await expect(fetchRevenueReportBaseRows(client, {})).rejects.toThrow(
+      "Could not load revenue report base: view unavailable"
+    );
   });
 });
 
@@ -425,6 +444,20 @@ describe("fetchRevenueAggregateInputs", () => {
       "Master|Internal Cost Rate",
     ]);
   });
+
+  it("throws when any revenue aggregate query fails", async () => {
+    const { client } = mockTableClient({
+      scenarios: { data: [], error: null },
+      scoped_services: { data: null, error: { message: "rls denied" } },
+      migration_config: { data: [], error: null },
+      migration_detail_lines: { data: [], error: null },
+      rate_cards: { data: [], error: null },
+    });
+
+    await expect(fetchRevenueAggregateInputs(client, ["p1"])).rejects.toThrow(
+      "Could not load scoped services: rls denied"
+    );
+  });
 });
 
 describe("fetchMigrationCostInputs", () => {
@@ -469,6 +502,21 @@ describe("fetchMigrationCostInputs", () => {
       "Master|Travel Cost/Trip",
       "Master|Internal Cost Rate",
     ]);
+  });
+
+  it("throws when any migration aggregate query fails", async () => {
+    const { client } = mockTableClient({
+      migration_config: { data: [], error: null },
+      migration_detail_lines: {
+        data: null,
+        error: { message: "table unavailable" },
+      },
+      rate_cards: { data: [], error: null },
+    });
+
+    await expect(fetchMigrationCostInputs(client, ["p1"])).rejects.toThrow(
+      "Could not load migration detail lines: table unavailable"
+    );
   });
 });
 
@@ -524,6 +572,38 @@ describe("fetchHoursAggregateInputs", () => {
     expect(queries.get("scenario_lines")?.in).toHaveBeenCalledWith(
       "scenario_id",
       ["s1"]
+    );
+  });
+
+  it("throws when the hours scenario query fails", async () => {
+    const { client } = mockTableClient({
+      scenarios: { data: null, error: { message: "view blocked" } },
+      scoped_services: { data: [], error: null },
+      migration_config: { data: [], error: null },
+      migration_detail_lines: { data: [], error: null },
+      rate_cards: { data: [], error: null },
+    });
+
+    await expect(fetchHoursAggregateInputs(client, ["p1"])).rejects.toThrow(
+      "Could not load hours scenarios: view blocked"
+    );
+  });
+
+  it("throws when the hours scenario-line query fails", async () => {
+    const { client } = mockTableClient({
+      scenarios: {
+        data: [{ id: "s1", proposal_id: "p1", scenario_type: "P1" }],
+        error: null,
+      },
+      scenario_lines: { data: null, error: { message: "line read failed" } },
+      scoped_services: { data: [], error: null },
+      migration_config: { data: [], error: null },
+      migration_detail_lines: { data: [], error: null },
+      rate_cards: { data: [], error: null },
+    });
+
+    await expect(fetchHoursAggregateInputs(client, ["p1"])).rejects.toThrow(
+      "Could not load scenario lines: line read failed"
     );
   });
 });

@@ -81,7 +81,7 @@ export default function ProposalHoursReport() {
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedScenario, setSelectedScenario] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
-  const { rows, loading, hasRun, run } = useReportState<HoursRow>(
+  const { rows, loading, hasRun, error, run } = useReportState<HoursRow>(
     "Proposal Hours report failed to load."
   );
 
@@ -266,6 +266,7 @@ export default function ProposalHoursReport() {
           count={rows.length}
           noun="row"
           emptyMessage="No hours data matches these filters."
+          errorMessage={error}
         >
           <ReportTable config={REPORT_CONFIG} rows={rows} />
         </ReportResultsCard>

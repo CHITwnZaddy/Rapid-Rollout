@@ -80,7 +80,7 @@ export default function TimeToCloseReport() {
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const { rows, loading, hasRun, run } = useReportState<ReportRow>(
+  const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
     "Time to Close report failed to load."
   );
 
@@ -239,6 +239,7 @@ export default function TimeToCloseReport() {
           count={rows.length}
           titleSuffix={`amber rows closed in >${CLOSE_THRESHOLD_DAYS} days`}
           emptyMessage="No proposals match these filters."
+          errorMessage={error}
         >
           <div className="overflow-x-auto rounded-md border">
             <Table className="min-w-[760px]">

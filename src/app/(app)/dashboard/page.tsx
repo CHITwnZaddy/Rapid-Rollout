@@ -158,18 +158,28 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 async function fetchCloseoutFinancials(
   proposalIds: string[]
 ): Promise<Map<string, CloseoutFinancialRow>> {
   if (proposalIds.length === 0) return new Map();
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("proposals")
     .select("id, sold_price, loe_value, loe_signed_date")
     .in("id", proposalIds);
+  if (error) {
+    throw new Error(`Could not load closeout financials: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("Could not load closeout financials: no data returned.");
+  }
 
   return new Map(
-    ((data ?? []) as CloseoutFinancialRow[]).map((row) => [row.id, row])
+    (data as CloseoutFinancialRow[]).map((row) => [row.id, row])
   );
 }
 
@@ -177,12 +187,18 @@ async function fetchStaleThresholds(): Promise<
   Partial<Record<StaleTrackedStatus, number>>
 > {
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("proposal_stale_thresholds")
     .select("status, threshold_days")
     .eq("is_active", true);
+  if (error) {
+    throw new Error(`Could not load stale thresholds: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("Could not load stale thresholds: no data returned.");
+  }
 
-  return ((data ?? []) as StaleThresholdRow[]).reduce<
+  return (data as StaleThresholdRow[]).reduce<
     Partial<Record<StaleTrackedStatus, number>>
   >((thresholds, row) => {
     thresholds[row.status as StaleTrackedStatus] = row.threshold_days;
@@ -198,23 +214,88 @@ async function fetchTargetAmount(
   const supabase = await createClient();
 
   if (scope === "mine" && userId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("kpi_user_targets")
       .select("target_amount")
       .eq("year", year)
       .eq("user_id", userId)
       .eq("is_active", true)
       .maybeSingle();
+    if (error) {
+      throw new Error(`Could not load user KPI target: ${error.message}`);
+    }
     return Number(data?.target_amount) || 0;
   }
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("kpi_year_targets")
     .select("team_quota")
     .eq("year", year)
     .eq("is_active", true)
     .maybeSingle();
+  if (error) {
+    throw new Error(`Could not load team KPI target: ${error.message}`);
+  }
   return Number(data?.team_quota) || 0;
+}
+
+function DashboardHeader({
+  scopeLabel,
+  dateWindow,
+}: {
+  scopeLabel: string;
+  dateWindow: DashboardDateWindow;
+}) {
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-bold">Proposal Dashboard</h1>
+          <Badge variant="secondary">{scopeLabel}</Badge>
+          <Badge variant="outline">{dateWindow.label}</Badge>
+        </div>
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Pipeline value, stage mix, stale work, and closed revenue for the selected view.
+        </p>
+      </div>
+      <Link href="/proposals/new">
+        <Button>
+          <Plus className="size-4" />
+          New Proposal
+        </Button>
+      </Link>
+    </div>
+  );
+}
+
+function DashboardFilters({
+  scope,
+  dateWindow,
+}: {
+  scope: DashboardScope;
+  dateWindow: DashboardDateWindow;
+}) {
+  return (
+    <Card className="rounded-lg">
+      <CardContent className="space-y-4 pt-0">
+        <div className="flex flex-col gap-3 pt-4 xl:flex-row xl:items-end xl:justify-between">
+          <DashboardScopeFilter
+            scope={scope}
+            canViewTeam
+            range={dateWindow.range}
+            dateFrom={dateWindow.dateFrom}
+            dateTo={dateWindow.dateTo}
+          />
+          <DashboardDateFilter
+            range={dateWindow.range}
+            scope={scope}
+            dateFrom={dateWindow.dateFrom}
+            dateTo={dateWindow.dateTo}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default async function DashboardPage({
@@ -236,25 +317,54 @@ export default async function DashboardPage({
     requestedScope === "team" || requestedScope === "mine"
       ? requestedScope
       : defaultScope;
+  const scopeLabel = scope === "mine" ? "My proposals" : "Team proposals";
 
-  const proposals = await fetchRevenueReportBaseRows(supabase, {
-    ownerScope: scope,
-    currentUserId: userId ?? undefined,
-    dateColumn: "created_at",
-    dateFrom: dateWindow.dateFrom,
-    dateTo: dateWindow.dateTo,
-    orderBy: "created_at",
-    ascending: false,
-  });
+  let proposals: Awaited<ReturnType<typeof fetchRevenueReportBaseRows>>;
+  let migrationInputs: Awaited<ReturnType<typeof fetchMigrationCostInputs>>;
+  let historyMetrics: Awaited<ReturnType<typeof fetchStatusHistoryMap>>;
+  let closeoutMap: Awaited<ReturnType<typeof fetchCloseoutFinancials>>;
+  let thresholds: Awaited<ReturnType<typeof fetchStaleThresholds>>;
+  let targetAmount: number;
+
+  try {
+    proposals = await fetchRevenueReportBaseRows(supabase, {
+      ownerScope: scope,
+      currentUserId: userId ?? undefined,
+      dateColumn: "created_at",
+      dateFrom: dateWindow.dateFrom,
+      dateTo: dateWindow.dateTo,
+      orderBy: "created_at",
+      ascending: false,
+    });
+    const proposalIds = proposals.map((proposal) => proposal.proposal_id);
+    [migrationInputs, historyMetrics, closeoutMap, thresholds, targetAmount] =
+      await Promise.all([
+        fetchMigrationCostInputs(supabase, proposalIds),
+        fetchStatusHistoryMap(supabase, proposalIds),
+        fetchCloseoutFinancials(proposalIds),
+        fetchStaleThresholds(),
+        fetchTargetAmount(dateWindow.year, scope, userId),
+      ]);
+  } catch (error) {
+    return (
+      <div className="space-y-6">
+        <DashboardHeader scopeLabel={scopeLabel} dateWindow={dateWindow} />
+        <DashboardFilters scope={scope} dateWindow={dateWindow} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Unable to load dashboard data</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-destructive">
+              {errorMessage(error, "Dashboard data failed to load.")}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const proposalIds = proposals.map((proposal) => proposal.proposal_id);
-  const [migrationInputs, historyMetrics, closeoutMap, thresholds, targetAmount] =
-    await Promise.all([
-      fetchMigrationCostInputs(supabase, proposalIds),
-      fetchStatusHistoryMap(supabase, proposalIds),
-      fetchCloseoutFinancials(proposalIds),
-      fetchStaleThresholds(),
-      fetchTargetAmount(dateWindow.year, scope, userId),
-    ]);
 
   const migrationMap =
     proposalIds.length > 0
@@ -307,7 +417,6 @@ export default async function DashboardPage({
   const varianceRollups = calculateVarianceRollups(dashboardProposals);
   const maxStageValue = Math.max(...valueByStage.map((row) => row.value), 0);
   const maxStageCount = Math.max(...countByStage.map((row) => row.count), 0);
-  const scopeLabel = scope === "mine" ? "My proposals" : "Team proposals";
 
   const proposalLogParams = {
     scope,
@@ -340,44 +449,9 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold">Proposal Dashboard</h1>
-            <Badge variant="secondary">{scopeLabel}</Badge>
-            <Badge variant="outline">{dateWindow.label}</Badge>
-          </div>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Pipeline value, stage mix, stale work, and closed revenue for the selected view.
-          </p>
-        </div>
-        <Link href="/proposals/new">
-          <Button>
-            <Plus className="size-4" />
-            New Proposal
-          </Button>
-        </Link>
-      </div>
+      <DashboardHeader scopeLabel={scopeLabel} dateWindow={dateWindow} />
 
-      <Card className="rounded-lg">
-        <CardContent className="space-y-4 pt-0">
-          <div className="flex flex-col gap-3 pt-4 xl:flex-row xl:items-end xl:justify-between">
-            <DashboardScopeFilter
-              scope={scope}
-              canViewTeam
-              range={dateWindow.range}
-              dateFrom={dateWindow.dateFrom}
-              dateTo={dateWindow.dateTo}
-            />
-            <DashboardDateFilter
-              range={dateWindow.range}
-              scope={scope}
-              dateFrom={dateWindow.dateFrom}
-              dateTo={dateWindow.dateTo}
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <DashboardFilters scope={scope} dateWindow={dateWindow} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <DashboardWidgetLink

@@ -95,7 +95,7 @@ export default function StaleProposalsReport() {
   );
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>(scopePreset);
   const [staleBucket, setStaleBucket] = useState<StaleBucket>(bucketPreset);
-  const { rows, loading, hasRun, run } = useReportState<ReportRow>(
+  const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
     "Stale Proposals report failed to load."
   );
 
@@ -280,6 +280,7 @@ export default function StaleProposalsReport() {
           count={rows.length}
           titleSuffix={`Amber stale labels indicate proposals that have been in the same status for ${STALE_THRESHOLD_DAYS} days or more.`}
           emptyMessage="No in-flight proposals match these filters."
+          errorMessage={error}
         >
           <div className="overflow-x-auto rounded-md border">
             <Table className="min-w-[760px]">
