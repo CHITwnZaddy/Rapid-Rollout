@@ -71,12 +71,13 @@ export function MigrationConfigForm({
                 min={1}
                 className="h-8"
                 value={config?.lines_per_import_file ?? 2550}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const next = Number.parseInt(e.target.value, 10);
                   onUpdate(
                     "lines_per_import_file",
-                    parseInt(e.target.value) || 2550
-                  )
-                }
+                    Number.isNaN(next) ? 0 : next
+                  );
+                }}
               />
             </div>
           </div>

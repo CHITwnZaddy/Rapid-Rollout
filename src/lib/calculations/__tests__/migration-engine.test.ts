@@ -73,6 +73,18 @@ describe("calculateLineImports", () => {
     const result = calculateLineImports(3000, 1000, 4);
     expect(result.numImports).toBe(3);
   });
+
+  it.each([0, -1, NaN, Infinity])(
+    "returns zero imports for invalid import-file capacity %s",
+    (capacity) => {
+      expect(calculateLineImports(100, capacity, 4)).toEqual({
+        totalLineItems: 100,
+        numImports: 0,
+        hrsPerImport: 4,
+        totalHours: 0,
+      });
+    }
+  );
 });
 
 describe("effectiveTotalLineItems", () => {
