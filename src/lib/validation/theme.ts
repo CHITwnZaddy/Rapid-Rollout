@@ -3,12 +3,8 @@ import { z } from "zod";
 // ─────────────────────────────────────────────────────────────
 // Theme validation
 // ─────────────────────────────────────────────────────────────
-// Phase 1.6 — the theme page persists the user's custom theme
-// to localStorage as JSON. On load we previously did a raw
-// `JSON.parse(saved)` followed by `setTheme(parsed.colors)`,
-// which would crash the admin page (and every page using
-// <ThemeLoader />) if localStorage was ever corrupted or
-// tampered with. Validate the shape before applying.
+// Saved themes come from localStorage, so validate the shape before
+// applying any persisted colors to the app shell.
 // ─────────────────────────────────────────────────────────────
 
 // #rrggbb — 6-digit hex only. The theme page's <input type="color">

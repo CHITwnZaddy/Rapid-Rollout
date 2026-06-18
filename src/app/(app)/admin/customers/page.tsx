@@ -1,6 +1,5 @@
-// Phase 2.7 — admin page, middleware + layout double-check the
-// admin role on every request. Content is shared lookup data;
-// 60s revalidation is safe.
+// Middleware and the admin layout check the role on every request.
+// Customer lookup data can use a short shared cache window.
 export const revalidate = 60;
 
 import { createClient } from "@/lib/supabase/server";

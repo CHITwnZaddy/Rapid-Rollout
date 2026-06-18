@@ -1,5 +1,5 @@
-// Phase 2.7 — change log is read-only audit data; a 10-second
-// window of staleness is fine for admin review use.
+// Change log is read-only audit data; a short cache window is fine
+// for admin review use.
 export const revalidate = 10;
 
 import { createClient } from "@/lib/supabase/server";

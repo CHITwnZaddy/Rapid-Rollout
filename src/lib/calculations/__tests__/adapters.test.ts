@@ -69,8 +69,8 @@ describe("toEngineLine", () => {
   // Business rule: Credit/Discount ($) is always >= 0, even for LoE credits.
   // toEngineLine does NOT enforce this — NUM() passes negatives through unchanged.
   // The invariant is enforced at the DB constraint level and form-layer Zod schema.
-  // This test documents the current (pass-through) behavior so future readers know
-  // where enforcement lives.
+  // This test documents the current pass-through behavior and where
+  // enforcement lives.
   it("does not clamp negative quantity — caller must enforce non-negative invariant", () => {
     const out = toEngineLine({
       section: "cost",

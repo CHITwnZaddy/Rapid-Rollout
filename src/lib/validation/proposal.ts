@@ -3,11 +3,8 @@ import { z } from "zod";
 // ─────────────────────────────────────────────────────────────
 // Proposal form validation
 // ─────────────────────────────────────────────────────────────
-// Phase 1.5 — gate the new-proposal form at the client boundary
-// so empty/whitespace names and malformed customer ids can't
-// reach Supabase. The proposals table has NOT NULL on `name`
-// but nothing server-side prevents `"   "`, which would produce
-// an unreadable row on the dashboard.
+// Gate the new-proposal form at the client boundary so whitespace-only
+// names and malformed customer ids cannot reach Supabase.
 // ─────────────────────────────────────────────────────────────
 
 export const newProposalSchema = z.object({

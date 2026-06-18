@@ -212,8 +212,8 @@ function applyDateRange<TQuery extends { gte: (column: string, value: string) =>
 }
 
 // Build the PostgREST `not in` filter from a whitelist of canonical
-// statuses. Filtering through PROPOSAL_STATUSES means a caller (or a
-// future user-controlled filter) can never smuggle arbitrary strings
+// statuses. Filtering through PROPOSAL_STATUSES means a caller-supplied
+// filter can never smuggle arbitrary strings
 // into the hand-built `(a,b)` filter expression.
 function validExcludeStatuses(excludeStatuses?: string[]): string[] {
   return (excludeStatuses ?? []).filter((s) =>

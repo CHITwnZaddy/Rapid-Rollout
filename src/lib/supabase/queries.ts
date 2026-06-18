@@ -5,12 +5,9 @@ export type FetchRatesResult =
   | { ok: true; rates: Map<string, number> }
   | { ok: false; error: string };
 
-// Fail-closed rate-card fetcher. Returns an error result when:
-//   (a) the request itself errors,
-//   (b) the query succeeds but any required key is missing.
-// Callers MUST NOT compute pricing from a partial map — do not reach
-// for `rates?.get(key) ?? 0`. The Sr. IM bug class came from exactly
-// that pattern: a renamed lookup_key silently zeroed costs.
+// Fail-closed rate-card fetcher. Callers must treat missing required
+// rates as errors because pricing from a partial map can silently
+// zero costs.
 export async function fetchRequiredRates(
   client: SupabaseClient,
   requiredKeys: string[]

@@ -104,7 +104,6 @@ export function ScenarioGrid({
     return map;
   }, [serviceHours]);
 
-  // Calculate initial outputs from stored data
   const initialOutputs = useMemo(
     () =>
       initialLines.map((line) => {
@@ -127,16 +126,15 @@ export function ScenarioGrid({
   const dirtyLinesRef = useRef<Set<string>>(new Set());
   const linesRef = useRef<ScenarioGridLine[]>(initialOutputs);
   const isSavingRef = useRef(false);
+  const doSaveRef = useRef<() => Promise<void>>(async () => {});
 
   const scheduleSave = useCallback((delayMs = 800) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      void doSave();
+      void doSaveRef.current();
     }, delayMs);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep linesRef in sync with state
   useEffect(() => {
     linesRef.current = lines;
   }, [lines]);
@@ -265,11 +263,14 @@ export function ScenarioGrid({
       setSaveStatus("unsaved");
       setSaveError(null);
 
-      // Debounced save
       scheduleSave();
     },
     [serviceHoursMap, rateCardMap, scheduleSave]
   );
+
+  useEffect(() => {
+    doSaveRef.current = doSave;
+  }, [doSave]);
 
   // Clear Tab: reset every line's scope selection to none and push the
   // change through the normal save pipeline (mark all dirty, save now).
@@ -294,17 +295,15 @@ export function ScenarioGrid({
 
   const hasAnySelection = lines.some((line) => line.scopeSelection !== null);
 
-  // Save immediately on unmount
   useEffect(() => {
     const dirtyLines = dirtyLinesRef.current;
 
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (dirtyLines.size > 0) {
-        void doSave();
+        void doSaveRef.current();
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -433,7 +432,6 @@ export function ScenarioGrid({
                 </TableRow>
               );
             })}
-            {/* Totals row */}
             <TableRow className="bg-muted/50 font-semibold">
               <TableCell colSpan={2}>Totals</TableCell>
               <TableCell className="text-right tabular-nums">
