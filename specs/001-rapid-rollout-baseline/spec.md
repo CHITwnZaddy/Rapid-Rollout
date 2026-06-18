@@ -206,7 +206,7 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 **Data Integrity & Validation**
 
 - **FR-110**: System MUST validate every user input with Zod at the server-action boundary before any Supabase call.
-- **FR-111**: System MUST return structured results (parsed by `parseSupabaseResult`) from server actions; raw Supabase errors MUST NOT leak to the UI.
+- **FR-111**: System MUST return structured results from server actions and parse Supabase responses with Zod helpers before rendering user-facing data; raw Supabase errors MUST NOT leak to the UI.
 - **FR-112**: System MUST treat all schema changes as numbered, append-only SQL files in `supabase/migrations/`.
 
 **Exports**
