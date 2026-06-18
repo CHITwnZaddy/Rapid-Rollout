@@ -90,7 +90,13 @@ function parseStatusPreset(value: string | null): string[] | undefined {
 }
 
 export default function ProposalLogReport() {
-  const { supabase, customers, currentUserId } = useReportFilterData();
+  const {
+    supabase,
+    customers,
+    currentUserId,
+    loading: filtersLoading,
+    error: filterError,
+  } = useReportFilterData();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();
   const {
@@ -119,8 +125,10 @@ export default function ProposalLogReport() {
   const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
     "Proposal Log report failed to load."
   );
+  const resultsError = filterError ?? error;
 
   const runReport = useCallback(async () => {
+    if (filtersLoading || filterError) return;
     await run(async () => {
       const proposals = await fetchRevenueReportBaseRows(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
@@ -193,13 +201,23 @@ export default function ProposalLogReport() {
     ownerIdPreset,
     dateFromPreset,
     dateToPreset,
+    filtersLoading,
+    filterError,
   ]);
 
   useEffect(() => {
     if (!searchParamString) return;
+    if (filtersLoading || filterError) return;
     if (scopePreset === "mine" && !currentUserId) return;
     void runReport();
-  }, [currentUserId, runReport, scopePreset, searchParamString]);
+  }, [
+    currentUserId,
+    filterError,
+    filtersLoading,
+    runReport,
+    scopePreset,
+    searchParamString,
+  ]);
 
   const exportXLSX = useCallback(async () => {
     // XLSX intentionally sorts Status A→Z then Customer A→Z — managers
@@ -289,15 +307,16 @@ export default function ProposalLogReport() {
         }}
         onRun={runReport}
         onExport={exportXLSX}
-        loading={loading}
-        canExport={rows.length > 0}
+        loading={loading || filtersLoading}
+        runDisabled={Boolean(filterError)}
+        canExport={!filterError && rows.length > 0}
       />
 
-      {hasRun && (
+      {(filterError || hasRun) && (
         <ReportResultsCard
-          count={rows.length}
+          count={filterError ? 0 : rows.length}
           emptyMessage="No proposals found matching your filters."
-          errorMessage={error}
+          errorMessage={resultsError}
         >
           <ReportTable
             config={REPORT_CONFIG}

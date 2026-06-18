@@ -77,15 +77,23 @@ function scenarioFilterLabel(value: string): string {
 }
 
 export default function ProposalHoursReport() {
-  const { supabase, customers, currentUserId } = useReportFilterData();
+  const {
+    supabase,
+    customers,
+    currentUserId,
+    loading: filtersLoading,
+    error: filterError,
+  } = useReportFilterData();
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedScenario, setSelectedScenario] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
   const { rows, loading, hasRun, error, run } = useReportState<HoursRow>(
     "Proposal Hours report failed to load."
   );
+  const resultsError = filterError ?? error;
 
   const runReport = useCallback(async () => {
+    if (filtersLoading || filterError) return;
     await run(async () => {
       const proposals = await fetchReportProposals(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
@@ -191,6 +199,8 @@ export default function ProposalHoursReport() {
     ownerFilter,
     currentUserId,
     customers,
+    filtersLoading,
+    filterError,
   ]);
 
   const exportXLSX = useCallback(async () => {
@@ -257,16 +267,17 @@ export default function ProposalHoursReport() {
         }}
         onRun={runReport}
         onExport={exportXLSX}
-        loading={loading}
-        canExport={rows.length > 0}
+        loading={loading || filtersLoading}
+        runDisabled={Boolean(filterError)}
+        canExport={!filterError && rows.length > 0}
       />
 
-      {hasRun && (
+      {(filterError || hasRun) && (
         <ReportResultsCard
-          count={rows.length}
+          count={filterError ? 0 : rows.length}
           noun="row"
           emptyMessage="No hours data matches these filters."
-          errorMessage={error}
+          errorMessage={resultsError}
         >
           <ReportTable config={REPORT_CONFIG} rows={rows} />
         </ReportResultsCard>

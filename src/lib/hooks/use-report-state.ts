@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import {
+  loadReportFilterData,
+  type ReportCustomerOption,
+} from "@/lib/reports/filter-data";
 
 // ─────────────────────────────────────────────────────────────
 // Shared report-page state: rows / loading / hasRun plus the
@@ -37,7 +41,7 @@ export function useReportState<Row>(failureMessage: string) {
   return { rows, setRows, loading, hasRun, error, run };
 }
 
-export type CustomerOption = { id: string; company_name: string };
+export type CustomerOption = ReportCustomerOption;
 
 /**
  * Customers dropdown data + the signed-in user id — fetched once on
@@ -47,19 +51,45 @@ export function useReportFilterData() {
   const supabase = createClient();
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
-    });
-    supabase
-      .from("customers")
-      .select("id, company_name")
-      .order("company_name")
-      .then(({ data }) => {
-        if (data) setCustomers(data);
-      });
-  }, [supabase]);
+    let cancelled = false;
 
-  return { supabase, customers, currentUserId };
+    loadReportFilterData(supabase)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          setCustomers([]);
+          setCurrentUserId(null);
+          setError(result.error);
+          return;
+        }
+        setError(null);
+        setCustomers(result.customers);
+        setCurrentUserId(result.currentUserId);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, retryToken]);
+
+  return {
+    supabase,
+    customers,
+    currentUserId,
+    loading,
+    error,
+    retry: () => {
+      setLoading(true);
+      setError(null);
+      setRetryToken((token) => token + 1);
+    },
+  };
 }

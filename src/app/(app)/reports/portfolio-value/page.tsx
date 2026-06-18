@@ -77,15 +77,22 @@ const FILTER_SPECS: FilterSpec[] = [
 ];
 
 export default function PortfolioValueReport() {
-  const { supabase, currentUserId } = useReportFilterData();
+  const {
+    supabase,
+    currentUserId,
+    loading: filtersLoading,
+    error: filterError,
+  } = useReportFilterData();
   // Default to "mine" — the plan called this out as "My Portfolio Value".
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("mine");
   const [includeLost, setIncludeLost] = useState(false);
   const { rows, loading, hasRun, error, run } = useReportState<PortfolioRow>(
     "Portfolio Value report failed to load."
   );
+  const resultsError = filterError ?? error;
 
   const runReport = useCallback(async () => {
+    if (filtersLoading || filterError) return;
     await run(async () => {
       const proposals = await fetchRevenueReportBaseRows(supabase, {
         ownerId:
@@ -137,7 +144,15 @@ export default function PortfolioValueReport() {
           return a.proposalName.localeCompare(b.proposalName);
         });
     });
-  }, [run, supabase, ownerFilter, includeLost, currentUserId]);
+  }, [
+    run,
+    supabase,
+    ownerFilter,
+    includeLost,
+    currentUserId,
+    filtersLoading,
+    filterError,
+  ]);
 
   const overallTotal = rows.reduce((s, r) => s + r.grandTotal, 0);
 
@@ -162,16 +177,17 @@ export default function PortfolioValueReport() {
         }}
         onRun={runReport}
         onExport={exportXLSX}
-        loading={loading}
-        canExport={rows.length > 0}
+        loading={loading || filtersLoading}
+        runDisabled={Boolean(filterError)}
+        canExport={!filterError && rows.length > 0}
       />
 
-      {hasRun && (
+      {(filterError || hasRun) && (
         <ReportResultsCard
-          count={rows.length}
+          count={filterError ? 0 : rows.length}
           titleSuffix={`Portfolio Total ${formatCurrency(overallTotal)}`}
           emptyMessage="No proposals match these filters."
-          errorMessage={error}
+          errorMessage={resultsError}
         >
           <ReportTable
             config={REPORT_CONFIG}

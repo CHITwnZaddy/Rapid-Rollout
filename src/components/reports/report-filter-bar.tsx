@@ -55,6 +55,7 @@ export function ReportFilterBar({
   onRun,
   onExport,
   loading,
+  runDisabled = false,
   canExport,
 }: {
   specs: FilterSpec[];
@@ -63,6 +64,7 @@ export function ReportFilterBar({
   onRun: () => void;
   onExport?: () => void;
   loading: boolean;
+  runDisabled?: boolean;
   canExport: boolean;
 }) {
   return (
@@ -132,7 +134,12 @@ export function ReportFilterBar({
               </label>
             )
           )}
-          <Button size="sm" onClick={onRun} disabled={loading} aria-busy={loading}>
+          <Button
+            size="sm"
+            onClick={onRun}
+            disabled={loading || runDisabled}
+            aria-busy={loading}
+          >
             {loading ? "Running..." : "Run Report"}
           </Button>
           {canExport && onExport && (
