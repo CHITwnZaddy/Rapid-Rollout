@@ -27,6 +27,7 @@ export default function ScenarioBreakoutReport() {
     scopedLines,
     migrationBreakdownRows,
     rateError,
+    error,
     loading,
     hasRun,
     ratesReady,
@@ -51,6 +52,21 @@ export default function ScenarioBreakoutReport() {
               until rates load successfully.
             </p>
             <p className="font-mono text-xs text-destructive">{rateError}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {error && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Unable to load report data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              The report did not run because one or more required records could
+              not be loaded.
+            </p>
+            <p className="font-mono text-xs text-destructive">{error}</p>
           </CardContent>
         </Card>
       )}
@@ -99,7 +115,7 @@ export default function ScenarioBreakoutReport() {
                 Retry loading rates
               </Button>
             )}
-            {hasRun && scenarioGroups.length > 0 && (
+            {hasRun && !error && scenarioGroups.length > 0 && (
               <Button size="sm" variant="outline" onClick={exportXLSX}>
                 Export XLSX
               </Button>
@@ -109,7 +125,7 @@ export default function ScenarioBreakoutReport() {
       </Card>
 
       {/* Results */}
-      {hasRun && (
+      {hasRun && !error && (
         <ScenarioBreakoutResults
           scenarioGroups={scenarioGroups}
           scopedLines={scopedLines}
