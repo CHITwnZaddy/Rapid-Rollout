@@ -273,5 +273,5 @@ export async function exportReportXLSX(
   anchor.href = url;
   anchor.download = `${config.fileSlug}-${new Date().toISOString().slice(0, 10)}.xlsx`;
   anchor.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
