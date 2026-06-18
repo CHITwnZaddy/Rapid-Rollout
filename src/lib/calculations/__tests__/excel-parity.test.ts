@@ -3,8 +3,8 @@
  *
  * The app replicates pricing math that previously lived in Excel. These
  * tests pin canonical inputs to exact expected outputs derived from the
- * documented Excel formulas, so a future edit to the calculation engine
- * that silently breaks parity fails here instead of in a client meeting.
+ * documented Excel formulas, so calculation-engine edits that break
+ * parity fail here instead of in a client meeting.
  *
  * NOTE: expected values are hand-computed from the Excel formula patterns
  * documented in migration-engine.ts (MAX(2, ROUNDUP(total/linesPerFile)))

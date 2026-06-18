@@ -4,7 +4,7 @@ import { getScenarioDisplayName } from "@/lib/scenarios/display";
 /**
  * Pure XLSX builder for the Scenario Breakout report. Lifted out of
  * the page component so it can be unit-tested and reused from other
- * call sites (e.g. a future batch export or an API route).
+ * export surfaces.
  */
 
 export interface ScenarioBreakoutLine {

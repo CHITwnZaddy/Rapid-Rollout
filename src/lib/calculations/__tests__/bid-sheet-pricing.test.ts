@@ -2,7 +2,7 @@
  * Bid-sheet pricing — edge case coverage
  * SA-QA-02 + SA-APP-01: Mitigates risk of incorrect margin/discount
  * calculations, especially with the hardcoded INTERNAL_COST_RATE = 1.35.
- * Tests document the expected behavior so any future rate change is caught.
+ * Tests document the expected behavior so rate changes are caught.
  */
 
 import { describe, expect, it } from "vitest";
@@ -149,8 +149,8 @@ describe("allocateAdjustedTotal — edge cases (SA-QA-02 / APP-01)", () => {
 //
 // The seeded internalCostRate of 135 (Master|Internal Cost Rate) feeds
 // estimatedMargin in calculateMigrationTotals. This test pins the
-// expected margin for a known input so any future rate change is
-// caught immediately rather than silently shifting reported margins.
+// expected margin for a known input so rate changes are caught before
+// silently shifting reported margins.
 
 describe("estimatedMargin — INTERNAL_COST_RATE pin (SA-APP-01)", () => {
   it("workshop-only @ Sr.IM 200 / PM 300 + internalCostRate 135 produces blendedRate ≈ 205.71 and margin ≈ 0.3437", () => {

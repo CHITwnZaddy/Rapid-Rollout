@@ -30,12 +30,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Phase 2.8 — if the user picked a custom Google Font, the
-  // theme page writes its name into a cookie alongside the
-  // existing localStorage entry. Read it here so we can emit a
-  // <link rel="stylesheet"> in the server-rendered <head>,
-  // eliminating the FOUT that ThemeLoader used to cause when it
-  // appended the link post-hydration.
+  // Read the font cookie in the root layout so custom Google Fonts
+  // are linked in the server-rendered head.
   const cookieStore = await cookies();
   const savedFont = cookieStore.get(FONT_COOKIE_NAME)?.value;
   const fontParam =

@@ -82,9 +82,8 @@ export function useScenarioBreakout() {
   const [migrationBreakdownRows, setMigrationBreakdownRows] = useState<
     MigrationBreakdownRow[]
   >([]);
-  // Rates are fail-closed: start as null, require successful fetch
-  // before the report can be run. See Phase 1.3 in the remediation
-  // plan for rationale.
+  // Rates are fail-closed: start as null and require a successful
+  // fetch before the report can run.
   const [srImRate, setSrImRate] = useState<number | null>(null);
   const [pmRate, setPmRate] = useState<number | null>(null);
   const [travelRate, setTravelRate] = useState<number | null>(null);
@@ -142,15 +141,6 @@ export function useScenarioBreakout() {
     setLoading(true);
     setHasRun(true);
 
-    // Phase 2.5 — two fixes here:
-    //   1. migration_config used to .select("*"), over-fetching
-    //      several internal columns we never read. Pruned to the
-    //      exact 16 columns the MigrationConfig interface uses.
-    //   2. The scenario_lines subquery used to run a nested
-    //      `await supabase.from("scenarios").select("id")` inside
-    //      Promise.all — duplicating the scenarios fetch that was
-    //      already in the same batch. Fetch scenarios first, then
-    //      fan out the four dependent queries in parallel.
     const scenarioRes = await supabase
       .from("scenarios")
       .select("id, scenario_type, summary_total_cost, complexity_factor")

@@ -393,9 +393,8 @@ export async function deleteScopedServiceLine(
   return { ok: true, lines: resequenceResult.lines };
 }
 
-// Clear Tab: remove every scoped service line for the proposal in one
-// bulk delete (team request, 2026-06-10). RLS on scoped_services limits
-// the delete to proposals the caller can edit.
+// Clear Tab: remove every scoped service line for the proposal.
+// RLS limits the delete to proposals the caller can edit.
 export async function clearScopedServices(
   proposalId: string
 ): Promise<ScopedServiceActionResult> {

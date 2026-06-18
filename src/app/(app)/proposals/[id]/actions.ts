@@ -78,10 +78,6 @@ type ScenarioLineRecord = Pick<
  *  2. Delegate the change to the atomic Postgres RPC so status and
  *     history are written together.
  *  3. If unchanged → no-op, no history row written.
- *
- * Note: the old implementation did a split write from the app layer.
- * That was replaced with the transition_proposal_status RPC so the
- * proposal row and proposal_status_history stay consistent.
  */
 export async function updateProposalStatus(
   proposalId: string,
@@ -267,9 +263,8 @@ export async function updateScenarioComplexityFactor(
   const rounded = Math.round(value * 100) / 100;
 
   // RLS on scenarios restricts UPDATE to rows whose parent proposal
-  // has created_by = auth.uid(). assertAuthenticated above is
-  // defense-in-depth — if RLS were ever relaxed, the action still
-  // refuses to run for anonymous callers.
+  // has created_by = auth.uid(). The action-level auth check keeps
+  // anonymous callers out before RLS runs.
   const { error } = await supabase
     .from("scenarios")
     .update({ complexity_factor: rounded })
@@ -462,7 +457,7 @@ export async function saveScenarioGridSelections(
  * record to change_log. All child records cascade via FK ON DELETE CASCADE.
  *
  * Guards:
- *  - User must be authenticated (assertAuthenticated + getUser).
+ *  - User must be authenticated and match the Supabase user record.
  *  - Caller must submit a typed-confirmation string matching the proposal
  *    name exactly — this is a friction gate, not an auth boundary.
  *  - RLS on proposals enforces created_by = auth.uid() — the delete will
@@ -473,8 +468,9 @@ export async function saveScenarioGridSelections(
  * supabase.auth.signInWithPassword() as a friction gate. That issued a new
  * session/refresh token on every delete attempt (potentially invalidating
  * the active session) and pushed the plaintext password through the server
- * action pipeline. The server-side auth boundary is assertAuthenticated()
- * + RLS; the typed-confirmation string replaces only the UX friction.
+ * action pipeline. The server-side auth boundary is the authenticated
+ * user check plus RLS; the typed-confirmation string replaces only the
+ * UX friction.
  */
 export async function deleteProposal(
   proposalId: string,

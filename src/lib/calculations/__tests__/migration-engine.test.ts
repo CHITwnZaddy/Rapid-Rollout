@@ -128,11 +128,8 @@ describe("computeLineHours", () => {
   });
 
   // Drift-prevention guarantee: the section total MUST equal the sum
-  // of per-row hours. Previously these two values were computed by
-  // parallel inline loops in migration-detail-section.tsx and
-  // scenario-breakout-results.tsx — editing one without the other
-  // would silently desync row totals from the footer. Now both go
-  // through computeLineHours, so this invariant is structural.
+  // of per-row hours. Both paths go through computeLineHours, so this
+  // invariant is structural.
   it("sums to exactly calculateSectionHours (no drift)", () => {
     const lines = [
       line({ quantity: 5, items_per_object: 200 }),

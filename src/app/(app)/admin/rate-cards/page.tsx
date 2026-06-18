@@ -1,5 +1,4 @@
-// Phase 2.7 — rate cards change rarely; 5 minute revalidation
-// matches the recommended stale time for lookup tables.
+// Rate cards change rarely, so lookup-table caching is safe here.
 export const revalidate = 300;
 
 import { createClient } from "@/lib/supabase/server";

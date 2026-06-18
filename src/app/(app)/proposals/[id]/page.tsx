@@ -213,9 +213,7 @@ export default async function ProposalSummaryPage({
   let migrationTotalHours = 0;
   let migrationInternalCost = 0;
   if (migCfg) {
-    // Fail closed on missing Sr. IM/PM/Travel rates. Previously the page
-    // silently rendered migrationTotal = 0, which is how the Sr. IM
-    // bug class (missing lookup_key → $0 cost) stayed invisible.
+    // Required migration rates must exist before summary pricing renders.
     if (srImRate === null || pmRate === null || travelRate === null) {
       return (
         <Card>

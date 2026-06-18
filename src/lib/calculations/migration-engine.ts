@@ -117,8 +117,7 @@ export const MAX_TOTAL_LINE_ITEMS = 1_000_000;
 /**
  * Returns a user-facing error when a line's quantity × items_per_object
  * exceeds MAX_TOTAL_LINE_ITEMS, or null when the line is within bounds.
- * Input boundaries (the migration grid and any future save path) call
- * this BEFORE accepting the edit.
+ * Input boundaries call this before accepting migration line edits.
  */
 export function lineItemsBoundsError(
   quantity: number,
