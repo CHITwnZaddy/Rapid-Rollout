@@ -7,9 +7,6 @@ import {
   calculateDocumentHours,
   calculateMigrationTotals,
   computeLineHours,
-  DEFAULT_PROJECT_LINES,
-  DEFAULT_WORKFLOW_LINES,
-  DEFAULT_COST_LINES,
   type MigrationConfig,
   type MigrationDetailLine,
 } from "../migration-engine";
@@ -394,22 +391,5 @@ describe("calculateMigrationTotals", () => {
     // 1000 lines → 2 imports × 4 hrs = 8 raw Sr. IM hours
     expect(t.projectRaw).toBe(8);
     expect(t.totalSrImHours).toBe(8);
-  });
-});
-
-describe("default line presets", () => {
-  it("has 2 project lines", () => {
-    expect(DEFAULT_PROJECT_LINES).toHaveLength(2);
-    expect(DEFAULT_PROJECT_LINES.every((l) => l.section === "project")).toBe(true);
-  });
-
-  it("has 11 workflow lines", () => {
-    expect(DEFAULT_WORKFLOW_LINES).toHaveLength(11);
-    expect(DEFAULT_WORKFLOW_LINES.every((l) => l.section === "workflow")).toBe(true);
-  });
-
-  it("has 9 cost lines", () => {
-    expect(DEFAULT_COST_LINES).toHaveLength(9);
-    expect(DEFAULT_COST_LINES.every((l) => l.section === "cost")).toBe(true);
   });
 });

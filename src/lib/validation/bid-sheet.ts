@@ -31,13 +31,6 @@ export const discountDollarsSchema = z
   .finite("Discount $ must be a finite number")
   .min(0, "Discount $ cannot be negative");
 
-export const bidSheetDiscountSchema = z.object({
-  discount_percent: discountPercentSchema,
-  discount_dollars: discountDollarsSchema,
-});
-
-export type BidSheetDiscount = z.infer<typeof bidSheetDiscountSchema>;
-
 export const bidSheetCustomerInputSchema = z.object({
   proposalId: z.uuid("Invalid proposal id"),
   customerId: z.uuid("Invalid customer id"),
@@ -59,12 +52,3 @@ export const bidSheetNotesInputSchema = z.object({
     .string({ error: "Notes must be text" })
     .max(5000, "Notes cannot exceed 5000 characters"),
 });
-
-export type BidSheetCustomerInput = z.infer<typeof bidSheetCustomerInputSchema>;
-export type BidSheetDiscountPercentInput = z.infer<
-  typeof bidSheetDiscountPercentInputSchema
->;
-export type BidSheetDiscountDollarsInput = z.infer<
-  typeof bidSheetDiscountDollarsInputSchema
->;
-export type BidSheetNotesInput = z.infer<typeof bidSheetNotesInputSchema>;

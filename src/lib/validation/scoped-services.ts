@@ -43,14 +43,3 @@ export const deleteScopedServiceLineInputSchema = z.object({
   proposalId: z.uuid("Invalid proposal id"),
   lineId: z.uuid("Invalid scoped service line id"),
 });
-
-export type ScopedServiceType = z.infer<typeof scopedServiceTypeSchema>;
-export type AddScopedServiceLineInput = z.infer<
-  typeof addScopedServiceLineInputSchema
->;
-export type UpdateScopedServiceLineInput = z.infer<
-  typeof updateScopedServiceLineInputSchema
->;
-export type DeleteScopedServiceLineInput = z.infer<
-  typeof deleteScopedServiceLineInputSchema
->;

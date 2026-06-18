@@ -401,34 +401,3 @@ export function calculateMigrationTotals(
     pricingBreakout,
   };
 }
-
-// ─── Default line presets ────────────────────────────────────────────
-
-export const DEFAULT_PROJECT_LINES: Omit<MigrationDetailLine, "id">[] = [
-  { section: "project", label: "Project Info/Detail", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 0 },
-  { section: "project", label: "Schedules",          quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 1 },
-];
-
-export const DEFAULT_WORKFLOW_LINES: Omit<MigrationDetailLine, "id">[] = Array.from(
-  { length: 11 },
-  (_, i) => ({
-    section: "workflow" as const,
-    label: "WF Object Name",
-    quantity: 0,
-    items_per_object: 0,
-    total_line_items: 0,
-    row_order: i,
-  })
-);
-
-export const DEFAULT_COST_LINES: Omit<MigrationDetailLine, "id">[] = [
-  { section: "cost", label: "Budgets",              quantity: 1, items_per_object: 0, total_line_items: 0, row_order: 0 },
-  { section: "cost", label: "Commitments",          quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 1 },
-  { section: "cost", label: "Commitment Changes",   quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 2 },
-  { section: "cost", label: "Commitment Invoices",  quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 3 },
-  { section: "cost", label: "General Invoices",     quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 4 },
-  { section: "cost", label: "TBD",                  quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 5 },
-  { section: "cost", label: "TBD",                  quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 6 },
-  { section: "cost", label: "TBD",                  quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 7 },
-  { section: "cost", label: "TBD",                  quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 8 },
-];
