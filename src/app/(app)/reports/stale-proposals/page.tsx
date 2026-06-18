@@ -76,7 +76,13 @@ const REPORT_CONFIG: ReportConfig = {
 };
 
 export default function StaleProposalsReport() {
-  const { supabase, customers, currentUserId } = useReportFilterData();
+  const {
+    supabase,
+    customers,
+    currentUserId,
+    loading: filtersLoading,
+    error: filterError,
+  } = useReportFilterData();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();
   const { scopePreset, bucketPreset, statusPreset, fromDashboard } = useMemo(() => {
@@ -98,8 +104,10 @@ export default function StaleProposalsReport() {
   const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
     "Stale Proposals report failed to load."
   );
+  const resultsError = filterError ?? error;
 
   const runReport = useCallback(async () => {
+    if (filtersLoading || filterError) return;
     await run(async () => {
       const proposals = await fetchReportProposals(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
@@ -164,13 +172,23 @@ export default function StaleProposalsReport() {
     staleBucket,
     currentUserId,
     customers,
+    filtersLoading,
+    filterError,
   ]);
 
   useEffect(() => {
     if (!searchParamString) return;
+    if (filtersLoading || filterError) return;
     if (ownerFilter === "mine" && !currentUserId) return;
     void runReport();
-  }, [currentUserId, ownerFilter, runReport, searchParamString]);
+  }, [
+    currentUserId,
+    filterError,
+    filtersLoading,
+    ownerFilter,
+    runReport,
+    searchParamString,
+  ]);
 
   const exportXLSX = useCallback(async () => {
     const customerLabel =
@@ -271,16 +289,17 @@ export default function StaleProposalsReport() {
         }}
         onRun={runReport}
         onExport={exportXLSX}
-        loading={loading}
-        canExport={rows.length > 0}
+        loading={loading || filtersLoading}
+        runDisabled={Boolean(filterError)}
+        canExport={!filterError && rows.length > 0}
       />
 
-      {hasRun && (
+      {(filterError || hasRun) && (
         <ReportResultsCard
-          count={rows.length}
+          count={filterError ? 0 : rows.length}
           titleSuffix={`Amber stale labels indicate proposals that have been in the same status for ${STALE_THRESHOLD_DAYS} days or more.`}
           emptyMessage="No in-flight proposals match these filters."
-          errorMessage={error}
+          errorMessage={resultsError}
         >
           <div className="overflow-x-auto rounded-md border">
             <Table className="min-w-[760px]">

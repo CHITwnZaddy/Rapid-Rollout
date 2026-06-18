@@ -74,7 +74,13 @@ const REPORT_CONFIG: ReportConfig = {
 };
 
 export default function TimeToCloseReport() {
-  const { supabase, customers, currentUserId } = useReportFilterData();
+  const {
+    supabase,
+    customers,
+    currentUserId,
+    loading: filtersLoading,
+    error: filterError,
+  } = useReportFilterData();
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
@@ -83,8 +89,10 @@ export default function TimeToCloseReport() {
   const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
     "Time to Close report failed to load."
   );
+  const resultsError = filterError ?? error;
 
   const runReport = useCallback(async () => {
+    if (filtersLoading || filterError) return;
     await run(async () => {
       const proposals = await fetchReportProposals(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
@@ -145,6 +153,8 @@ export default function TimeToCloseReport() {
     customers,
     fromDate,
     toDate,
+    filtersLoading,
+    filterError,
   ]);
 
   // Screen + XLSX share one sort: worst offenders (longest daysToClose)
@@ -230,16 +240,17 @@ export default function TimeToCloseReport() {
         }}
         onRun={runReport}
         onExport={exportXLSX}
-        loading={loading}
-        canExport={rows.length > 0}
+        loading={loading || filtersLoading}
+        runDisabled={Boolean(filterError)}
+        canExport={!filterError && rows.length > 0}
       />
 
-      {hasRun && (
+      {(filterError || hasRun) && (
         <ReportResultsCard
-          count={rows.length}
+          count={filterError ? 0 : rows.length}
           titleSuffix={`amber rows closed in >${CLOSE_THRESHOLD_DAYS} days`}
           emptyMessage="No proposals match these filters."
-          errorMessage={error}
+          errorMessage={resultsError}
         >
           <div className="overflow-x-auto rounded-md border">
             <Table className="min-w-[760px]">
