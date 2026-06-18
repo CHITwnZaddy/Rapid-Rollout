@@ -67,7 +67,7 @@ src/
     calculations/     pure pricing/migration math (tested)
       __tests__/      vitest suites
     supabase/         server + client + middleware helpers
-    validation/       Zod schemas + parseSupabaseResult helper
+    validation/       Zod schemas + safeParseSupabaseResult helper
     hooks/            useAuth, useRequireAdmin, etc.
     exports/          Excel (.xlsx) export builders (exceljs)
   middleware.ts       edge-level auth gate

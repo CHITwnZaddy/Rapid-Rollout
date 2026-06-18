@@ -1,47 +1,8 @@
 import type { ZodType } from "zod";
 
 /**
- * Wraps a Supabase query result ({ data, error }) in a Zod validator so we
- * replace unsafe `as SomeRow[]` casts with real runtime checks.
- *
- * Usage:
- *   const { data, error } = await supabase.from("proposals").select(...);
- *   const proposals = parseSupabaseResult(proposalListSchema, { data, error });
- *
- * Throws on either a Supabase error or a schema mismatch — call sites
- * should catch and render an error state rather than silently displaying
- * bad data.
- */
-export class SupabaseParseError extends Error {
-  constructor(
-    message: string,
-    public readonly cause?: unknown
-  ) {
-    super(message);
-    this.name = "SupabaseParseError";
-  }
-}
-
-export function parseSupabaseResult<T>(
-  schema: ZodType<T>,
-  result: { data: unknown; error: { message: string } | null }
-): T {
-  if (result.error) {
-    throw new SupabaseParseError(result.error.message, result.error);
-  }
-  const parsed = schema.safeParse(result.data);
-  if (!parsed.success) {
-    throw new SupabaseParseError(
-      `Supabase response failed schema validation: ${parsed.error.message}`,
-      parsed.error
-    );
-  }
-  return parsed.data;
-}
-
-/**
- * Non-throwing variant for code paths that want to inspect errors
- * without a try/catch.
+ * Parse Supabase query results with Zod and return structured errors for
+ * pages/actions that render user-facing load states.
  */
 export function safeParseSupabaseResult<T>(
   schema: ZodType<T>,
