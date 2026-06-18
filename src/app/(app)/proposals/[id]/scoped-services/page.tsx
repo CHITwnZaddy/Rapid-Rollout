@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -28,6 +34,11 @@ import {
 } from "@/lib/calculations/engine";
 import { applyComplexity } from "@/lib/calculations/complexity";
 import {
+  getLoadError,
+  getRequiredRateCardsError,
+  getUnknownRateLookupError,
+} from "@/lib/pricing/load-guards";
+import {
   calculateRolePricingBreakouts,
   sumContingencyBreakouts,
   type RolePricingBreakout,
@@ -50,6 +61,13 @@ import {
   updateScopedServiceLine,
 } from "./actions";
 import { ClearTabButton } from "@/components/proposals/clear-tab-button";
+
+const SCOPED_SERVICES_REQUIRED_RATE_KEYS = [
+  SCOPED_KEY_SR_IM,
+  SCOPED_KEY_PM,
+  SCOPED_KEY_BA,
+  INTERNAL_COST_RATE_KEY,
+] as const;
 
 function sortScopedLines(lines: ScopedServiceLine[]): ScopedServiceLine[] {
   return [...lines].sort((a, b) => {
@@ -76,6 +94,8 @@ export default function ScopedServicesPage() {
   const [lines, setLines] = useState<ScopedServiceLine[]>([]);
   const [rateCards, setRateCards] = useState<RateCardRow[]>([]);
   const [complexityFactor, setComplexityFactor] = useState<number>(1);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [savingLineId, setSavingLineId] = useState<string | null>(null);
   const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
@@ -90,8 +110,16 @@ export default function ScopedServicesPage() {
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: scopedData }, { data: rateData }, { data: proposalData }] =
-        await Promise.all([
+      setIsLoading(true);
+      setLoadError(null);
+
+      const failLoad = (message: string) => {
+        setLoadError(message);
+        toast.error(message);
+      };
+
+      try {
+        const [scopedRes, rateRes, proposalRes] = await Promise.all([
           supabase
             .from("scoped_services")
             .select(
@@ -106,10 +134,50 @@ export default function ScopedServicesPage() {
             .eq("id", proposalId)
             .single(),
         ]);
-      if (scopedData) syncServerLines(scopedData as ScopedServiceLine[]);
-      if (rateData) setRateCards(rateData);
-      if (proposalData) {
-        setComplexityFactor(Number(proposalData.scoped_complexity_factor ?? 1));
+
+        const queryLoadError =
+          getLoadError(scopedRes, "scoped services") ??
+          getLoadError(rateRes, "active rate cards") ??
+          getLoadError(proposalRes, "proposal pricing factor");
+        if (queryLoadError) {
+          failLoad(queryLoadError);
+          return;
+        }
+
+        const scopedData = (scopedRes.data ?? []) as ScopedServiceLine[];
+        const rateData = rateRes.data ?? [];
+
+        const rateCardLoadError =
+          getRequiredRateCardsError(
+            rateData,
+            SCOPED_SERVICES_REQUIRED_RATE_KEYS,
+            "Scoped Services"
+          ) ??
+          getUnknownRateLookupError(
+            scopedData,
+            rateData,
+            (line) => line.rate_card_lookup_key,
+            "Scoped Services"
+          );
+        if (rateCardLoadError) {
+          failLoad(rateCardLoadError);
+          return;
+        }
+
+        syncServerLines(scopedData);
+        setRateCards(rateData);
+        setComplexityFactor(
+          Number(proposalRes.data?.scoped_complexity_factor ?? 1)
+        );
+        setLoadError(null);
+      } catch (error) {
+        failLoad(
+          `Could not load scoped services pricing data: ${
+            error instanceof Error ? error.message : "unknown error"
+          }.`
+        );
+      } finally {
+        setIsLoading(false);
       }
     };
     void load();
@@ -283,6 +351,32 @@ export default function ScopedServicesPage() {
     scopedSummary.totalClientHours === 0
       ? 0
       : scopedSummary.clientPrice / scopedSummary.totalClientHours;
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Loading Scoped Services</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Pricing data is loading.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Scoped Services Unavailable</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          {loadError}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">

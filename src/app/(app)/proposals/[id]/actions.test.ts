@@ -475,6 +475,12 @@ describe("proposal actions", () => {
             role_category: "Labor",
             lookup_key: "Master|Business Analyst",
           },
+          {
+            activity: "Internal Cost Rate",
+            rate: 30,
+            role_category: "Master",
+            lookup_key: "Master|Internal Cost Rate",
+          },
         ],
         error: null,
       });
@@ -608,6 +614,38 @@ describe("proposal actions", () => {
         ok: false,
         error: "Scenario grid payload contains lines outside the target scenario.",
       });
+    });
+
+    it("fails closed when scenario pricing rate cards are incomplete", async () => {
+      rateCardsReturnsMock.mockResolvedValue({
+        data: [
+          {
+            activity: "Sr. Implementation Manager",
+            rate: 100,
+            role_category: "Labor",
+            lookup_key: "Master|Sr. Implementation Manager",
+          },
+        ],
+        error: null,
+      });
+
+      const result = await saveScenarioGridSelections(
+        "22222222-2222-4222-8222-222222222222",
+        "11111111-1111-4111-8111-111111111111",
+        [
+          {
+            lineId: "33333333-3333-4333-8333-333333333333",
+            scopeSelection: "Advanced",
+          },
+        ]
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        error:
+          "Missing required rate card rows for scenario pricing: Master|Program Manager, Master|Business Analyst, Master|Internal Cost Rate.",
+      });
+      expect(rpcMock).not.toHaveBeenCalled();
     });
   });
 });

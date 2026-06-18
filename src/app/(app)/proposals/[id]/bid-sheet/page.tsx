@@ -43,6 +43,10 @@ import {
   safeParseSupabaseResult,
 } from "@/lib/validation/parse-supabase";
 import {
+  getLoadError,
+  getRequiredRateCardsError,
+} from "@/lib/pricing/load-guards";
+import {
   BidSheetDataSchema,
   CustomerSchema,
   ScenarioDataSchema,
@@ -62,6 +66,13 @@ import {
 } from "@/lib/rate-card-keys";
 import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 
+const BID_SHEET_REQUIRED_RATE_KEYS = [
+  SR_IM_RATE_KEY,
+  PM_RATE_KEY,
+  TRAVEL_RATE_KEY,
+  INTERNAL_COST_RATE_KEY,
+] as const;
+
 export default function BidSheetPage() {
   const { id: proposalId } = useParams<{ id: string }>();
   const supabase = createClient();
@@ -76,6 +87,7 @@ export default function BidSheetPage() {
   const [discountPercentDraft, setDiscountPercentDraft] = useState("0");
   const [discountDollarsDraft, setDiscountDollarsDraft] = useState("0");
   const [notesDraft, setNotesDraft] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingDiscountPercent, setSavingDiscountPercent] = useState(false);
   const [savingDiscountDollars, setSavingDiscountDollars] = useState(false);
@@ -83,8 +95,25 @@ export default function BidSheetPage() {
 
   useEffect(() => {
     const load = async () => {
-      const [bidRes, scenarioRes, customerRes, migCfgRes, migLinesRes, ratesRes, scopedRes, proposalRes] =
-        await Promise.all([
+      setIsLoading(true);
+      setLoadError(null);
+
+      const failLoad = (message: string) => {
+        setLoadError(message);
+        toast.error(message);
+      };
+
+      try {
+        const [
+          bidRes,
+          scenarioRes,
+          customerRes,
+          migCfgRes,
+          migLinesRes,
+          ratesRes,
+          scopedRes,
+          proposalRes,
+        ] = await Promise.all([
           supabase
             .from("bid_sheets")
             .select("id, customer_id, discount_percent, discount_dollars, notes")
@@ -97,11 +126,7 @@ export default function BidSheetPage() {
             )
             .eq("proposal_id", proposalId)
             .order("scenario_type"),
-          supabase
-            .from("customers")
-            .select("*")
-            .order("company_name"),
-          // Full config fields needed for live migration total computation.
+          supabase.from("customers").select("*").order("company_name"),
           supabase
             .from("migration_config")
             .select(
@@ -111,19 +136,16 @@ export default function BidSheetPage() {
             .single(),
           supabase
             .from("migration_detail_lines")
-            .select("id, section, label, quantity, items_per_object, total_line_items, row_order")
+            .select(
+              "id, section, label, quantity, items_per_object, total_line_items, row_order"
+            )
             .eq("proposal_id", proposalId)
             .order("row_order"),
           supabase
             .from("rate_cards")
             .select("lookup_key, rate")
             .eq("status", "Active")
-            .in("lookup_key", [
-              SR_IM_RATE_KEY,
-              PM_RATE_KEY,
-              TRAVEL_RATE_KEY,
-              INTERNAL_COST_RATE_KEY,
-            ]),
+            .in("lookup_key", BID_SHEET_REQUIRED_RATE_KEYS),
           supabase
             .from("scoped_services")
             .select("cost")
@@ -135,159 +157,178 @@ export default function BidSheetPage() {
             .single(),
         ]);
 
-      const scopedFactor =
-        Number(proposalRes.data?.scoped_complexity_factor) || 1;
+        if (bidRes.error) {
+          failLoad(`Failed to load bid sheet: ${bidRes.error.message}`);
+          return;
+        }
 
-      if (bidRes.error) {
-        setLoadError(`Failed to load bid sheet: ${bidRes.error.message}`);
-        toast.error(`Failed to load bid sheet: ${bidRes.error.message}`);
-        return;
-      }
+        const queryLoadError =
+          getLoadError(scenarioRes, "scenarios") ??
+          getLoadError(customerRes, "customers") ??
+          getLoadError(migCfgRes, "migration configuration") ??
+          getLoadError(migLinesRes, "migration detail lines") ??
+          getLoadError(ratesRes, "active rate cards") ??
+          getLoadError(scopedRes, "scoped services") ??
+          getLoadError(proposalRes, "proposal pricing factor");
+        if (queryLoadError) {
+          failLoad(queryLoadError);
+          return;
+        }
 
-      const bidParsed = safeParseSupabaseResult(
-        BidSheetDataSchema.nullable(),
-        bidRes
-      );
-      if (!bidParsed.ok) {
-        setLoadError(`Bid sheet data is malformed: ${bidParsed.error}`);
-        toast.error(`Bid sheet data is malformed: ${bidParsed.error}`);
-        return;
-      }
-      const bidData: BidSheetData | null = bidParsed.data;
+        const rateCardLoadError = getRequiredRateCardsError(
+          ratesRes.data ?? [],
+          BID_SHEET_REQUIRED_RATE_KEYS,
+          "bid sheet migration pricing"
+        );
+        if (rateCardLoadError) {
+          failLoad(rateCardLoadError);
+          return;
+        }
 
-      const scenarioParsed = safeParseSupabaseResult(
-        z.array(ScenarioDataSchema),
-        scenarioRes
-      );
-      const scenarioData: ScenarioData[] = scenarioParsed.ok
-        ? scenarioParsed.data
-        : [];
-      if (!scenarioParsed.ok) {
-        toast.error(`Scenario data failed to load: ${scenarioParsed.error}`);
-      }
-
-      const customerParsed = safeParseSupabaseResult(
-        z.array(CustomerSchema),
-        customerRes
-      );
-      const customerData: Customer[] = customerParsed.ok
-        ? customerParsed.data
-        : [];
-      if (!customerParsed.ok) {
-        toast.error(`Customer list failed to load: ${customerParsed.error}`);
-      }
-
-      const scopedParsed = safeParseSupabaseResult(
-        z.array(ScopedCostSchema),
-        scopedRes
-      );
-      const scopedData = scopedParsed.ok ? scopedParsed.data : [];
-
-      // Compute migration total live — same approach as the Summary and
-      // Scenario Breakout pages — so the bid sheet always reflects the
-      // current section data rather than the stored computed_total_cost
-      // snapshot which only updates when the migration page saves.
-      const migCfg = !migCfgRes.error ? migCfgRes.data : null;
-      const migLines = migLinesRes.data ?? [];
-      const rateRows = ratesRes.data ?? [];
-      const srImRate = rateRows.find((r) => r.lookup_key === SR_IM_RATE_KEY)?.rate;
-      const pmRate = rateRows.find((r) => r.lookup_key === PM_RATE_KEY)?.rate;
-      const travelRate = rateRows.find((r) => r.lookup_key === TRAVEL_RATE_KEY)?.rate;
-      const internalCostRate = rateRows.find(
-        (r) => r.lookup_key === INTERNAL_COST_RATE_KEY
-      )?.rate;
-
-      // Fail closed on missing rate-card rows. Previously we silently
-      // left liveMigrationTotal at 0 — that hid the Sr. IM-class bug
-      // where a renamed lookup_key made migration cost vanish from
-      // the bid sheet without any user-visible error.
-      let liveMigrationTotal = 0;
-      if (migCfg) {
-        if (
-          srImRate == null ||
-          pmRate == null ||
-          travelRate == null ||
-          internalCostRate == null
-        ) {
-          setLoadError(
-            "Migration total unavailable: one or more required rate card rows are missing."
-          );
-          toast.error(
-            "Migration total unavailable: one or more required rate card rows are missing (Sr. Implementation Manager, Program Manager, Travel Cost/Trip, Internal Cost Rate). Ask an admin to seed these."
+        const bidParsed = safeParseSupabaseResult(
+          BidSheetDataSchema.nullable(),
+          bidRes
+        );
+        if (!bidParsed.ok) {
+          failLoad(`Bid sheet data is malformed: ${bidParsed.error}`);
+          return;
+        }
+        const bidData: BidSheetData | null = bidParsed.data;
+        if (!bidData) {
+          failLoad(
+            "This proposal is missing its bid sheet row. New proposals should no longer enter this state, so this likely indicates legacy bad data. Please contact support before editing this proposal."
           );
           return;
         }
-        const numP = NUM(migCfg.num_projects);
-        const engineCfg: EngineMigrationConfig = {
-          num_projects: numP,
-          hrs_per_import: NUM(migCfg.hrs_per_import),
-          lines_per_import_file: NUM(migCfg.lines_per_import_file),
-          is_effort_included: migCfg.is_effort_included ?? false,
-          is_workshop_included: migCfg.is_workshop_included ?? false,
-          complexity_factor: NUM(migCfg.complexity_factor),
-          sr_im_trips: NUM(migCfg.sr_im_trips),
-          pm_trips: NUM(migCfg.pm_trips),
-          doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
-          doc_mb_per_hour: NUM(migCfg.doc_mb_per_hour),
-          core_requirements_hrs: NUM(migCfg.core_requirements_hrs),
-          core_migration_plan_hrs: NUM(migCfg.core_migration_plan_hrs),
-          core_validation_hrs: NUM(migCfg.core_validation_hrs),
-          core_final_qa_hrs: NUM(migCfg.core_final_qa_hrs),
-          core_pm_oversight_hrs: NUM(migCfg.core_pm_oversight_hrs),
-        };
-        liveMigrationTotal = calculateMigrationTotals(
-          engineCfg,
-          migLines
-            .filter((l) => l.section === "project")
-            .map((l) => toEngineLine(l, { quantityOverride: NUM(migCfg.num_projects) })),
-          migLines
-            .filter((l) => l.section === "workflow")
-            .map((l) => toEngineLine(l)),
-          migLines
-            .filter((l) => l.section === "cost")
-            .map((l) => toEngineLine(l)),
-          Number(srImRate),
-          Number(pmRate),
-          Number(travelRate),
-          Number(internalCostRate)
-        ).clientPrice;
-      }
 
-      if (!bidData) {
-        const message =
-          "This proposal is missing its bid sheet row. New proposals should no longer enter this state, so this likely indicates legacy bad data. Please contact support before editing this proposal.";
-        setLoadError(message);
-        toast.error(message);
-        return;
-      }
-
-      setLoadError(null);
-      setBidSheet(bidData);
-      setDiscountPercentDraft(String(bidData?.discount_percent ?? 0));
-      setDiscountDollarsDraft(String(bidData?.discount_dollars ?? 0));
-      setNotesDraft(bidData?.notes ?? "");
-      const orderedScenarios = [...scenarioData].sort(
-        (a, b) =>
-          SCENARIO_ORDER.indexOf(
-            a.scenario_type as (typeof SCENARIO_ORDER)[number]
-          ) -
-          SCENARIO_ORDER.indexOf(
-            b.scenario_type as (typeof SCENARIO_ORDER)[number]
-          )
-      );
-      setScenarios(orderedScenarios);
-      if (bidData?.customer_id) {
-        setSelectedCustomer(
-          customerData.find((c) => c.id === bidData!.customer_id) ?? null
+        const scenarioParsed = safeParseSupabaseResult(
+          z.array(ScenarioDataSchema),
+          scenarioRes
         );
+        if (!scenarioParsed.ok) {
+          failLoad(`Scenario data failed to load: ${scenarioParsed.error}`);
+          return;
+        }
+
+        const customerParsed = safeParseSupabaseResult(
+          z.array(CustomerSchema),
+          customerRes
+        );
+        if (!customerParsed.ok) {
+          failLoad(`Customer list failed to load: ${customerParsed.error}`);
+          return;
+        }
+
+        const scopedParsed = safeParseSupabaseResult(
+          z.array(ScopedCostSchema),
+          scopedRes
+        );
+        if (!scopedParsed.ok) {
+          failLoad(`Scoped services failed to load: ${scopedParsed.error}`);
+          return;
+        }
+
+        const scopedFactor =
+          Number(proposalRes.data?.scoped_complexity_factor) || 1;
+        const migCfg = migCfgRes.data;
+        const migLines = migLinesRes.data ?? [];
+        const rateRows = ratesRes.data ?? [];
+        const srImRate = rateRows.find(
+          (row) => row.lookup_key === SR_IM_RATE_KEY
+        )?.rate;
+        const pmRate = rateRows.find(
+          (row) => row.lookup_key === PM_RATE_KEY
+        )?.rate;
+        const travelRate = rateRows.find(
+          (row) => row.lookup_key === TRAVEL_RATE_KEY
+        )?.rate;
+        const internalCostRate = rateRows.find(
+          (row) => row.lookup_key === INTERNAL_COST_RATE_KEY
+        )?.rate;
+
+        let liveMigrationTotal = 0;
+        if (migCfg) {
+          const engineCfg: EngineMigrationConfig = {
+            num_projects: NUM(migCfg.num_projects),
+            hrs_per_import: NUM(migCfg.hrs_per_import),
+            lines_per_import_file: NUM(migCfg.lines_per_import_file),
+            is_effort_included: migCfg.is_effort_included ?? false,
+            is_workshop_included: migCfg.is_workshop_included ?? false,
+            complexity_factor: NUM(migCfg.complexity_factor),
+            sr_im_trips: NUM(migCfg.sr_im_trips),
+            pm_trips: NUM(migCfg.pm_trips),
+            doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
+            doc_mb_per_hour: NUM(migCfg.doc_mb_per_hour),
+            core_requirements_hrs: NUM(migCfg.core_requirements_hrs),
+            core_migration_plan_hrs: NUM(migCfg.core_migration_plan_hrs),
+            core_validation_hrs: NUM(migCfg.core_validation_hrs),
+            core_final_qa_hrs: NUM(migCfg.core_final_qa_hrs),
+            core_pm_oversight_hrs: NUM(migCfg.core_pm_oversight_hrs),
+          };
+          liveMigrationTotal = calculateMigrationTotals(
+            engineCfg,
+            migLines
+              .filter((line) => line.section === "project")
+              .map((line) =>
+                toEngineLine(line, {
+                  quantityOverride: NUM(migCfg.num_projects),
+                })
+              ),
+            migLines
+              .filter((line) => line.section === "workflow")
+              .map((line) => toEngineLine(line)),
+            migLines
+              .filter((line) => line.section === "cost")
+              .map((line) => toEngineLine(line)),
+            Number(srImRate),
+            Number(pmRate),
+            Number(travelRate),
+            Number(internalCostRate)
+          ).clientPrice;
+        }
+
+        const orderedScenarios = [...scenarioParsed.data].sort(
+          (a, b) =>
+            SCENARIO_ORDER.indexOf(
+              a.scenario_type as (typeof SCENARIO_ORDER)[number]
+            ) -
+            SCENARIO_ORDER.indexOf(
+              b.scenario_type as (typeof SCENARIO_ORDER)[number]
+            )
+        );
+
+        setLoadError(null);
+        setBidSheet(bidData);
+        setDiscountPercentDraft(String(bidData.discount_percent ?? 0));
+        setDiscountDollarsDraft(String(bidData.discount_dollars ?? 0));
+        setNotesDraft(bidData.notes ?? "");
+        setScenarios(orderedScenarios);
+        setSelectedCustomer(
+          bidData.customer_id
+            ? customerParsed.data.find(
+                (customer) => customer.id === bidData.customer_id
+              ) ?? null
+            : null
+        );
+        setMigrationTotal(liveMigrationTotal);
+        setScopedTotal(
+          applyComplexity(
+            scopedParsed.data.reduce(
+              (sum, scopedLine) => sum + Number(scopedLine.cost),
+              0
+            ),
+            scopedFactor
+          )
+        );
+      } catch (error) {
+        failLoad(
+          `Could not load bid sheet pricing data: ${
+            error instanceof Error ? error.message : "unknown error"
+          }.`
+        );
+      } finally {
+        setIsLoading(false);
       }
-      setMigrationTotal(liveMigrationTotal);
-      setScopedTotal(
-        applyComplexity(
-          scopedData.reduce((sum, s) => sum + Number(s.cost), 0),
-          scopedFactor
-        )
-      );
     };
     load();
   }, [proposalId, supabase]);
@@ -596,6 +637,19 @@ export default function BidSheetPage() {
     anchor.click();
     URL.revokeObjectURL(url);
   };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Loading Bid Sheet</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Pricing data is loading.
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (loadError) {
     return (
