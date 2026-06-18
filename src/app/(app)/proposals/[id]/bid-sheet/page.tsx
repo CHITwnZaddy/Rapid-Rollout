@@ -38,7 +38,6 @@ import {
   updateBidSheetDiscountPercent,
   updateBidSheetNotes,
 } from "./actions";
-import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import {
   safeParseSupabaseResult,
 } from "@/lib/validation/parse-supabase";
@@ -64,7 +63,8 @@ import {
   SR_IM_RATE_KEY,
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
-import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
+import { buildBidSheetViewModel } from "@/lib/proposals/bid-sheet-view-model";
+import { SCENARIO_ORDER } from "@/lib/scenarios/display";
 
 const BID_SHEET_REQUIRED_RATE_KEYS = [
   SR_IM_RATE_KEY,
@@ -412,7 +412,7 @@ export default function BidSheetPage() {
   const discountPercent = bidSheet?.discount_percent ?? 0;
   const discountDollars = bidSheet?.discount_dollars ?? 0;
 
-  const { proposalSubtotal, pricing } = calculateProposalPricingSummary({
+  const { proposalSubtotal, pricing, bidLineItems } = buildBidSheetViewModel({
     scenarios,
     migrationTotal,
     scopedTotal,
@@ -420,32 +420,6 @@ export default function BidSheetPage() {
     discountPercent,
   });
   const finalTotal = pricing.finalTotal;
-  // Team request (2026-06-10): line items with no work in them stay off
-  // the bid sheet (screen AND export). A row hides only when BOTH hours
-  // and cost are zero — hours alone would wrongly hide cost-only rows.
-  const bidLineItems = [
-    ...scenarios.map((scenario) => {
-      const cf = Number(scenario.complexity_factor ?? 1);
-      return {
-        label: scenario.scenario_type,
-        displayLabel: getScenarioDisplayName(scenario.scenario_type),
-        clientPrice: applyComplexity(Number(scenario.summary_total_cost), cf),
-        totalHours: applyComplexity(Number(scenario.summary_total_hours), cf),
-      };
-    }),
-    {
-      label: "Scoped Services",
-      displayLabel: "Scoped Services",
-      clientPrice: scopedTotal,
-      totalHours: 0,
-    },
-    {
-      label: "Migration Services",
-      displayLabel: "Migration Services",
-      clientPrice: migrationTotal,
-      totalHours: 0,
-    },
-  ].filter((item) => item.clientPrice > 0 || item.totalHours > 0);
 
   const handleExport = async () => {
     const ExcelJS = (await import("exceljs")).default;
@@ -571,7 +545,9 @@ export default function BidSheetPage() {
       if (
         [
           "Phase 2",
+          "Phase 3",
           "Option 2",
+          "Option 3",
           "Migration Services",
           "Credit",
           "Final Total",
@@ -601,8 +577,10 @@ export default function BidSheetPage() {
         [
           "Phase 1",
           "Phase 2",
+          "Phase 3",
           "Option 1",
           "Option 2",
+          "Option 3",
           "Scoped Services",
           "Migration Services",
           "Subtotal",
@@ -635,7 +613,7 @@ export default function BidSheetPage() {
       .toISOString()
       .slice(0, 10)}.xlsx`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   if (isLoading) {
