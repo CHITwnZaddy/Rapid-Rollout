@@ -13,9 +13,3 @@ export const removeMigrationDetailLineSchema = z.object({
 });
 
 export type MigrationSection = z.infer<typeof migrationSectionSchema>;
-export type AddMigrationDetailLineInput = z.infer<
-  typeof addMigrationDetailLineSchema
->;
-export type RemoveMigrationDetailLineInput = z.infer<
-  typeof removeMigrationDetailLineSchema
->;

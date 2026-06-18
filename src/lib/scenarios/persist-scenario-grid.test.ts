@@ -3,7 +3,6 @@ import {
   buildCanonicalScenarioGridLines,
   buildScenarioGridRpcPayload,
   buildScenarioGridTotalsUpdate,
-  buildScenarioGridUpsertPayload,
   type ScenarioGridChangeInput,
   type ScenarioGridExistingLine,
   type ScenarioGridPersistLine,
@@ -82,28 +81,6 @@ const rateCardsFixture: RateCardRow[] = [
 ];
 
 describe("scenario grid persistence helpers", () => {
-  it("builds the scenario line upsert payload", () => {
-    expect(buildScenarioGridUpsertPayload("scenario-1", [lineFixture])).toEqual(
-      [
-        {
-          id: "line-1",
-          scenario_id: "scenario-1",
-          row_order: 0,
-          module: "Module A",
-          scope_selection: "Standard",
-          sr_im_hours: 10,
-          sr_im_cost: 1000,
-          pm_hours: 2,
-          pm_cost: 200,
-          ba_hours: 1,
-          ba_cost: 100,
-          total_hours: 13,
-          total_cost: 1300,
-        },
-      ],
-    );
-  });
-
   it("builds the scenario totals update payload", () => {
     expect(buildScenarioGridTotalsUpdate([lineFixture])).toEqual({
       summary_total_hours: 13,

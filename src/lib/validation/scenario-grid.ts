@@ -12,6 +12,3 @@ export const saveScenarioGridSchema = z.object({
     .array(scenarioGridChangeSchema)
     .min(1, "At least one scenario change is required"),
 });
-
-export type ScenarioGridChangeInput = z.infer<typeof scenarioGridChangeSchema>;
-export type SaveScenarioGridInput = z.infer<typeof saveScenarioGridSchema>;

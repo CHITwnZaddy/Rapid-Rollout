@@ -24,8 +24,6 @@ export const newProposalSchema = z.object({
     .optional(),
 });
 
-export type NewProposalInput = z.infer<typeof newProposalSchema>;
-
 // ─────────────────────────────────────────────────────────────
 // Supabase response schemas
 // Used with safeParseSupabaseResult to replace unsafe `as` casts.
