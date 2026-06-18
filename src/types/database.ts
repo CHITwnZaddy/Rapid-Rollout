@@ -920,6 +920,10 @@ export type Database = {
       display_name_from_email: { Args: { p_email: string }; Returns: string }
       is_admin: { Args: never; Returns: boolean }
       is_manager_or_admin: { Args: never; Returns: boolean }
+      reset_migration_services: {
+        Args: { p_proposal_id: string }
+        Returns: undefined
+      }
       save_scenario_grid: {
         Args: {
           p_lines: Json

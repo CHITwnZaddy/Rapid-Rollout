@@ -5,18 +5,21 @@ const {
   computeTotalsMock,
   fetchRequiredRatesMock,
   fromMock,
+  rpcMock,
   revalidatePathMock,
 } = vi.hoisted(() => ({
   authAssertMock: vi.fn(),
   computeTotalsMock: vi.fn(),
   fetchRequiredRatesMock: vi.fn(),
   fromMock: vi.fn(),
+  rpcMock: vi.fn(),
   revalidatePathMock: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     from: fromMock,
+    rpc: rpcMock,
   })),
 }));
 
@@ -184,6 +187,7 @@ describe("migration actions", () => {
     computeTotalsMock.mockReset();
     fetchRequiredRatesMock.mockReset();
     fromMock.mockReset();
+    rpcMock.mockReset();
     revalidatePathMock.mockReset();
 
     authAssertMock.mockResolvedValue({ id: "user-1" });
@@ -196,6 +200,7 @@ describe("migration actions", () => {
       ]),
     });
     computeTotalsMock.mockReturnValue({ clientPrice: 4321 });
+    rpcMock.mockResolvedValue({ error: null });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "migration_config") {
@@ -477,28 +482,30 @@ describe("migration actions", () => {
     expect(configUpdates).toEqual([]);
   });
 
-  it("resets config to defaults and restores the seeded detail rows", async () => {
+  it("resets migration services with the transactional RPC and revalidates proposal pages", async () => {
     const result = await resetMigrationServices(proposalId);
 
     expect(result).toEqual({ ok: true });
-    // Config reset back to bootstrap defaults.
-    expect(configUpdates).toHaveLength(1);
-    expect(configUpdates[0].payload).toMatchObject({
-      num_projects: 0,
-      hrs_per_import: 0.75,
-      lines_per_import_file: 2550,
-      is_effort_included: false,
-      is_workshop_included: false,
-      complexity_factor: 1.0,
-      computed_total_cost: 0,
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("reset_migration_services", {
+      p_proposal_id: proposalId,
     });
-    // Old rows replaced by the 22 seeded defaults (2 project + 11
-    // workflow + 9 cost), mirroring create_proposal_bundle.
-    const remaining = lineRows.filter((l) => l.proposal_id === proposalId);
-    expect(remaining).toHaveLength(22);
-    expect(remaining.filter((l) => l.section === "project")).toHaveLength(2);
-    expect(remaining.filter((l) => l.section === "workflow")).toHaveLength(11);
-    expect(remaining.filter((l) => l.section === "cost")).toHaveLength(9);
+    expect(configUpdates).toEqual([]);
+    expect(lineDeletes).toEqual([]);
+    expect(lineInserts).toEqual([]);
+    expect(revalidatePathMock).toHaveBeenCalledWith(`/proposals/${proposalId}`);
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      `/proposals/${proposalId}/migration`
+    );
+  });
+
+  it("returns the RPC error without revalidating reset paths", async () => {
+    rpcMock.mockResolvedValue({ error: { message: "reset failed" } });
+
+    const result = await resetMigrationServices(proposalId);
+
+    expect(result).toEqual({ ok: false, error: "reset failed" });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   it("rejects unauthenticated reset requests before mutating", async () => {
@@ -512,6 +519,7 @@ describe("migration actions", () => {
       ok: false,
       error: "You must be signed in to clear migration services.",
     });
+    expect(rpcMock).not.toHaveBeenCalled();
     expect(configUpdates).toEqual([]);
     expect(lineDeletes).toEqual([]);
   });

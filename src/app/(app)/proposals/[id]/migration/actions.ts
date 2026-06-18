@@ -396,63 +396,6 @@ export async function removeMigrationDetailLine(
   };
 }
 
-// ─────────────────────────────────────────────────────────────
-// Clear Tab (team request, 2026-06-10): reset the Migration Services
-// tab to its brand-new-proposal state — config fields back to their
-// column defaults AND the seeded default detail rows restored. The
-// default values/rows below intentionally mirror create_proposal_bundle
-// (supabase/migrations/20260601042929_restore_migration_detail_bootstrap.sql);
-// if that seed changes, change this too.
-// ─────────────────────────────────────────────────────────────
-
-const MIGRATION_CONFIG_DEFAULTS = {
-  num_projects: 0,
-  hrs_per_import: 0.75,
-  lines_per_import_file: 2550,
-  is_effort_included: false,
-  is_workshop_included: false,
-  complexity_factor: 1.0,
-  sr_im_trips: 0,
-  pm_trips: 0,
-  doc_avg_mb_per_project: 150000,
-  doc_mb_per_hour: 15000,
-  core_requirements_hrs: 32,
-  core_migration_plan_hrs: 32,
-  core_validation_hrs: 20,
-  core_final_qa_hrs: 16,
-  core_pm_oversight_hrs: 20,
-  computed_total_cost: 0,
-} as const;
-
-const DEFAULT_DETAIL_LINES: Array<{
-  section: MigrationSection;
-  label: string;
-  quantity: number;
-  items_per_object: number;
-  total_line_items: number;
-  row_order: number;
-}> = [
-  { section: "project", label: "Project Info/Detail", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 0 },
-  { section: "project", label: "Schedules", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 1 },
-  ...Array.from({ length: 11 }, (_, i) => ({
-    section: "workflow" as MigrationSection,
-    label: "WF Object Name",
-    quantity: 0,
-    items_per_object: 0,
-    total_line_items: 0,
-    row_order: i,
-  })),
-  { section: "cost", label: "Budgets", quantity: 1, items_per_object: 0, total_line_items: 0, row_order: 0 },
-  { section: "cost", label: "Commitments", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 1 },
-  { section: "cost", label: "Commitment Changes", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 2 },
-  { section: "cost", label: "Commitment Invoices", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 3 },
-  { section: "cost", label: "General Invoices", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 4 },
-  { section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 5 },
-  { section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 6 },
-  { section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 7 },
-  { section: "cost", label: "TBD", quantity: 0, items_per_object: 0, total_line_items: 0, row_order: 8 },
-];
-
 export type ResetMigrationServicesResult =
   | { ok: true }
   | { ok: false; error: string };
@@ -471,43 +414,12 @@ export async function resetMigrationServices(
   if (!auth.ok) return auth;
 
   const supabase = await createClient();
-  const configResult = await loadMigrationConfig(supabase, parsed.data);
-  if (!configResult.ok) {
-    return { ok: false, error: configResult.error };
-  }
+  const { error } = await supabase.rpc("reset_migration_services", {
+    p_proposal_id: parsed.data,
+  });
 
-  // Three sequential steps (config reset, line wipe, line re-seed).
-  // Not atomic — a mid-way failure surfaces an error and re-clicking
-  // Clear completes the job, which is acceptable for a reset-to-defaults.
-  const { error: configError } = await supabase
-    .from("migration_config")
-    .update({ ...MIGRATION_CONFIG_DEFAULTS, updated_at: new Date().toISOString() })
-    .eq("id", configResult.config.id);
-
-  if (configError) {
-    return { ok: false, error: configError.message };
-  }
-
-  const { error: deleteError } = await supabase
-    .from("migration_detail_lines")
-    .delete()
-    .eq("proposal_id", parsed.data);
-
-  if (deleteError) {
-    return { ok: false, error: deleteError.message };
-  }
-
-  const { error: insertError } = await supabase
-    .from("migration_detail_lines")
-    .insert(
-      DEFAULT_DETAIL_LINES.map((line) => ({
-        ...line,
-        proposal_id: parsed.data,
-      }))
-    );
-
-  if (insertError) {
-    return { ok: false, error: insertError.message };
+  if (error) {
+    return { ok: false, error: error.message };
   }
 
   await revalidateMigrationPaths(parsed.data);
