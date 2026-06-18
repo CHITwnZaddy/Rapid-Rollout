@@ -1,9 +1,13 @@
 import { NUM } from "./num";
 import type { MigrationDetailLine } from "./migration-engine";
+import { migrationSectionSchema } from "@/lib/validation/migration";
 
-type MigrationLineLike = {
-  id?: string | null;
+type MigrationSectionLike = {
   section: string;
+};
+
+type MigrationLineLike = MigrationSectionLike & {
+  id?: string | null;
   label: string;
   quantity: unknown;
   items_per_object: unknown;
@@ -17,6 +21,25 @@ type ToEngineLineOptions = {
   rowOrderDefault?: number;
 };
 
+export function parseMigrationSection(
+  section: string
+): MigrationDetailLine["section"] {
+  const result = migrationSectionSchema.safeParse(section);
+
+  if (result.success) {
+    return result.data;
+  }
+
+  throw new Error(`Unknown migration detail section: ${section}`);
+}
+
+export function hasMigrationSection(
+  line: MigrationSectionLike,
+  section: MigrationDetailLine["section"]
+): boolean {
+  return parseMigrationSection(line.section) === section;
+}
+
 // Convert a DB migration_detail_lines row (or an in-memory line from a
 // report loader) into the engine-shaped MigrationDetailLine that
 // calculateMigrationTotals expects. Exists so every caller goes
@@ -27,7 +50,7 @@ export function toEngineLine(
 ): MigrationDetailLine {
   return {
     id: l.id ?? opts.idDefault ?? "",
-    section: l.section as "project" | "workflow" | "cost",
+    section: parseMigrationSection(l.section),
     label: l.label,
     quantity: opts.quantityOverride ?? NUM(l.quantity),
     items_per_object: NUM(l.items_per_object),

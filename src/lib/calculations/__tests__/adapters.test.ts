@@ -66,6 +66,18 @@ describe("toEngineLine", () => {
     expect(out.total_line_items).toBe(0);
   });
 
+  it("rejects unknown migration detail sections", () => {
+    expect(() =>
+      toEngineLine({
+        section: "unknown",
+        label: "Bad",
+        quantity: 1,
+        items_per_object: 1,
+        total_line_items: 1,
+      })
+    ).toThrow("Unknown migration detail section: unknown");
+  });
+
   // Business rule: Credit/Discount ($) is always >= 0, even for LoE credits.
   // toEngineLine does NOT enforce this — NUM() passes negatives through unchanged.
   // The invariant is enforced at the DB constraint level and form-layer Zod schema.

@@ -1,4 +1,4 @@
-import { toEngineLine } from "@/lib/calculations/adapters";
+import { hasMigrationSection, toEngineLine } from "@/lib/calculations/adapters";
 import {
   calculateMigrationTotals,
   type MigrationConfig as EngineMigrationConfig,
@@ -64,13 +64,13 @@ export function buildScenarioBreakoutMigrationRows(
   };
 
   const projectLines: MigrationDetailLine[] = lines
-    .filter((line) => line.section === "project")
+    .filter((line) => hasMigrationSection(line, "project"))
     .map((line) => toEngineLine(line, { quantityOverride: numProjects }));
   const workflowLines: MigrationDetailLine[] = lines
-    .filter((line) => line.section === "workflow")
+    .filter((line) => hasMigrationSection(line, "workflow"))
     .map((line) => toEngineLine(line));
   const costLines: MigrationDetailLine[] = lines
-    .filter((line) => line.section === "cost")
+    .filter((line) => hasMigrationSection(line, "cost"))
     .map((line) => toEngineLine(line));
 
   // travelCostPerTrip and internalCostRate are both passed as 0 here

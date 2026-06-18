@@ -7,7 +7,7 @@ import {
 import { exportScenarioBreakoutXLSX } from "@/lib/exports/scenario-breakout";
 import { applyComplexity } from "@/lib/calculations/complexity";
 import { NUM } from "@/lib/calculations/num";
-import { toEngineLine } from "@/lib/calculations/adapters";
+import { hasMigrationSection, toEngineLine } from "@/lib/calculations/adapters";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
 import {
   buildScenarioBreakoutMigrationRows,
@@ -248,9 +248,15 @@ export function useScenarioBreakout() {
   }, [supabase, selectedProposal, srImRate, pmRate]);
 
   // Migration detail helpers (needed for migrationLiveTotal computation)
-  const projectLines = migrationLines.filter((l) => l.section === "project");
-  const workflowLines = migrationLines.filter((l) => l.section === "workflow");
-  const costDataLines = migrationLines.filter((l) => l.section === "cost");
+  const projectLines = migrationLines.filter((l) =>
+    hasMigrationSection(l, "project")
+  );
+  const workflowLines = migrationLines.filter((l) =>
+    hasMigrationSection(l, "workflow")
+  );
+  const costDataLines = migrationLines.filter((l) =>
+    hasMigrationSection(l, "cost")
+  );
 
   // Compute the migration grand total live from the same data the
   // per-section rows display, instead of trusting the stored

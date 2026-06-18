@@ -5,7 +5,7 @@ import {
   type MigrationTotals,
 } from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
-import { toEngineLine } from "@/lib/calculations/adapters";
+import { hasMigrationSection, toEngineLine } from "@/lib/calculations/adapters";
 
 export type MigrationConfigState = {
   num_projects: number;
@@ -82,13 +82,13 @@ export function computeMigrationTotalsFromState(
   };
 
   const projectLines = lines
-    .filter((line) => line.section === "project")
+    .filter((line) => hasMigrationSection(line, "project"))
     .map((line) => toEngineLine(line, { quantityOverride: numProjects }));
   const workflowLines = lines
-    .filter((line) => line.section === "workflow")
+    .filter((line) => hasMigrationSection(line, "workflow"))
     .map((line) => toEngineLine(line));
   const costLines = lines
-    .filter((line) => line.section === "cost")
+    .filter((line) => hasMigrationSection(line, "cost"))
     .map((line) => toEngineLine(line));
 
   return calculateMigrationTotals(

@@ -122,4 +122,30 @@ describe("computeMigrationTotalsFromState", () => {
     expect(totals?.internalCost).toBeCloseTo(75 * 135);
     expect(totals?.travelExpense).toBe(0);
   });
+
+  it("rejects unknown migration detail sections before calculation", () => {
+    expect(() =>
+      computeMigrationTotalsFromState(
+        configFixture,
+        [
+          ...lineFixture,
+          {
+            id: "bad-1",
+            section: "unknown",
+            label: "Bad row",
+            quantity: 1,
+            items_per_object: 1,
+            total_line_items: 1,
+            row_order: 99,
+          },
+        ],
+        {
+          srImRate: 100,
+          pmRate: 150,
+          travelRate: 1000,
+          internalCostRate: 135,
+        }
+      )
+    ).toThrow("Unknown migration detail section: unknown");
+  });
 });

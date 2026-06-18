@@ -19,6 +19,7 @@ import {
   type MigrationConfigState,
   type MigrationLineState,
 } from "@/lib/migration/compute-totals-from-state";
+import { loadMigrationState } from "@/lib/migration/load-migration-state";
 import {
   addMigrationDetailLine,
   removeMigrationDetailLine,
@@ -263,38 +264,18 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
       setTravelRate(travel);
       setInternalCostRate(internalCost);
 
-      const { data: cfg } = await supabase
-        .from("migration_config")
-        .select("*")
-        .eq("proposal_id", proposalId)
-        .single();
-
-      if (!cfg) {
-        setLoadError(
-          "This proposal is missing its migration configuration row. New proposals should no longer enter this state, so this likely indicates legacy bad data."
-        );
+      const migrationResult = await loadMigrationState<DbConfig, DbLine>(
+        supabase,
+        proposalId
+      );
+      if (!migrationResult.ok) {
+        setLoadError(migrationResult.error);
         setLoading(false);
         return;
       }
 
-      if (cfg) setConfig(cfg as DbConfig);
-
-      const { data: existingLines } = await supabase
-        .from("migration_detail_lines")
-        .select("*")
-        .eq("proposal_id", proposalId)
-        .order("section")
-        .order("row_order");
-
-      if (!existingLines || existingLines.length === 0) {
-        setLoadError(
-          "This proposal is missing its migration detail rows. New proposals should no longer enter this state, so this likely indicates legacy bad data."
-        );
-        setLoading(false);
-        return;
-      }
-
-      if (existingLines) syncCanonicalLines(existingLines as DbLine[]);
+      setConfig(migrationResult.config);
+      syncCanonicalLines(migrationResult.lines);
       setLoading(false);
     };
     load();

@@ -1,5 +1,5 @@
 import { applyComplexity } from "@/lib/calculations/complexity";
-import { toEngineLine } from "@/lib/calculations/adapters";
+import { hasMigrationSection, toEngineLine } from "@/lib/calculations/adapters";
 import {
   calculateMigrationTotals,
   type MigrationDetailLine,
@@ -125,13 +125,13 @@ function buildMigrationLines(
 
   return {
     projectLines: lines
-      .filter((line) => line.section === "project")
+      .filter((line) => hasMigrationSection(line, "project"))
       .map((line) => toEngineLine(line, { quantityOverride: numProjects })),
     workflowLines: lines
-      .filter((line) => line.section === "workflow")
+      .filter((line) => hasMigrationSection(line, "workflow"))
       .map((line) => toEngineLine(line)),
     costLines: lines
-      .filter((line) => line.section === "cost")
+      .filter((line) => hasMigrationSection(line, "cost"))
       .map((line) => toEngineLine(line)),
   };
 }

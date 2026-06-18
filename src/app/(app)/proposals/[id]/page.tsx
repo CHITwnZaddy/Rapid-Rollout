@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
 import { NUM } from "@/lib/calculations/num";
-import { toEngineLine } from "@/lib/calculations/adapters";
+import { hasMigrationSection, toEngineLine } from "@/lib/calculations/adapters";
 import {
   calculateMigrationTotals,
   type MigrationConfig as EngineMigrationConfig,
@@ -254,13 +254,13 @@ export default async function ProposalSummaryPage({
       core_pm_oversight_hrs: NUM(migCfg.core_pm_oversight_hrs),
     };
     const projectLines: MigrationDetailLine[] = migLines
-      .filter((l) => l.section === "project")
+      .filter((l) => hasMigrationSection(l, "project"))
       .map((l) => toEngineLine(l, { quantityOverride: numP }));
     const workflowLines: MigrationDetailLine[] = migLines
-      .filter((l) => l.section === "workflow")
+      .filter((l) => hasMigrationSection(l, "workflow"))
       .map((l) => toEngineLine(l));
     const costLines: MigrationDetailLine[] = migLines
-      .filter((l) => l.section === "cost")
+      .filter((l) => hasMigrationSection(l, "cost"))
       .map((l) => toEngineLine(l));
     const migrationTotals = calculateMigrationTotals(
       engineCfg,
