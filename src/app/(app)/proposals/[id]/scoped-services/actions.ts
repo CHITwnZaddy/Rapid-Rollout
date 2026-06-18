@@ -120,44 +120,6 @@ async function loadActiveRateCards(
   return { ok: true, rateCards: data as RateCardRow[] };
 }
 
-async function resequenceScopedRows(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  proposalId: string,
-  lines: ScopedServiceLine[]
-): Promise<
-  | { ok: true; lines: ScopedServiceLine[] }
-  | { ok: false; error: string }
-> {
-  const sortedLines = sortScopedLines(lines);
-  const updates = sortedLines
-    .map((line, index) => ({
-      id: line.id,
-      nextRowOrder: index,
-      currentRowOrder: line.row_order,
-    }))
-    .filter((line) => line.currentRowOrder !== line.nextRowOrder);
-
-  for (const update of updates) {
-    const { error } = await supabase
-      .from("scoped_services")
-      .update({ row_order: update.nextRowOrder })
-      .eq("id", update.id)
-      .eq("proposal_id", proposalId);
-
-    if (error) {
-      return { ok: false, error: error.message };
-    }
-  }
-
-  return {
-    ok: true,
-    lines: sortedLines.map((line, index) => ({
-      ...line,
-      row_order: index,
-    })),
-  };
-}
-
 export async function addScopedServiceLine(
   proposalId: string
 ): Promise<ScopedServiceActionResult> {
@@ -349,27 +311,19 @@ export async function deleteScopedServiceLine(
     return { ok: false, error: proposalResult.error };
   }
 
-  const lineResult = await loadScopedServiceLines(supabase, parsed.data.proposalId);
-  if (!lineResult.ok) {
-    return { ok: false, error: lineResult.error };
-  }
-
-  const existingLine = lineResult.lines.find((line) => line.id === parsed.data.lineId);
-  if (!existingLine) {
-    return {
-      ok: false,
-      error: "Scoped service line not found for this proposal.",
-    };
-  }
-
   const { error } = await supabase
-    .from("scoped_services")
-    .delete()
-    .eq("id", parsed.data.lineId)
-    .eq("proposal_id", parsed.data.proposalId);
+    .rpc("delete_scoped_service_line", {
+      p_proposal_id: parsed.data.proposalId,
+      p_line_id: parsed.data.lineId,
+    });
 
   if (error) {
-    return { ok: false, error: error.message };
+    return {
+      ok: false,
+      error: error.message.includes("was not found for proposal")
+        ? "Scoped service line not found for this proposal."
+        : error.message,
+    };
   }
 
   const refreshedLineResult = await loadScopedServiceLines(
@@ -380,17 +334,8 @@ export async function deleteScopedServiceLine(
     return { ok: false, error: refreshedLineResult.error };
   }
 
-  const resequenceResult = await resequenceScopedRows(
-    supabase,
-    parsed.data.proposalId,
-    refreshedLineResult.lines
-  );
-  if (!resequenceResult.ok) {
-    return { ok: false, error: resequenceResult.error };
-  }
-
   await revalidateScopedServicePaths(parsed.data.proposalId);
-  return { ok: true, lines: resequenceResult.lines };
+  return { ok: true, lines: refreshedLineResult.lines };
 }
 
 // Clear Tab: remove every scoped service line for the proposal.
