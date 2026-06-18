@@ -1,24 +1,74 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getRequiredEnv } from "@/lib/env";
+import type { Database } from "@/types/database";
+
+const SUPABASE_AUTH_RESPONSE_HEADERS = [
+  "Cache-Control",
+  "Expires",
+  "Pragma",
+];
+
+function applySupabaseAuthResponseState(
+  source: NextResponse,
+  target: NextResponse
+) {
+  source.cookies.getAll().forEach((cookie) => {
+    target.cookies.set(cookie);
+  });
+
+  SUPABASE_AUTH_RESPONSE_HEADERS.forEach((header) => {
+    const value = source.headers.get(header);
+
+    if (value) {
+      target.headers.set(header, value);
+    }
+  });
+}
+
+function redirectWithSupabaseAuthState(
+  request: NextRequest,
+  supabaseResponse: NextResponse,
+  pathname: string
+) {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+
+  const redirectResponse = NextResponse.redirect(url);
+  applySupabaseAuthResponseState(supabaseResponse, redirectResponse);
+
+  return redirectResponse;
+}
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  const supabaseUrl = getRequiredEnv(
+    process.env,
+    "NEXT_PUBLIC_SUPABASE_URL"
+  );
+  const supabaseAnonKey = getRequiredEnv(
+    process.env,
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+  );
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  const supabase = createServerClient<Database>(
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
+          );
+          Object.entries(headers).forEach(([key, value]) =>
+            supabaseResponse.headers.set(key, value)
           );
         },
       },
@@ -27,7 +77,12 @@ export async function updateSession(request: NextRequest) {
 
   const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser();
+
+  if (userError) {
+    console.error("Supabase auth user lookup failed", userError.message);
+  }
 
   // Redirect unauthenticated users to login
   if (
@@ -36,9 +91,11 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith("/signup") &&
     request.nextUrl.pathname !== "/"
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return redirectWithSupabaseAuthState(
+      request,
+      supabaseResponse,
+      "/login"
+    );
   }
 
   // Redirect authenticated users away from auth pages
@@ -47,9 +104,11 @@ export async function updateSession(request: NextRequest) {
     (request.nextUrl.pathname.startsWith("/login") ||
       request.nextUrl.pathname.startsWith("/signup"))
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+    return redirectWithSupabaseAuthState(
+      request,
+      supabaseResponse,
+      "/dashboard"
+    );
   }
 
   return supabaseResponse;
