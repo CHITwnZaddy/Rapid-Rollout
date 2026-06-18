@@ -47,8 +47,8 @@ The application is built with:
 Rapid Rollout exists to:
 
 1. Replace a multi-tab proposal workbook with a governed web application.
-2. Let Sales Engineers scope and price four standard proposal options:
-   Phase 1, Phase 2, Option 1, and Option 2.
+2. Let Sales Engineers scope and price six standard proposal options:
+   Phase 1, Phase 2, Phase 3, Option 1, Option 2, and Option 3.
 3. Support additional ad-hoc scoped services.
 4. Support migration services with structured migration detail inputs.
 5. Calculate client-facing implementation price, internal cost basis, and margin.
@@ -65,7 +65,7 @@ In scope:
 - Proposal creation and deletion.
 - Customer management.
 - Proposal status management and status history.
-- Scenario scoping for Phase 1, Phase 2, Option 1, and Option 2.
+- Scenario scoping for Phase 1, Phase 2, Phase 3, Option 1, Option 2, and Option 3.
 - Scoped Services line-item entry.
 - Migration Services configuration and detail lines.
 - Complexity Factor contingency pricing.
@@ -407,18 +407,20 @@ Important columns:
 
 #### `scenarios`
 
-One proposal normally has four scenario rows:
+One proposal normally has six scenario rows:
 
 - `P1`, displayed as Phase 1
 - `P2`, displayed as Phase 2
+- `P3`, displayed as Phase 3
 - `Opt1`, displayed as Option 1
 - `Opt2`, displayed as Option 2
+- `Opt3`, displayed as Option 3
 
 Important columns:
 
 | Column | Purpose |
 | --- | --- |
-| `scenario_type` | Internal code constrained to `P1`, `P2`, `Opt1`, `Opt2` |
+| `scenario_type` | Internal code constrained to `P1`, `P2`, `P3`, `Opt1`, `Opt2`, `Opt3` |
 | `summary_total_hours` | Stored base total hours from current scenario lines |
 | `summary_total_cost` | Stored base total cost from current scenario lines |
 | `complexity_factor` | Scenario-specific contingency multiplier |
@@ -653,7 +655,7 @@ final_total = after_credit * (1 - discount_percent / 100)
 | Discount dollars | Non-negative Zod validation and database constraints |
 | Discount percent | 0 to 100 Zod validation and database constraints |
 | Complexity Factor | 0.50 to 9.99 server validation and database checks |
-| Scenario type | Database CHECK constraint for `P1`, `P2`, `Opt1`, `Opt2` |
+| Scenario type | Database CHECK constraint for `P1`, `P2`, `P3`, `Opt1`, `Opt2`, `Opt3` |
 | Proposal bootstrap | Atomic `create_proposal_bundle` Postgres RPC |
 | Status transition integrity | Atomic `transition_proposal_status` Postgres RPC |
 | Rate-card completeness | `fetchRequiredRates` fail-closed helper |
@@ -731,7 +733,7 @@ Each sensitive server action uses one or more of:
 
 | RPC | Inputs | Output | Purpose |
 | --- | --- | --- | --- |
-| `create_proposal_bundle` | `p_name text`, `p_customer_id uuid?` | Proposal UUID | Creates proposal, four scenarios, scenario lines, bid sheet, migration config, and default migration detail lines atomically |
+| `create_proposal_bundle` | `p_name text`, `p_customer_id uuid?` | Proposal UUID | Creates proposal, six scenarios, scenario lines, bid sheet, migration config, and default migration detail lines atomically |
 | `transition_proposal_status` | `p_proposal_id uuid`, `p_new_status text` | Boolean changed flag | Updates proposal status and inserts status history atomically |
 | `save_scenario_grid` | Scenario id, line payload, summary totals | Boolean | Persists scenario grid lines and summary totals atomically |
 
@@ -980,8 +982,9 @@ Responsibilities:
 Bid Sheet export:
 
 - Uses a dynamic `exceljs` import.
-- Exports customer name, customer address, Phase 1/2, Option 1/2, Scoped
-  Services, Migration Services, Subtotal, Credit, Discount, Final Total, Notes.
+- Exports customer name, customer address, Phase 1/2/3, Option 1/2/3,
+  Scoped Services, Migration Services, Subtotal, Credit, Discount, Final Total,
+  Notes.
 - Does not include internal hours, contingency breakout, margin, or internal
   cost.
 - Uses report styling consistent with other workbook exports:
@@ -1087,8 +1090,10 @@ flowchart TD
   Proposal --> BidSheet["Bid Sheet"]
   Proposal --> Phase1["Phase 1"]
   Proposal --> Phase2["Phase 2"]
+  Proposal --> Phase3["Phase 3"]
   Proposal --> Option1["Option 1"]
   Proposal --> Option2["Option 2"]
+  Proposal --> Option3["Option 3"]
   Proposal --> Scoped["Scoped Services"]
   Proposal --> Migration["Migration Services"]
 
@@ -1190,7 +1195,7 @@ information hierarchy and major interaction zones.
 | Proposal Name                                  [Delete]             |
 | Customer Name - [Status dropdown] [Save]                            |
 |                                                                    |
-| Summary | Bid Sheet | Phase 1 | Phase 2 | Option 1 | Option 2 | ... |
+| Summary | Bid | Phase 1 | Phase 2 | Phase 3 | Opt 1 | Opt 2 | Opt 3 |
 |--------------------------------------------------------------------|
 | Active tab content                                                  |
 +--------------------------------------------------------------------+
@@ -1227,8 +1232,10 @@ information hierarchy and major interaction zones.
 | Line Item                                      Client Price          |
 | Phase 1                                        $                    |
 | Phase 2                                        $                    |
+| Phase 3                                        $                    |
 | Option 1                                       $                    |
 | Option 2                                       $                    |
+| Option 3                                       $                    |
 | Scoped Services                                $                    |
 | Migration Services                             $                    |
 | Subtotal                                       $                    |
@@ -1307,8 +1314,10 @@ Tabs:
 | Bid Sheet | Client-facing implementation price and adjustments |
 | Phase 1 | Standard scenario grid |
 | Phase 2 | Standard scenario grid |
+| Phase 3 | Standard scenario grid |
 | Option 1 | Standard scenario grid |
 | Option 2 | Standard scenario grid |
+| Option 3 | Standard scenario grid |
 | Scoped Services | Ad-hoc professional services |
 | Migration Services | Migration-specific configuration and detail |
 
@@ -1519,11 +1528,13 @@ Recommended future improvements:
 | Proposal Sent | Proposal lifecycle status used by time-to-close reporting |
 | RLS | Row-Level Security. Supabase/Postgres policies that restrict row access at the database level |
 | RPC | Remote Procedure Call. In this app, a Postgres function invoked through Supabase JS |
-| Scenario | One standard scoped option for a proposal. Internal codes are `P1`, `P2`, `Opt1`, and `Opt2` |
+| Scenario | One standard scoped option for a proposal. Internal codes are `P1`, `P2`, `P3`, `Opt1`, `Opt2`, and `Opt3` |
 | Phase 1 | User-facing name for internal scenario code `P1` |
 | Phase 2 | User-facing name for internal scenario code `P2` |
+| Phase 3 | User-facing name for internal scenario code `P3` |
 | Option 1 | User-facing name for internal scenario code `Opt1` |
 | Option 2 | User-facing name for internal scenario code `Opt2` |
+| Option 3 | User-facing name for internal scenario code `Opt3` |
 | Scoped Services | Ad-hoc professional services outside the standard scenario grid |
 | SE | Sales Engineer |
 | Sr. IM | Senior Implementation Manager |

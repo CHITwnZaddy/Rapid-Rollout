@@ -7,7 +7,7 @@
 
 ## Overview
 
-Rapid Rollout is the proposal scoping and pricing application for TUC Solution Engineers (SEs). It replaces a legacy Excel workbook with a Next.js + Supabase web app that lets SEs capture customer requirements, build four priced scenario variants (P1, P2, Opt1, Opt2), scope migration services and additional scoped services, apply bid-sheet-level adjustments, export a professional bid sheet and supporting reports, and track proposals across a defined lifecycle.
+Rapid Rollout is the proposal scoping and pricing application for TUC Solution Engineers (SEs). It replaces a legacy Excel workbook with a Next.js + Supabase web app that lets SEs capture customer requirements, build six priced scenario variants (P1, P2, P3, Opt1, Opt2, Opt3), scope migration services and additional scoped services, apply bid-sheet-level adjustments, export a professional bid sheet and supporting reports, and track proposals across a defined lifecycle.
 
 The product must be dependable enough that SEs retire the Excel workbook without hedging.
 
@@ -15,7 +15,7 @@ The product must be dependable enough that SEs retire the Excel workbook without
 
 ### User Story 1 — Build and Price a Customer Proposal (Priority: P1)
 
-An SE receives a customer opportunity. They create a proposal tied to a customer record, fill in the four scenario variants (P1 baseline, P2 alternative, Opt1, Opt2) with line items drawn from the rate card and service-hours library, optionally apply a complexity factor, and see accurate totals update in real time.
+An SE receives a customer opportunity. They create a proposal tied to a customer record, fill in the six scenario variants (P1, P2, P3, Opt1, Opt2, Opt3) with line items drawn from the rate card and service-hours library, optionally apply a complexity factor, and see accurate totals update in real time.
 
 **Why this priority**: This is the core job. If an SE cannot reliably produce a priced scenario grid, the tool has no reason to exist.
 
@@ -24,7 +24,7 @@ An SE receives a customer opportunity. They create a proposal tied to a customer
 **Acceptance Scenarios**:
 
 1. **Given** a logged-in SE with a hydrated rate card, **When** they create a new proposal and add a line item to scenario P1 with a known service and quantity, **Then** the scenario line output displays rate, hours, and cost matching the calculation engine to the cent.
-2. **Given** a proposal with line items in all four scenarios, **When** the SE changes the proposal-level complexity factor, **Then** every scenario total and the proposal summary total recompute accordingly and persist on save.
+2. **Given** a proposal with line items in all six scenarios, **When** the SE changes the proposal-level complexity factor, **Then** every scenario total and the proposal summary total recompute accordingly and persist on save.
 3. **Given** a rate-card row is missing from Supabase, **When** the SE opens the scenario grid, **Then** an error card is shown and no pricing UI renders with a default value.
 4. **Given** two SEs viewing the same proposal, **When** one SE updates scenario P2, **Then** the second SE sees the change after refresh (global read, owner-write RLS).
 
@@ -153,7 +153,7 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 
 **Scenario Pricing**
 
-- **FR-020**: System MUST price each of four scenarios (P1, P2, Opt1, Opt2) using the pure calculation engine in `src/lib/calculations/engine.ts`.
+- **FR-020**: System MUST price each of six scenarios (P1, P2, P3, Opt1, Opt2, Opt3) using the pure calculation engine in `src/lib/calculations/engine.ts`.
 - **FR-021**: System MUST compute each scenario line as a function of service-hours row, rate-card row, quantity, and complexity factor, with no pricing math in components.
 - **FR-022**: System MUST hydrate rate cards and service-hours from Supabase before rendering any pricing UI; missing rows MUST produce an error card, not a default value.
 - **FR-023**: System MUST allow users to save the scenario grid atomically through a server action.
@@ -218,7 +218,7 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 
 - **Customer**: Organization the proposal is for. Shared-write across SEs.
 - **Proposal**: Top-level record owned by an SE, referencing a customer. Carries proposal-level complexity factor and status. Global-read, owner-write.
-- **Scenario (P1 / P2 / Opt1 / Opt2)**: Four variant price views on a proposal. Each has its own complexity factor and line items.
+- **Scenario (P1 / P2 / P3 / Opt1 / Opt2 / Opt3)**: Six variant price views on a proposal. Each has its own complexity factor and line items.
 - **Scenario Line**: A single priced row in a scenario, derived from a service-hours row and a rate-card row.
 - **Migration Configuration**: Per-proposal migration parameters driving the migration engine.
 - **Migration Detail Line**: A computed or saved line inside a migration configuration (Sr. IM, PM Oversight, travel, etc.).
@@ -237,7 +237,7 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 - **SC-001**: For any proposal, the final total shown on Proposal Summary, Bid Sheet, Portfolio Value report, and Scenario Breakout report is identical to the cent.
 - **SC-002**: 100% of pricing math — scenario, migration, scoped, and bid-sheet — is covered by unit tests in `src/lib/calculations/__tests__/` and passes on every push.
 - **SC-003**: When any required rate-card row is missing, the affected pricing UI shows a visible error card and no default value within the same render — a user never sees a fabricated number.
-- **SC-004**: An SE can create a proposal, price all four scenarios, configure migration, apply bid-sheet adjustments, and export a bid sheet in a single session without consulting the legacy Excel workbook.
+- **SC-004**: An SE can create a proposal, price all six scenarios, configure migration, apply bid-sheet adjustments, and export a bid sheet in a single session without consulting the legacy Excel workbook.
 - **SC-005**: Every privileged mutation produces exactly one change-log entry attributed to the acting user.
 - **SC-006**: 0 schema or migration PRs merge without an explicit human go-ahead (per `AGENTS.md`).
 - **SC-007**: The initial JS bundle does not include `exceljs` or `xlsx`; both are confirmed dynamic-imported or dev-only.

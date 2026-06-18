@@ -20,7 +20,7 @@ Lists **hours by role** (Sr. IM, PM, BA) for proposals across **scenario lines**
 | Filter | Values |
 |--------|--------|
 | Customer | All + customers |
-| Scenario | All, Phase 1, Phase 2, Option 1, Option 2, Scoped Services, Migration Services |
+| Scenario | All, Phase 1, Phase 2, Phase 3, Option 1, Option 2, Option 3, Scoped Services, Migration Services |
 | Owner | All, Mine |
 
 ## Row model
@@ -50,4 +50,4 @@ Supabase queries behind `src/lib/reports/data.ts` and aggregate builders.
 
 ## Business rules
 
-- Scenario labels use `getScenarioDisplayName` for P1/P2/Opt1/Opt2.
+- Scenario labels use `getScenarioDisplayName` for P1/P2/P3/Opt1/Opt2/Opt3.

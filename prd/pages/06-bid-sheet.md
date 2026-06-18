@@ -13,7 +13,7 @@ The **Bid Sheet** consolidates scenario pricing, migration and scoped rollups, o
 Regions (conceptual — exact order per component):
 
 - Loading / error banners for bid sheet, scenarios, customers, migration, rates.
-- Summary tables for each scenario type (Phase 1–2, Option 1–2) with hours and costs.
+- Summary tables for each scenario type (Phase 1–3, Option 1–3) with hours and costs.
 - Scoped services and migration sections with monetary totals.
 - Discount controls: percent and dollars (validated schemas).
 - Notes textarea with save.

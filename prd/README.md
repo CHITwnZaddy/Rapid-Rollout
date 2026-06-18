@@ -2,7 +2,7 @@
 
 ## System Overview
 
-**Rapid Rollout** is a web application for building and pricing professional-services proposals focused on rapid rollout and migration work. Teams create proposals tied to customers, model multiple pricing scenarios (four fixed scenario types), layer scoped add-on services and migration-based estimates, and consolidate everything on a bid sheet with discounts and customer selection. A reporting area supports pipeline and operational views (proposal log, hours, portfolio value, stale deals, time to close, and a deep scenario breakout). **Supabase** provides authentication, row-level security, and persistence; **Next.js** delivers the user interface and server actions.
+**Rapid Rollout** is a web application for building and pricing professional-services proposals focused on rapid rollout and migration work. Teams create proposals tied to customers, model multiple pricing scenarios (six fixed scenario types), layer scoped add-on services and migration-based estimates, and consolidate everything on a bid sheet with discounts and customer selection. A reporting area supports pipeline and operational views (proposal log, hours, portfolio value, stale deals, time to close, and a deep scenario breakout). **Supabase** provides authentication, row-level security, and persistence; **Next.js** delivers the user interface and server actions.
 
 **Primary users:** sales engineers, solution consultants, and delivery leadership who author proposals; **administrators** who maintain rate cards, service-hour templates, customer master data, and user roles.
 
@@ -29,7 +29,7 @@ This section states what the system **must** do, in testable form. IDs are stabl
 | **FR-PROP-1** | The system shall list all proposals the current user can read (per RLS) at `/proposals`, ordered by most recently updated, with New Proposal CTA. |
 | **FR-PROP-2** | Creating a proposal shall require a non-empty proposal name (trimmed, max 200 characters) and optional customer (valid UUID or none). |
 | **FR-PROP-3** | Successful creation shall invoke the `create_proposal_bundle` database routine and navigate to the new proposal’s detail area. |
-| **FR-PROP-4** | Each proposal shall expose sub-areas: Summary, Bid Sheet, four scenario tabs (Phase 1, Phase 2, Option 1, Option 2), Scoped Services, and Migration Services. |
+| **FR-PROP-4** | Each proposal shall expose sub-areas: Summary, Bid Sheet, six scenario tabs (Phase 1, Phase 2, Phase 3, Option 1, Option 2, Option 3), Scoped Services, and Migration Services. |
 | **FR-PROP-5** | The proposal header shall show name, customer (or “No customer”), a status control, and a delete action. |
 | **FR-STATUS-1** | Proposal status shall be one of: Draft, Proposal Sent, Customer Review, Won, Lost, VOID. |
 | **FR-STATUS-2** | Changing status shall require the user to select a new value and click **Save**; the system shall call `transition_proposal_status` so the proposal row and status history stay consistent. |
@@ -91,7 +91,7 @@ This section states what the system **must** do, in testable form. IDs are stabl
 | 6 | New proposal | `/proposals/new` | Proposals | [→](./pages/04-new-proposal.md) |
 | 7 | Proposal summary | `/proposals/[id]` | Proposals | [→](./pages/05-proposal-summary.md) |
 | 8 | Bid sheet | `/proposals/[id]/bid-sheet` | Proposals | [→](./pages/06-bid-sheet.md) |
-| 9 | Scenario grid (×4) | `/proposals/[id]/scenarios/P1` … `Opt2` | Proposals | [→](./pages/07-scenario-grids.md) |
+| 9 | Scenario grid (×6) | `/proposals/[id]/scenarios/P1` … `Opt3` | Proposals | [→](./pages/07-scenario-grids.md) |
 | 10 | Scoped services | `/proposals/[id]/scoped-services` | Proposals | [→](./pages/08-scoped-services.md) |
 | 11 | Migration services | `/proposals/[id]/migration` | Proposals | [→](./pages/09-migration-services.md) |
 | 12 | Customers | `/customers` | Customers | [→](./pages/10-customers.md) |

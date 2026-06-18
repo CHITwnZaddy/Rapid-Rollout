@@ -17,7 +17,7 @@ The application uses **Supabase** (Postgres + Auth). There is no separate REST A
 |-------|---------|
 | `customers` | Customer master data |
 | `proposals` | Proposal header: name, customer, status, notes, scoped complexity factor, creator |
-| `scenarios` | Per-proposal scenario rollup row (type P1/P2/Opt1/Opt2) |
+| `scenarios` | Per-proposal scenario rollup row (type P1/P2/P3/Opt1/Opt2/Opt3) |
 | `scenario_lines` | Line-level grid for each scenario |
 | `scoped_services` | Non-grid add-on service lines |
 | `migration_config` | One row per proposal: migration drivers and computed snapshot |
