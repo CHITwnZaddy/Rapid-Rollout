@@ -10,7 +10,7 @@ Creates a **new proposal bundle** (proposal plus related records via database ro
 
 ## Layout
 
-- Centered card with title **New Proposal**, description mentioning four scenarios.
+- Centered card with title **New Proposal**, description mentioning six scenarios.
 - Form: name field, customer select, footer actions **Cancel** and **Create Proposal**.
 
 ## Fields

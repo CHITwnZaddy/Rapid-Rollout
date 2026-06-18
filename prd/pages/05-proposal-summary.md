@@ -6,7 +6,7 @@
 
 ## Overview
 
-The **Summary** tab presents a single comparison table for **four scenarios**, plus roll-ups for **scoped services** and **migration services**, showing hours, pre-discount client price, discounted allocation, and margin badges. Links jump into the underlying editors.
+The **Summary** tab presents a single comparison table for **six scenarios**, plus roll-ups for **scoped services** and **migration services**, showing hours, pre-discount client price, discounted allocation, and margin badges. Links jump into the underlying editors.
 
 **Shared layout (parent):** proposal title, customer line, **ProposalStatus** control + **Save**, **Delete** button, and tab navigation — documented implicitly here as header chrome.
 
@@ -50,7 +50,7 @@ The **Summary** tab presents a single comparison table for **four scenarios**, p
 
 ### Navigation
 
-- Each scenario name links to `/proposals/[id]/scenarios/{P1|P2|Opt1|Opt2}`.
+- Each scenario name links to `/proposals/[id]/scenarios/{P1|P2|P3|Opt1|Opt2|Opt3}`.
 - Scoped / Migration labels link to respective tabs.
 
 ## API dependencies

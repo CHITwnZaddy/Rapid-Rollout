@@ -23,7 +23,7 @@ Tabular **portfolio listing** of proposals with customer, status, per-scenario c
 
 ## Output columns (conceptual)
 
-Includes: proposal id/name, customer, status, P1/P2/Opt1/Opt2 costs, scoped cost, migration cost, grand total, dates from status history, days in current status, scoped complexity factor.
+Includes: proposal id/name, customer, status, P1/P2/P3/Opt1/Opt2/Opt3 costs, scoped cost, migration cost, grand total, dates from status history, days in current status, scoped complexity factor.
 
 ## Interactions
 

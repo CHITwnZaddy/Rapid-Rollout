@@ -21,10 +21,12 @@ Source: `src/lib/constants/statuses.ts`
 |------|----------------|
 | P1 | Phase 1 |
 | P2 | Phase 2 |
+| P3 | Phase 3 |
 | Opt1 | Option 1 |
 | Opt2 | Option 2 |
+| Opt3 | Option 3 |
 
-Fixed order for sorting/display: `P1`, `P2`, `Opt1`, `Opt2`.
+Fixed order for sorting/display: `P1`, `P2`, `P3`, `Opt1`, `Opt2`, `Opt3`.
 
 Source: `src/lib/scenarios/display.ts`
 

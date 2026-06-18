@@ -47,5 +47,5 @@ Shows **all proposals** visible to the user under Row Level Security, as a verti
 
 ## Business rules
 
-- Scenario labels use `getScenarioDisplayName` (Phase 1, Phase 2, Option 1, Option 2).
+- Scenario labels use `getScenarioDisplayName` (Phase 1, Phase 2, Phase 3, Option 1, Option 2, Option 3).
 - Hours and costs apply per-scenario **complexity factor** via `applyComplexity`.

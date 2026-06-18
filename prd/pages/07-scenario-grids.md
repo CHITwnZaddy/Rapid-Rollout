@@ -1,6 +1,6 @@
-# Scenario Grids (Phase 1, Phase 2, Option 1, Option 2)
+# Scenario Grids (Phase 1, Phase 2, Phase 3, Option 1, Option 2, Option 3)
 
-> **Routes:** `/proposals/[id]/scenarios/P1`, `.../P2`, `.../Opt1`, `.../Opt2`  
+> **Routes:** `/proposals/[id]/scenarios/P1`, `.../P2`, `.../P3`, `.../Opt1`, `.../Opt2`, `.../Opt3`
 > **Module:** Proposals  
 > **Generated:** 2026-04-30
 
@@ -41,7 +41,7 @@ Exact column headers come from `ScenarioGrid` component and engine adapters.
 - Load scenario row by proposal + type; missing → 404.
 - Load `scenario_lines` ordered by `row_order`.
 - Load active `service_hours` and `rate_cards`.
-- Resolve **internal cost rate** from rate cards via `INTERNAL_COST_RATE_KEY` (defaults to 0 in grid if missing — summary pages may still fail closed separately).
+- Resolve **internal cost rate** from rate cards via `INTERNAL_COST_RATE_KEY`; if it is missing, the page shows an error card instead of rendering the pricing grid.
 
 ### Complexity change
 
