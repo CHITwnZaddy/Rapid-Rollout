@@ -917,6 +917,10 @@ export type Database = {
         Returns: string
       }
       current_app_role: { Args: never; Returns: string }
+      delete_scoped_service_line: {
+        Args: { p_line_id: string; p_proposal_id: string }
+        Returns: undefined
+      }
       display_name_from_email: { Args: { p_email: string }; Returns: string }
       is_admin: { Args: never; Returns: boolean }
       is_manager_or_admin: { Args: never; Returns: boolean }

@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { authAssertMock, revalidatePathMock } = vi.hoisted(() => ({
-  authAssertMock: vi.fn(),
-  revalidatePathMock: vi.fn(),
-}));
+const { authAssertMock, revalidatePathMock, rpcMock, scopedServicesSelectMock } =
+  vi.hoisted(() => ({
+    authAssertMock: vi.fn(),
+    revalidatePathMock: vi.fn(),
+    rpcMock: vi.fn(),
+    scopedServicesSelectMock: vi.fn(),
+  }));
 
 type ProposalRow = { id: string };
 type ScopedServiceRow = {
@@ -23,6 +26,10 @@ type RateCardRow = {
   role_category: string;
   status: string;
 };
+type DeleteScopedServiceLineArgs = {
+  p_proposal_id: string;
+  p_line_id: string;
+};
 
 let proposalRows: ProposalRow[] = [];
 let scopedServiceRows: ScopedServiceRow[] = [];
@@ -30,6 +37,9 @@ let rateCardRows: RateCardRow[] = [];
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
+    rpc(name: string, args: DeleteScopedServiceLineArgs) {
+      return rpcMock(name, args);
+    },
     from(table: string) {
       if (table === "proposals") {
         return {
@@ -77,6 +87,7 @@ vi.mock("@/lib/supabase/server", () => ({
       if (table === "scoped_services") {
         return {
           select() {
+            scopedServicesSelectMock();
             return {
               eq(_column: string, value: string) {
                 return Promise.resolve({
@@ -228,8 +239,55 @@ describe("scoped services actions", () => {
   beforeEach(() => {
     authAssertMock.mockReset();
     revalidatePathMock.mockReset();
+    rpcMock.mockReset();
+    scopedServicesSelectMock.mockReset();
 
     authAssertMock.mockResolvedValue({ id: "user-1" });
+    rpcMock.mockImplementation(
+      async (name: string, args: DeleteScopedServiceLineArgs) => {
+        if (name !== "delete_scoped_service_line") {
+          throw new Error(`Unexpected rpc call ${name}`);
+        }
+
+        const lineIndex = scopedServiceRows.findIndex(
+          (row) =>
+            row.id === args.p_line_id && row.proposal_id === args.p_proposal_id
+        );
+
+        if (lineIndex === -1) {
+          return {
+            data: null,
+            error: {
+              message: `Scoped service line ${args.p_line_id} was not found for proposal ${args.p_proposal_id}`,
+            },
+          };
+        }
+
+        scopedServiceRows = scopedServiceRows.filter(
+          (row) =>
+            !(row.id === args.p_line_id && row.proposal_id === args.p_proposal_id)
+        );
+
+        const resequenced = scopedServiceRows
+          .filter((row) => row.proposal_id === args.p_proposal_id)
+          .sort((a, b) => {
+            if (a.row_order !== b.row_order) return a.row_order - b.row_order;
+            return a.id.localeCompare(b.id);
+          });
+
+        scopedServiceRows = scopedServiceRows.map((row) => {
+          const nextRowOrder = resequenced.findIndex(
+            (orderedRow) => orderedRow.id === row.id
+          );
+
+          return nextRowOrder === -1
+            ? row
+            : { ...row, row_order: nextRowOrder };
+        });
+
+        return { data: null, error: null };
+      }
+    );
 
     proposalRows = [{ id: proposalId }];
     rateCardRows = [
@@ -344,19 +402,52 @@ describe("scoped services actions", () => {
       ok: false,
       error: "Scoped service line not found for this proposal.",
     });
+    expect(rpcMock).toHaveBeenCalledWith("delete_scoped_service_line", {
+      p_proposal_id: proposalId,
+      p_line_id: lineThreeId,
+    });
   });
 
-  it("resequences row_order densely after delete", async () => {
+  it("does not reload or revalidate when the scoped-service RPC fails", async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: `Scoped service line ${lineOneId} was not found for proposal ${proposalId}`,
+      },
+    });
+
+    const result = await deleteScopedServiceLine(proposalId, lineOneId);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Scoped service line not found for this proposal.",
+    });
+    expect(scopedServicesSelectMock).not.toHaveBeenCalled();
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+    expect(scopedServiceRows.find((row) => row.id === lineOneId)).toBeDefined();
+  });
+
+  it("deletes and resequences row_order through the scoped-service RPC", async () => {
     const result = await deleteScopedServiceLine(proposalId, lineOneId);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("delete_scoped_service_line", {
+      p_proposal_id: proposalId,
+      p_line_id: lineOneId,
+    });
+    expect(scopedServicesSelectMock).toHaveBeenCalledTimes(1);
     expect(result.lines).toEqual([
       expect.objectContaining({
         id: lineTwoId,
         row_order: 0,
       }),
     ]);
+    expect(revalidatePathMock).toHaveBeenCalledWith(`/proposals/${proposalId}`);
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      `/proposals/${proposalId}/scoped-services`
+    );
   });
 
   it("clears every scoped service line for the proposal", async () => {
