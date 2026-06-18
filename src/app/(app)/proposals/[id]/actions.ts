@@ -26,6 +26,13 @@ import {
   buildScenarioGridTotalsUpdate,
   type ScenarioGridPersistLine,
 } from "@/lib/scenarios/persist-scenario-grid";
+import {
+  BA_RATE_KEY,
+  INTERNAL_COST_RATE_KEY,
+  PM_RATE_KEY,
+  SR_IM_RATE_KEY,
+} from "@/lib/rate-card-keys";
+import { getRequiredRateCardsError } from "@/lib/pricing/load-guards";
 import { saveScenarioGridSchema } from "@/lib/validation/scenario-grid";
 import { buildDeleteConfirmationPhrase } from "@/lib/proposals/delete-confirmation";
 import type { Database } from "@/types/database";
@@ -390,6 +397,14 @@ export async function saveScenarioGridSelections(
       ok: false,
       error: rateCardError?.message ?? "Couldn't load active rate cards.",
     };
+  }
+  const rateCardLoadError = getRequiredRateCardsError(
+    rateCardRows,
+    [SR_IM_RATE_KEY, PM_RATE_KEY, BA_RATE_KEY, INTERNAL_COST_RATE_KEY],
+    "scenario pricing"
+  );
+  if (rateCardLoadError) {
+    return { ok: false, error: rateCardLoadError };
   }
 
   let canonicalLines: ScenarioGridPersistLine[];
