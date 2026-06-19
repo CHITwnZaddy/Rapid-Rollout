@@ -189,9 +189,8 @@ export async function exportReportXLSX(
       const tintName = config.rowTint
         ? config.rowTint.tints[String(r[config.rowTint.key] ?? "")]
         : undefined;
-      const fill = fillOf(
-        tintName ? TINT_ARGB[tintName] : idx % 2 === 0 ? ALT_ROW_BG : WHITE
-      );
+      const stripeBg = idx % 2 === 0 ? ALT_ROW_BG : WHITE;
+      const fill = fillOf(tintName ? TINT_ARGB[tintName] : stripeBg);
       columns.forEach((column, i) => {
         writeDataCell(row.getCell(i + 1), column, r[column.key] ?? null, fill);
       });
