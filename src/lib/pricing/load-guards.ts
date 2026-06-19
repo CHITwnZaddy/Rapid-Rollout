@@ -22,16 +22,20 @@ export function getLoadError<T>(
   return null;
 }
 
+function buildActiveKeySet(rateCards: RateLookupRow[]): Set<string> {
+  return new Set(
+    rateCards
+      .map((rateCard) => rateCard.lookup_key)
+      .filter((key): key is string => Boolean(key))
+  );
+}
+
 export function getRequiredRateCardsError(
   rateCards: RateLookupRow[],
   requiredKeys: readonly string[],
   context: string
 ): string | null {
-  const activeKeys = new Set(
-    rateCards
-      .map((rateCard) => rateCard.lookup_key)
-      .filter((key): key is string => Boolean(key))
-  );
+  const activeKeys = buildActiveKeySet(rateCards);
   const missing = requiredKeys.filter((key) => !activeKeys.has(key));
 
   if (missing.length === 0) return null;
@@ -45,11 +49,7 @@ export function getUnknownRateLookupError<T>(
   getLookupKey: (row: T) => string | null | undefined,
   context: string
 ): string | null {
-  const activeKeys = new Set(
-    rateCards
-      .map((rateCard) => rateCard.lookup_key)
-      .filter((key): key is string => Boolean(key))
-  );
+  const activeKeys = buildActiveKeySet(rateCards);
   const missing = Array.from(
     new Set(
       rows
