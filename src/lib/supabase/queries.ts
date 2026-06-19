@@ -30,11 +30,13 @@ export async function fetchRequiredRates(
   const rates = new Map<string, number>(
     data.map((r) => [r.lookup_key as string, NUM(r.rate)])
   );
-  const missing = requiredKeys.filter((k) => !rates.has(k));
-  if (missing.length > 0) {
+  // Fail closed on both absence and non-positive rates: a key present with a
+  // rate of 0 would silently zero pricing, so treat it the same as missing.
+  const invalid = requiredKeys.filter((k) => !((rates.get(k) ?? 0) > 0));
+  if (invalid.length > 0) {
     return {
       ok: false,
-      error: `Missing required rate card rows: ${missing.join(", ")}.`,
+      error: `Required rate card rows are missing or have a non-positive rate: ${invalid.join(", ")}.`,
     };
   }
 

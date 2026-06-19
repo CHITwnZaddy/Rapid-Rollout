@@ -5,6 +5,23 @@ import {
   type RolePricingBreakout,
 } from "@/lib/calculations/contingency-pricing";
 
+/**
+ * Thrown when a required rate is absent from the rate-card map. Pricing is
+ * fail-closed: a missing rate must surface loudly, never silently price at $0.
+ */
+export class MissingRateError extends Error {
+  constructor(lookupKey: string) {
+    super(`Missing rate card rate for "${lookupKey}".`);
+    this.name = "MissingRateError";
+  }
+}
+
+function requireRate(rateCardMap: Map<string, number>, lookupKey: string): number {
+  const rate = rateCardMap.get(lookupKey);
+  if (rate === undefined) throw new MissingRateError(lookupKey);
+  return rate;
+}
+
 export interface ServiceHoursRow {
   service_name: string;
   scope_value: string;
@@ -137,10 +154,11 @@ export function calculateScenarioLine(
   result.pmHours = serviceData.pm_hours;
   result.baHours = serviceData.ba_hours;
 
-  // Look up rates for each role
-  const srImRate = rateCardMap.get(`${rateCardName}|Sr. Implementation Manager`) ?? 0;
-  const pmRate = rateCardMap.get(`${rateCardName}|Program Manager`) ?? 0;
-  const baRate = rateCardMap.get(`${rateCardName}|Business Analyst`) ?? 0;
+  // Look up rates for each role. Fail closed: a missing required rate throws
+  // rather than silently pricing the line at $0.
+  const srImRate = requireRate(rateCardMap, `${rateCardName}|Sr. Implementation Manager`);
+  const pmRate = requireRate(rateCardMap, `${rateCardName}|Program Manager`);
+  const baRate = requireRate(rateCardMap, `${rateCardName}|Business Analyst`);
 
   result.srImCost = result.srImHours * srImRate;
   result.pmCost = result.pmHours * pmRate;
@@ -290,8 +308,7 @@ export function calculateScopedServiceCost(
   rateCardMap: Map<string, number>,
   rateCardLookupKey: string
 ): number {
-  const rate = rateCardMap.get(rateCardLookupKey) ?? 0;
-  return hours * rate;
+  return hours * requireRate(rateCardMap, rateCardLookupKey);
 }
 
 /**

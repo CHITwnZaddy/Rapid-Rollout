@@ -370,14 +370,14 @@ describe("migration actions", () => {
   it("fails add before mutating when required rates are missing", async () => {
     fetchRequiredRatesMock.mockResolvedValue({
       ok: false,
-      error: "Missing required rate card rows: Master|Program Manager.",
+      error: "Required rate card rows are missing or have a non-positive rate: Master|Program Manager.",
     });
 
     const result = await addMigrationDetailLine(proposalId, "cost");
 
     expect(result).toEqual({
       ok: false,
-      error: "Missing required rate card rows: Master|Program Manager.",
+      error: "Required rate card rows are missing or have a non-positive rate: Master|Program Manager.",
     });
     expect(lineInserts).toEqual([]);
     expect(configUpdates).toEqual([]);
@@ -465,7 +465,7 @@ describe("migration actions", () => {
   it("fails remove before mutating when required rates are missing", async () => {
     fetchRequiredRatesMock.mockResolvedValue({
       ok: false,
-      error: "Missing required rate card rows: Master|Travel Cost/Trip.",
+      error: "Required rate card rows are missing or have a non-positive rate: Master|Travel Cost/Trip.",
     });
 
     const result = await removeMigrationDetailLine(
@@ -475,7 +475,7 @@ describe("migration actions", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "Missing required rate card rows: Master|Travel Cost/Trip.",
+      error: "Required rate card rows are missing or have a non-positive rate: Master|Travel Cost/Trip.",
     });
     expect(lineDeletes).toEqual([]);
     expect(lineUpdates).toEqual([]);
