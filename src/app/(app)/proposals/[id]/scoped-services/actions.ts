@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
 import { buildRateCardMap, calculateScopedServiceCost } from "@/lib/calculations/engine";
+import { roundMoney } from "@/lib/calculations/rounding";
 import {
   addScopedServiceLineInputSchema,
   SCOPED_SERVICE_TYPES,
@@ -251,10 +252,14 @@ export async function updateScopedServiceLine(
     };
   }
 
-  const nextCost = calculateScopedServiceCost(
-    parsed.data.hours,
-    rateCardMap,
-    parsed.data.rateCardLookupKey
+  // Round at the persistence edge so the stored cost matches the bid sheet
+  // display (rounding policy: money to the cent).
+  const nextCost = roundMoney(
+    calculateScopedServiceCost(
+      parsed.data.hours,
+      rateCardMap,
+      parsed.data.rateCardLookupKey
+    )
   );
 
   const { error } = await supabase
