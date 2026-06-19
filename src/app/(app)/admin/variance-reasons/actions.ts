@@ -5,7 +5,7 @@ import { z } from "zod";
 import { assertManagerOrAdmin, AuthError } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const activeSchema = z.enum(["true", "false"]).transform((value) => value === "true");
 
@@ -66,8 +66,11 @@ export async function updateVarianceReason(
   }
 }
 
+// useActionState wrapper: returns the result so the form can surface failures
+// instead of silently swallowing them.
 export async function submitUpdateVarianceReason(
+  _prevState: ActionResult,
   formData: FormData
-): Promise<void> {
-  await updateVarianceReason(formData);
+): Promise<ActionResult> {
+  return updateVarianceReason(formData);
 }

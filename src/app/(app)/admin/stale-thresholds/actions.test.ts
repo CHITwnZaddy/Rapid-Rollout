@@ -26,7 +26,7 @@ vi.mock("next/cache", () => ({
   revalidatePath: revalidatePathMock,
 }));
 
-import { updateStaleThreshold } from "./actions";
+import { submitUpdateStaleThreshold, updateStaleThreshold } from "./actions";
 
 const thresholdId = "11111111-1111-4111-8111-111111111111";
 
@@ -145,5 +145,38 @@ describe("stale threshold actions", () => {
 
     expect(result.ok).toBe(false);
     expect(createClientMock).not.toHaveBeenCalled();
+  });
+
+  it("submit wrapper surfaces failures instead of swallowing them", async () => {
+    mockUpdate();
+
+    const result = await submitUpdateStaleThreshold(
+      { ok: true },
+      form({
+        id: thresholdId,
+        status: "Scoping",
+        thresholdDays: "0",
+        isActive: "true",
+      })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(createClientMock).not.toHaveBeenCalled();
+  });
+
+  it("submit wrapper returns ok on a valid save", async () => {
+    mockUpdate();
+
+    const result = await submitUpdateStaleThreshold(
+      { ok: true },
+      form({
+        id: thresholdId,
+        status: "Discovery",
+        thresholdDays: "21",
+        isActive: "true",
+      })
+    );
+
+    expect(result).toEqual({ ok: true });
   });
 });

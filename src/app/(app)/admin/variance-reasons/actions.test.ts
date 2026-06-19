@@ -27,6 +27,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import {
+  submitUpdateVarianceReason,
   updateVarianceReason,
 } from "./actions";
 import { SEEDED_VARIANCE_REASON_CODES } from "@/lib/settings/sales-ops-constants";
@@ -145,5 +146,42 @@ describe("variance reason actions", () => {
 
   it("does not include an Other seed reason", () => {
     expect(SEEDED_VARIANCE_REASON_CODES).not.toContain("other");
+  });
+
+  it("submit wrapper surfaces failures instead of swallowing them", async () => {
+    mockUpdate();
+
+    const result = await submitUpdateVarianceReason(
+      { ok: true },
+      form({
+        id: reasonId,
+        code: "",
+        label: "AE discount",
+        description: "Sr. AE discounted before signature",
+        sortOrder: "10",
+        isActive: "true",
+      })
+    );
+
+    expect(result.ok).toBe(false);
+    expect(createClientMock).not.toHaveBeenCalled();
+  });
+
+  it("submit wrapper returns ok on a valid save", async () => {
+    mockUpdate();
+
+    const result = await submitUpdateVarianceReason(
+      { ok: true },
+      form({
+        id: reasonId,
+        code: "ae_discount",
+        label: "AE discount",
+        description: "Discount before signature",
+        sortOrder: "15",
+        isActive: "false",
+      })
+    );
+
+    expect(result).toEqual({ ok: true });
   });
 });
