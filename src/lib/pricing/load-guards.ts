@@ -30,17 +30,25 @@ function buildActiveKeySet(rateCards: RateLookupRow[]): Set<string> {
   );
 }
 
+// Required-rate guard. Returns an error unless every required key is present
+// AND priced above zero. A rate_cards row with rate 0 passes a presence check
+// but would silently zero pricing downstream, so fail closed on it too.
 export function getRequiredRateCardsError(
-  rateCards: RateLookupRow[],
+  rateCards: readonly { lookup_key: string | null; rate: number | null }[],
   requiredKeys: readonly string[],
   context: string
 ): string | null {
-  const activeKeys = buildActiveKeySet(rateCards);
-  const missing = requiredKeys.filter((key) => !activeKeys.has(key));
+  const rateByKey = new Map<string, number>();
+  for (const rateCard of rateCards) {
+    if (rateCard.lookup_key && Number.isFinite(Number(rateCard.rate))) {
+      rateByKey.set(rateCard.lookup_key, Number(rateCard.rate));
+    }
+  }
+  const invalid = requiredKeys.filter((key) => !((rateByKey.get(key) ?? 0) > 0));
 
-  if (missing.length === 0) return null;
+  if (invalid.length === 0) return null;
 
-  return `Missing required rate card rows for ${context}: ${missing.join(", ")}.`;
+  return `Required rate card rows for ${context} are missing or have a non-positive rate: ${invalid.join(", ")}.`;
 }
 
 export function getUnknownRateLookupError<T>(

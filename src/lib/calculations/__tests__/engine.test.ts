@@ -7,6 +7,7 @@ import {
   calculateScenarioTotals,
   compareScenarios,
   calculateScopedServiceCost,
+  MissingRateError,
   formatCurrency,
   formatHours,
   type ServiceHoursRow,
@@ -115,17 +116,15 @@ describe("calculateScenarioLine", () => {
     expect(result.scopeLabel).toBe("Small (1 entity)");
   });
 
-  it("treats a missing rate as zero (not NaN)", () => {
+  it("throws MissingRateError when a required role rate is absent", () => {
     const partial = buildRateCardMap([rc({})]); // only Sr IM rate
-    const result = calculateScenarioLine(
-      { module: "Financials", scopeSelection: "Small" },
-      shMap,
-      partial
-    );
-    expect(result.srImCost).toBe(2750);
-    expect(result.pmCost).toBe(0);
-    expect(result.baCost).toBe(0);
-    expect(result.totalCost).toBe(2750);
+    expect(() =>
+      calculateScenarioLine(
+        { module: "Financials", scopeSelection: "Small" },
+        shMap,
+        partial
+      )
+    ).toThrow(MissingRateError);
   });
 
   it("supports non-Master rate card name", () => {
@@ -267,8 +266,10 @@ describe("calculateScopedServiceCost", () => {
     ).toBe(1800);
   });
 
-  it("returns zero when the rate key is missing", () => {
-    expect(calculateScopedServiceCost(8, rcMap, "Master|Unknown")).toBe(0);
+  it("throws MissingRateError when the rate key is missing", () => {
+    expect(() => calculateScopedServiceCost(8, rcMap, "Master|Unknown")).toThrow(
+      MissingRateError
+    );
   });
 
   it("returns zero for zero hours", () => {

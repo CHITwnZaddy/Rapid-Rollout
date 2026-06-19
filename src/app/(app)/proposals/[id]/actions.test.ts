@@ -643,7 +643,7 @@ describe("proposal actions", () => {
       expect(result).toEqual({
         ok: false,
         error:
-          "Missing required rate card rows for scenario pricing: Master|Program Manager, Master|Business Analyst, Master|Internal Cost Rate.",
+          "Required rate card rows for scenario pricing are missing or have a non-positive rate: Master|Program Manager, Master|Business Analyst, Master|Internal Cost Rate.",
       });
       expect(rpcMock).not.toHaveBeenCalled();
     });

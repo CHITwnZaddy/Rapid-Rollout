@@ -18,7 +18,7 @@ describe("pricing load guards", () => {
 
   it("requires every pricing-critical rate card key", () => {
     const error = getRequiredRateCardsError(
-      [{ lookup_key: "Master|Sr. Implementation Manager" }],
+      [{ lookup_key: "Master|Sr. Implementation Manager", rate: 275 }],
       [
         "Master|Sr. Implementation Manager",
         "Master|Program Manager",
@@ -28,8 +28,41 @@ describe("pricing load guards", () => {
     );
 
     expect(error).toBe(
-      "Missing required rate card rows for scenario pricing: Master|Program Manager, Master|Business Analyst."
+      "Required rate card rows for scenario pricing are missing or have a non-positive rate: Master|Program Manager, Master|Business Analyst."
     );
+  });
+
+  it("fails closed when a required rate card is priced at zero", () => {
+    const error = getRequiredRateCardsError(
+      [
+        { lookup_key: "Master|Sr. Implementation Manager", rate: 275 },
+        { lookup_key: "Master|Program Manager", rate: 0 },
+        { lookup_key: "Master|Business Analyst", rate: 200 },
+      ],
+      [
+        "Master|Sr. Implementation Manager",
+        "Master|Program Manager",
+        "Master|Business Analyst",
+      ],
+      "scenario pricing"
+    );
+
+    expect(error).toBe(
+      "Required rate card rows for scenario pricing are missing or have a non-positive rate: Master|Program Manager."
+    );
+  });
+
+  it("passes when every required rate card is present and positive", () => {
+    expect(
+      getRequiredRateCardsError(
+        [
+          { lookup_key: "Master|Sr. Implementation Manager", rate: 275 },
+          { lookup_key: "Master|Program Manager", rate: 225 },
+        ],
+        ["Master|Sr. Implementation Manager", "Master|Program Manager"],
+        "scenario pricing"
+      )
+    ).toBeNull();
   });
 
   it("allows empty result arrays when the query succeeded", () => {

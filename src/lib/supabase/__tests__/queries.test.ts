@@ -84,4 +84,16 @@ describe("fetchRequiredRates", () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.rates.get("Master|Foo")).toBe(275);
   });
+
+  it("fails closed when a required rate is zero", async () => {
+    const client = mockClient({
+      data: [{ lookup_key: "Master|Business Analyst", rate: 0 }],
+      error: null,
+    });
+    const result = await fetchRequiredRates(client, ["Master|Business Analyst"]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Master|Business Analyst");
+    }
+  });
 });
