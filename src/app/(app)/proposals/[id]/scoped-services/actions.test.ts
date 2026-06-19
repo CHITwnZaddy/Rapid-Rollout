@@ -395,6 +395,30 @@ describe("scoped services actions", () => {
     });
   });
 
+  it("rounds the persisted scoped cost to the cent", async () => {
+    // Contrived sub-cent rate to exercise rounding at the persistence edge.
+    rateCardRows.push({
+      lookup_key: "Master|Business Analyst",
+      rate: 200.555,
+      activity: "Business Analyst",
+      role_category: "BA",
+      status: "Active",
+    });
+
+    const result = await updateScopedServiceLine(proposalId, lineOneId, {
+      serviceType: "05 Other",
+      description: "Rounded",
+      hours: 1,
+      rateCardLookupKey: "Master|Business Analyst",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.lines.find((line) => line.id === lineOneId)?.cost).toBe(
+      200.56
+    );
+  });
+
   it("rejects deletes for lines outside the proposal", async () => {
     const result = await deleteScopedServiceLine(proposalId, lineThreeId);
 
