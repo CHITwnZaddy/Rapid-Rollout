@@ -1,4 +1,3 @@
-import { applyComplexity } from "@/lib/calculations/complexity";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
 import { getScenarioDisplayName } from "@/lib/scenarios/display";
 import type { ScenarioData } from "@/lib/validation/proposal";
@@ -19,23 +18,15 @@ type BidSheetViewModelInput = {
 };
 
 export function buildBidSheetViewModel(input: BidSheetViewModelInput) {
-  const { proposalSubtotal, pricing } = calculateProposalPricingSummary(input);
+  const { proposalSubtotal, pricing, scenarioLines } =
+    calculateProposalPricingSummary(input);
   const bidLineItems: BidSheetLineItem[] = [
-    ...input.scenarios.map((scenario) => {
-      const factor = Number(scenario.complexity_factor) || 1;
-      return {
-        label: scenario.scenario_type,
-        displayLabel: getScenarioDisplayName(scenario.scenario_type),
-        clientPrice: applyComplexity(
-          Number(scenario.summary_total_cost),
-          factor
-        ),
-        totalHours: applyComplexity(
-          Number(scenario.summary_total_hours),
-          factor
-        ),
-      };
-    }),
+    ...input.scenarios.map((scenario, index) => ({
+      label: scenario.scenario_type,
+      displayLabel: getScenarioDisplayName(scenario.scenario_type),
+      clientPrice: scenarioLines[index].clientPrice,
+      totalHours: scenarioLines[index].totalHours,
+    })),
     {
       label: "Scoped Services",
       displayLabel: "Scoped Services",
