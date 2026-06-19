@@ -917,6 +917,10 @@ export type Database = {
         Returns: string
       }
       current_app_role: { Args: never; Returns: string }
+      delete_migration_detail_line: {
+        Args: { p_line_id: string; p_proposal_id: string }
+        Returns: undefined
+      }
       delete_scoped_service_line: {
         Args: { p_line_id: string; p_proposal_id: string }
         Returns: undefined

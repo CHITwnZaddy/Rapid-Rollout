@@ -200,7 +200,49 @@ describe("migration actions", () => {
       ]),
     });
     computeTotalsMock.mockReturnValue({ clientPrice: 4321 });
-    rpcMock.mockResolvedValue({ error: null });
+    // Simulate delete_migration_detail_line: delete the row, then densely
+    // resequence its section by (row_order, id) — mirrors the SQL RPC so the
+    // action's reload reflects reality. Other RPCs resolve cleanly.
+    rpcMock.mockImplementation(
+      async (
+        fnName: string,
+        args?: { p_proposal_id?: string; p_line_id?: string }
+      ) => {
+        if (fnName !== "delete_migration_detail_line") {
+          return { error: null };
+        }
+        const proposal = args?.p_proposal_id;
+        const lineId = args?.p_line_id;
+        const target = lineRows.find(
+          (line) => line.id === lineId && line.proposal_id === proposal
+        );
+        if (!target) {
+          return {
+            error: {
+              message: `Migration detail row ${lineId} was not found for proposal ${proposal}`,
+            },
+          };
+        }
+        const { section } = target;
+        lineRows = lineRows.filter((line) => line.id !== lineId);
+        const sectionLines = lineRows
+          .filter(
+            (line) => line.proposal_id === proposal && line.section === section
+          )
+          .sort(
+            (a, b) => (a.row_order ?? 0) - (b.row_order ?? 0) || a.id.localeCompare(b.id)
+          );
+        const nextOrder = new Map(
+          sectionLines.map((line, index) => [line.id, index])
+        );
+        lineRows = lineRows.map((line) =>
+          nextOrder.has(line.id)
+            ? { ...line, row_order: nextOrder.get(line.id) ?? line.row_order }
+            : line
+        );
+        return { error: null };
+      }
+    );
 
     fromMock.mockImplementation((table: string) => {
       if (table === "migration_config") {
@@ -438,13 +480,14 @@ describe("migration actions", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(lineDeletes).toEqual(["33333333-3333-4333-8333-333333333342"]);
-    expect(lineUpdates).toEqual([
-      {
-        id: "33333333-3333-4333-8333-333333333343",
-        payload: { row_order: 1 },
-      },
-    ]);
+    expect(rpcMock).toHaveBeenCalledWith("delete_migration_detail_line", {
+      p_proposal_id: proposalId,
+      p_line_id: "33333333-3333-4333-8333-333333333342",
+    });
+    // The RPC owns delete + resequence now; the action issues no per-row
+    // deletes or updates against migration_detail_lines.
+    expect(lineDeletes).toEqual([]);
+    expect(lineUpdates).toEqual([]);
     expect(configUpdates.at(-1)).toMatchObject({
       payload: expect.objectContaining({
         computed_total_cost: 4321,
