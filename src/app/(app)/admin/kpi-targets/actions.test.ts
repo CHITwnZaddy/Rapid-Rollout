@@ -149,22 +149,43 @@ describe("KPI target actions", () => {
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
-  it("throws from the form submit wrapper when a KPI target save fails", async () => {
+  it("returns the failure from the form submit wrapper instead of throwing", async () => {
     assertManagerOrAdminMock.mockRejectedValue(
       new AuthError("FORBIDDEN", "Manager or admin access required.")
     );
 
-    await expect(
-      submitUpdateKpiYearTarget(
-        form({
-          id: yearTargetId,
-          year: "2026",
-          label: "FY26",
-          teamQuota: "8000000",
-          isActive: "true",
-        })
-      )
-    ).rejects.toThrow("Manager or admin access required.");
+    const result = await submitUpdateKpiYearTarget(
+      { ok: true },
+      form({
+        id: yearTargetId,
+        year: "2026",
+        label: "FY26",
+        teamQuota: "8000000",
+        isActive: "true",
+      })
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Manager or admin access required.",
+    });
+  });
+
+  it("returns ok from the form submit wrapper on a valid save", async () => {
+    mockUpdate();
+
+    const result = await submitUpdateKpiYearTarget(
+      { ok: true },
+      form({
+        id: yearTargetId,
+        year: "2026",
+        label: "FY26",
+        teamQuota: "8000000",
+        isActive: "true",
+      })
+    );
+
+    expect(result).toEqual({ ok: true });
   });
 
   it("allows admins to save SE KPI targets", async () => {

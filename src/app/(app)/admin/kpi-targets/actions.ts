@@ -5,7 +5,7 @@ import { z } from "zod";
 import { assertManagerOrAdmin, AuthError } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const calendarYearSchema = z.coerce
   .number()
@@ -52,10 +52,6 @@ function actionError(error: unknown): ActionResult {
   return { ok: false, error: "Unable to save KPI target." };
 }
 
-function throwIfActionFailed(result: ActionResult): void {
-  if (!result.ok) throw new Error(result.error);
-}
-
 export async function updateKpiYearTarget(
   formData: FormData
 ): Promise<ActionResult> {
@@ -91,8 +87,11 @@ export async function updateKpiYearTarget(
   }
 }
 
-export async function submitUpdateKpiYearTarget(formData: FormData): Promise<void> {
-  throwIfActionFailed(await updateKpiYearTarget(formData));
+export async function submitUpdateKpiYearTarget(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  return updateKpiYearTarget(formData);
 }
 
 export async function deleteKpiYearTarget(
@@ -119,8 +118,11 @@ export async function deleteKpiYearTarget(
   }
 }
 
-export async function submitDeleteKpiYearTarget(formData: FormData): Promise<void> {
-  throwIfActionFailed(await deleteKpiYearTarget(formData));
+export async function submitDeleteKpiYearTarget(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  return deleteKpiYearTarget(formData);
 }
 
 export async function upsertKpiUserTarget(
@@ -162,8 +164,11 @@ export async function upsertKpiUserTarget(
   }
 }
 
-export async function submitUpsertKpiUserTarget(formData: FormData): Promise<void> {
-  throwIfActionFailed(await upsertKpiUserTarget(formData));
+export async function submitUpsertKpiUserTarget(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  return upsertKpiUserTarget(formData);
 }
 
 export async function deleteKpiUserTarget(
@@ -190,6 +195,9 @@ export async function deleteKpiUserTarget(
   }
 }
 
-export async function submitDeleteKpiUserTarget(formData: FormData): Promise<void> {
-  throwIfActionFailed(await deleteKpiUserTarget(formData));
+export async function submitDeleteKpiUserTarget(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  return deleteKpiUserTarget(formData);
 }
