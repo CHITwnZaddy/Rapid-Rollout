@@ -19,7 +19,13 @@ export type ProposalPricingInput = {
   discountPercent: number;
 };
 
+export type ProposalScenarioLine = {
+  clientPrice: number;
+  totalHours: number;
+};
+
 export type ProposalPricingSummary = {
+  scenarioLines: ProposalScenarioLine[];
   scenarioSubtotal: number;
   totalHours: number;
   proposalSubtotal: number;
@@ -34,23 +40,31 @@ function numberOrZero(value: unknown): number {
 export function calculateProposalPricingSummary(
   input: ProposalPricingInput
 ): ProposalPricingSummary {
-  const scenarioSubtotal = input.scenarios.reduce(
-    (sum, scenario) =>
-      sum +
-      applyComplexity(
-        numberOrZero(scenario.summary_total_cost),
-        numberOrZero(scenario.complexity_factor) || 1
-      ),
+  // Per-scenario client price + hours, computed once so the bid sheet line
+  // items and the subtotal cannot drift apart.
+  const scenarioLines: ProposalScenarioLine[] = input.scenarios.map(
+    (scenario) => {
+      const factor = numberOrZero(scenario.complexity_factor) || 1;
+      return {
+        clientPrice: applyComplexity(
+          numberOrZero(scenario.summary_total_cost),
+          factor
+        ),
+        totalHours: applyComplexity(
+          numberOrZero(scenario.summary_total_hours),
+          factor
+        ),
+      };
+    }
+  );
+
+  const scenarioSubtotal = scenarioLines.reduce(
+    (sum, line) => sum + line.clientPrice,
     0
   );
 
-  const totalHours = input.scenarios.reduce(
-    (sum, scenario) =>
-      sum +
-      applyComplexity(
-        numberOrZero(scenario.summary_total_hours),
-        numberOrZero(scenario.complexity_factor) || 1
-      ),
+  const totalHours = scenarioLines.reduce(
+    (sum, line) => sum + line.totalHours,
     0
   );
 
@@ -58,6 +72,7 @@ export function calculateProposalPricingSummary(
     scenarioSubtotal + numberOrZero(input.migrationTotal) + numberOrZero(input.scopedTotal);
 
   return {
+    scenarioLines,
     scenarioSubtotal,
     // Client-facing hour total: always ceil to the whole hour so the
     // estimation error lands in our favor (rounding policy 2026-06-10).
