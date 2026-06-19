@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -6,18 +5,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import { listStaleThresholds } from "@/lib/settings/sales-ops";
 import { STALE_THRESHOLD_STATUSES } from "@/lib/settings/sales-ops-constants";
-import { submitUpdateStaleThreshold } from "./actions";
+import { StaleThresholdRow } from "./stale-threshold-row";
 
 export const dynamic = "force-dynamic";
 
@@ -55,48 +52,7 @@ export default async function StaleThresholdsPage() {
             </TableHeader>
             <TableBody>
               {editableThresholds.map((threshold) => (
-                <TableRow key={threshold.id}>
-                  <TableCell className="font-medium">{threshold.status}</TableCell>
-                  <TableCell>
-                    <form
-                      id={`stale-threshold-${threshold.id}`}
-                      action={submitUpdateStaleThreshold}
-                    >
-                      <input type="hidden" name="id" value={threshold.id} />
-                      <input type="hidden" name="status" value={threshold.status} />
-                      <Input
-                        name="thresholdDays"
-                        type="number"
-                        min="1"
-                        step="1"
-                        defaultValue={threshold.threshold_days}
-                        aria-label={`${threshold.status} stale threshold days`}
-                        className="w-32"
-                      />
-                    </form>
-                  </TableCell>
-                  <TableCell>
-                    <select
-                      name="isActive"
-                      form={`stale-threshold-${threshold.id}`}
-                      defaultValue={threshold.is_active ? "true" : "false"}
-                      className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                      aria-label={`${threshold.status} active state`}
-                    >
-                      <option value="true">Active</option>
-                      <option value="false">Inactive</option>
-                    </select>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      type="submit"
-                      size="sm"
-                      form={`stale-threshold-${threshold.id}`}
-                    >
-                      Save
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <StaleThresholdRow key={threshold.id} threshold={threshold} />
               ))}
             </TableBody>
           </Table>

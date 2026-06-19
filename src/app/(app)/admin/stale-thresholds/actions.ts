@@ -6,7 +6,7 @@ import { assertManagerOrAdmin, AuthError } from "@/lib/auth/require-admin";
 import { STALE_THRESHOLD_STATUSES } from "@/lib/settings/sales-ops-constants";
 import { createClient } from "@/lib/supabase/server";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const activeSchema = z.enum(["true", "false"]).transform((value) => value === "true");
 
@@ -64,8 +64,11 @@ export async function updateStaleThreshold(
   }
 }
 
+// useActionState wrapper: returns the result so the form can surface failures
+// instead of silently swallowing them.
 export async function submitUpdateStaleThreshold(
+  _prevState: ActionResult,
   formData: FormData
-): Promise<void> {
-  await updateStaleThreshold(formData);
+): Promise<ActionResult> {
+  return updateStaleThreshold(formData);
 }
