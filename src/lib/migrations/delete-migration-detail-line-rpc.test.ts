@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const migrationPath = join(
   process.cwd(),
-  "supabase/migrations/20260619180000_delete_migration_detail_line_rpc.sql"
+  "supabase/migrations/20260619180000_delete_migration_detail_line.sql"
 );
 
 describe("delete_migration_detail_line migration", () => {
