@@ -26,7 +26,7 @@ describe("safeParseSupabaseResult", () => {
     expect(result).toEqual({ ok: false, error: "permission denied" });
   });
 
-  it("returns Zod error messages without throwing", () => {
+  it("sanitizes Zod failures instead of leaking schema internals", () => {
     const result = safeParseSupabaseResult(z.object({ name: z.string() }), {
       data: { name: 123 },
       error: null,
@@ -34,7 +34,10 @@ describe("safeParseSupabaseResult", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toContain("Invalid input");
+      // Stable, user-safe message — not the raw Zod issue dump.
+      expect(result.error).toContain("unexpected format");
+      expect(result.error).not.toContain("Invalid input");
+      expect(result.error).not.toContain('"code"');
     }
   });
 });

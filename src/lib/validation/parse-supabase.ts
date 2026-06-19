@@ -1,5 +1,10 @@
 import type { ZodType } from "zod";
 
+// Zod's error.message is a JSON dump of schema internals; never surface it to
+// users. Log the raw error server-side and return this stable, safe message.
+const SCHEMA_MISMATCH_MESSAGE =
+  "the data was in an unexpected format. Refresh to retry.";
+
 /** Parse a Supabase result with Zod into an ok/error union for user-facing load states. */
 export function safeParseSupabaseResult<T>(
   schema: ZodType<T>,
@@ -12,7 +17,8 @@ export function safeParseSupabaseResult<T>(
   }
   const parsed = schema.safeParse(result.data);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.message };
+    console.error("Supabase result failed schema validation:", parsed.error);
+    return { ok: false, error: SCHEMA_MISMATCH_MESSAGE };
   }
   return { ok: true, data: parsed.data };
 }
