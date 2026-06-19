@@ -1,9 +1,6 @@
 import type { ZodType } from "zod";
 
-/**
- * Parse Supabase query results with Zod and return structured errors for
- * pages/actions that render user-facing load states.
- */
+/** Parse a Supabase result with Zod into an ok/error union for user-facing load states. */
 export function safeParseSupabaseResult<T>(
   schema: ZodType<T>,
   result: { data: unknown; error: { message: string } | null }

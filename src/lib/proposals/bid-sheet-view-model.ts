@@ -22,7 +22,7 @@ export function buildBidSheetViewModel(input: BidSheetViewModelInput) {
   const { proposalSubtotal, pricing } = calculateProposalPricingSummary(input);
   const bidLineItems: BidSheetLineItem[] = [
     ...input.scenarios.map((scenario) => {
-      const factor = Number(scenario.complexity_factor ?? 1) || 1;
+      const factor = Number(scenario.complexity_factor) || 1;
       return {
         label: scenario.scenario_type,
         displayLabel: getScenarioDisplayName(scenario.scenario_type),
