@@ -180,35 +180,6 @@ async function updateComputedTotal(
   return { ok: true };
 }
 
-function resequenceSectionRows(
-  lines: MigrationDetailLineRow[],
-  section: MigrationSection
-): {
-  lines: MigrationDetailLineRow[];
-  updates: Array<{ id: string; row_order: number }>;
-} {
-  const sectionLines = sortMigrationLines(
-    lines.filter((line) => line.section === section)
-  );
-  const nextById = new Map(
-    sectionLines.map((line, index) => [
-      line.id,
-      { ...line, row_order: index },
-    ])
-  );
-
-  const updates = sectionLines
-    .map((line, index) => ({ id: line.id, row_order: index, current: line.row_order }))
-    .filter((line) => line.current !== line.row_order)
-    .map(({ id, row_order }) => ({ id, row_order }));
-
-  const resequenced = sortMigrationLines(
-    lines.map((line) => nextById.get(line.id) ?? line)
-  );
-
-  return { lines: resequenced, updates };
-}
-
 async function revalidateMigrationPaths(proposalId: string) {
   revalidatePath(`/proposals/${proposalId}`);
   revalidatePath(`/proposals/${proposalId}/migration`);
@@ -321,33 +292,25 @@ export async function removeMigrationDetailLine(
     return { ok: false, error: configResult.error };
   }
 
-  const lineResult = await loadMigrationLines(supabase, parsed.data.proposalId);
-  if (!lineResult.ok) {
-    return { ok: false, error: lineResult.error };
-  }
-
-  const targetLine = lineResult.lines.find((line) => line.id === parsed.data.lineId);
-  if (!targetLine) {
-    return {
-      ok: false,
-      error: "Migration detail row not found for this proposal.",
-    };
-  }
-
   const rateResult = await loadMigrationRates(supabase);
   if (!rateResult.ok) {
     return { ok: false, error: rateResult.error };
   }
 
-  const { error: deleteError } = await supabase
-    .from("migration_detail_lines")
-    .delete()
-    .eq("id", parsed.data.lineId);
+  // Atomic delete + per-section resequence. Replaces the previous
+  // delete-then-loop-update, which could leave a section half-resequenced if
+  // an update failed midway. The RPC raises when the row is missing.
+  const { error: deleteError } = await supabase.rpc("delete_migration_detail_line", {
+    p_proposal_id: parsed.data.proposalId,
+    p_line_id: parsed.data.lineId,
+  });
 
   if (deleteError) {
     return {
       ok: false,
-      error: `Couldn't delete migration detail row. ${deleteError.message}`,
+      error: deleteError.message.includes("was not found")
+        ? "Migration detail row not found for this proposal."
+        : `Couldn't delete migration detail row. ${deleteError.message}`,
     };
   }
 
@@ -359,29 +322,10 @@ export async function removeMigrationDetailLine(
     return { ok: false, error: remainingLineResult.error };
   }
 
-  const resequenced = resequenceSectionRows(
-    remainingLineResult.lines,
-    targetLine.section as MigrationSection
-  );
-
-  for (const update of resequenced.updates) {
-    const { error } = await supabase
-      .from("migration_detail_lines")
-      .update({ row_order: update.row_order })
-      .eq("id", update.id);
-
-    if (error) {
-      return {
-        ok: false,
-        error: `Couldn't resequence migration rows. ${error.message}`,
-      };
-    }
-  }
-
   const totalUpdate = await updateComputedTotal(
     supabase,
     configResult.config,
-    resequenced.lines,
+    remainingLineResult.lines,
     rateResult.rates
   );
   if (!totalUpdate.ok) {
@@ -392,7 +336,7 @@ export async function removeMigrationDetailLine(
 
   return {
     ok: true,
-    lines: stripProposalId(resequenced.lines),
+    lines: stripProposalId(remainingLineResult.lines),
   };
 }
 
