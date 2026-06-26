@@ -97,9 +97,9 @@ export type RevenueReportBaseRow = {
   p1_cost: unknown;
   p2_cost: unknown;
   p3_cost: unknown;
-  opt3_cost: unknown;
   opt1_cost: unknown;
   opt2_cost: unknown;
+  opt3_cost: unknown;
   scenario_total: unknown;
   scoped_total: unknown;
 };
