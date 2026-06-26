@@ -219,7 +219,6 @@ export type MigrationTotals = {
   pmCost: number;
   travelExpense: number; // trips × travel cost/trip (separate from hourly)
   clientPrice: number; // base cost + contingency cost (hourly billing)
-  salesPrice: number; // Deprecated alias for clientPrice during cutover.
   internalCost: number;
 
   // Summary metrics
@@ -343,7 +342,6 @@ export function calculateMigrationTotals(
   const travelExpense =
     (config.sr_im_trips + config.pm_trips) * travelCostPerTrip;
   const clientPrice = pricingBreakout.clientPrice;
-  const salesPrice = clientPrice;
   const internalCost = pricingBreakout.internalCost;
 
   // Summary
@@ -391,7 +389,6 @@ export function calculateMigrationTotals(
     pmCost,
     travelExpense,
     clientPrice,
-    salesPrice,
     internalCost,
     blendedRate,
     estimatedMargin,

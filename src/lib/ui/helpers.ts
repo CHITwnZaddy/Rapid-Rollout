@@ -7,6 +7,16 @@ export function getMarginBadgeClass(marginPercent: number | null): string {
   return "bg-green-100 text-green-800";
 }
 
+// Formats a margin percentage for display: a dash when null/undefined (margin
+// is null when clientPrice <= 0, per calculateMarginPercent), otherwise the
+// value to `digits` decimals with a percent sign. Defaults to 2 decimals.
+export function formatMarginPercent(
+  marginPercent: number | null | undefined,
+  digits = 2
+): string {
+  return marginPercent == null ? "—" : `${marginPercent.toFixed(digits)}%`;
+}
+
 // Returns true when an ISO timestamp falls within [from, to] (YYYY-MM-DD, inclusive).
 // A null iso with no date bounds returns true (unfiltered). The "to" bound extends
 // to end-of-day so a sent-date of 2026-04-18T23:xx still matches "to=2026-04-18".
