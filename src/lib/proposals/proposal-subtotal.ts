@@ -2,13 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { applyComplexity } from "@/lib/calculations/complexity";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
-import {
-  calculateMigrationTotals,
-  type MigrationConfig as EngineMigrationConfig,
-  type MigrationDetailLine,
-} from "@/lib/calculations/migration-engine";
-import { hasMigrationSection, toEngineLine } from "@/lib/calculations/adapters";
-import { NUM } from "@/lib/calculations/num";
+import { computeProposalMigrationTotal } from "@/lib/migration/compute-totals-from-state";
 import {
   INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
@@ -127,45 +121,12 @@ export async function fetchProposalSubtotal(
       };
     }
 
-    const migLines = migrationLinesRes.data ?? [];
-    const numP = NUM(migCfg.num_projects);
-    const engineCfg: EngineMigrationConfig = {
-      num_projects: numP,
-      hrs_per_import: NUM(migCfg.hrs_per_import),
-      lines_per_import_file: NUM(migCfg.lines_per_import_file),
-      is_effort_included: migCfg.is_effort_included ?? false,
-      is_workshop_included: migCfg.is_workshop_included ?? false,
-      complexity_factor: NUM(migCfg.complexity_factor),
-      sr_im_trips: NUM(migCfg.sr_im_trips),
-      pm_trips: NUM(migCfg.pm_trips),
-      doc_avg_mb_per_project: NUM(migCfg.doc_avg_mb_per_project),
-      doc_mb_per_hour: NUM(migCfg.doc_mb_per_hour),
-      core_requirements_hrs: NUM(migCfg.core_requirements_hrs),
-      core_migration_plan_hrs: NUM(migCfg.core_migration_plan_hrs),
-      core_validation_hrs: NUM(migCfg.core_validation_hrs),
-      core_final_qa_hrs: NUM(migCfg.core_final_qa_hrs),
-      core_pm_oversight_hrs: NUM(migCfg.core_pm_oversight_hrs),
-    };
-    const projectLines: MigrationDetailLine[] = migLines
-      .filter((l) => hasMigrationSection(l, "project"))
-      .map((l) => toEngineLine(l, { quantityOverride: numP }));
-    const workflowLines: MigrationDetailLine[] = migLines
-      .filter((l) => hasMigrationSection(l, "workflow"))
-      .map((l) => toEngineLine(l));
-    const costLines: MigrationDetailLine[] = migLines
-      .filter((l) => hasMigrationSection(l, "cost"))
-      .map((l) => toEngineLine(l));
-
-    migrationTotal = calculateMigrationTotals(
-      engineCfg,
-      projectLines,
-      workflowLines,
-      costLines,
-      srImRate,
-      pmRate,
-      travelRate,
-      internalCostRate
-    ).clientPrice;
+    const totals = computeProposalMigrationTotal(
+      migCfg,
+      migrationLinesRes.data ?? [],
+      { srImRate, pmRate, travelRate, internalCostRate }
+    );
+    migrationTotal = totals ? totals.clientPrice : 0;
   }
 
   const { proposalSubtotal } = calculateProposalPricingSummary({
