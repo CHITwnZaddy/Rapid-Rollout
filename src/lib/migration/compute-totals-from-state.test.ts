@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeMigrationTotalsFromState,
+  computeProposalMigrationTotal,
   type MigrationConfigState,
   type MigrationLineState,
 } from "./compute-totals-from-state";
@@ -147,5 +148,53 @@ describe("computeMigrationTotalsFromState", () => {
         }
       )
     ).toThrow("Unknown migration detail section: unknown");
+  });
+});
+
+describe("computeProposalMigrationTotal", () => {
+  const rates = {
+    srImRate: 100,
+    pmRate: 150,
+    travelRate: 1000,
+    internalCostRate: 135,
+  };
+
+  it("returns null when the config row is missing", () => {
+    expect(computeProposalMigrationTotal(null, lineFixture, rates)).toBeNull();
+  });
+
+  it("matches computeMigrationTotalsFromState for the same valid input", () => {
+    const viaRows = computeProposalMigrationTotal(
+      configFixture,
+      lineFixture,
+      rates
+    );
+    const viaState = computeMigrationTotalsFromState(
+      configFixture,
+      lineFixture,
+      rates
+    );
+    expect(viaRows).toEqual(viaState);
+    expect(viaRows?.clientPrice).toBe(9562.5);
+  });
+
+  it("still computes when lines_per_import_file is invalid (server pages keep the non-import components)", () => {
+    const totals = computeProposalMigrationTotal(
+      { ...configFixture, lines_per_import_file: 0 },
+      lineFixture,
+      rates
+    );
+    // computeMigrationTotalsFromState short-circuits to null here; the server
+    // helper deliberately does not, matching the pages' existing behaviour.
+    expect(totals).not.toBeNull();
+  });
+
+  it("coerces null numeric fields to zero", () => {
+    const totals = computeProposalMigrationTotal(
+      { ...configFixture, num_projects: null, complexity_factor: null },
+      lineFixture,
+      rates
+    );
+    expect(totals).not.toBeNull();
   });
 });
