@@ -44,12 +44,12 @@ export function scenarioBreakoutFileName(proposalName: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// exportScenarioBreakoutXLSX — fully styled exceljs workbook
+// buildScenarioBreakoutWorkbook — fully styled exceljs workbook (pure; no DOM)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function exportScenarioBreakoutXLSX(
+export async function buildScenarioBreakoutWorkbook(
   input: ScenarioBreakoutExportInput
-): Promise<void> {
+): Promise<ExcelJS.Workbook> {
   const {
     proposalName,
     scenarioGroups,
@@ -234,7 +234,18 @@ export async function exportScenarioBreakoutXLSX(
   gtValueCell.fill = solidFill(HEADER_BG);
   gtRow.height = 22;
 
-  // ── Write buffer → browser download ──────────────────────────────────────────
+  return workbook;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Browser download — kept separate from the pure builder so the workbook can be
+// built and unit-tested without DOM/Blob APIs (and reused server-side).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function downloadScenarioBreakoutXLSX(
+  workbook: ExcelJS.Workbook,
+  fileName: string
+): Promise<void> {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -242,7 +253,17 @@ export async function exportScenarioBreakoutXLSX(
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = scenarioBreakoutFileName(proposalName);
+  anchor.download = fileName;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+export async function exportScenarioBreakoutXLSX(
+  input: ScenarioBreakoutExportInput
+): Promise<void> {
+  const workbook = await buildScenarioBreakoutWorkbook(input);
+  await downloadScenarioBreakoutXLSX(
+    workbook,
+    scenarioBreakoutFileName(input.proposalName)
+  );
 }
