@@ -31,7 +31,7 @@ import {
   allocateAdjustedTotal,
 } from "@/lib/calculations/bid-sheet-pricing";
 import { calculateProposalPricingSummary } from "@/lib/calculations/proposal-pricing";
-import { getMarginBadgeClass } from "@/lib/ui/helpers";
+import { formatMarginPercent, getMarginBadgeClass } from "@/lib/ui/helpers";
 import { allocateDiscountedMarginPercent } from "@/lib/calculations/contingency-pricing";
 import { getScenarioDisplayName, SCENARIO_ORDER } from "@/lib/scenarios/display";
 import {
@@ -471,9 +471,7 @@ export default async function ProposalSummaryPage({
                   </TableCell>
                   <TableCell className="text-right">
                     <Badge className={getMarginBadgeClass(s.marginPercent)}>
-                      {s.marginPercent === null
-                        ? "—"
-                        : `${s.marginPercent.toFixed(2)}%`}
+                      {formatMarginPercent(s.marginPercent)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-center">
@@ -505,7 +503,7 @@ export default async function ProposalSummaryPage({
                 </TableCell>
                 <TableCell className="text-right">
                   <Badge className={getMarginBadgeClass(scopedMargin)}>
-                    {scopedMargin === null ? "—" : `${scopedMargin.toFixed(2)}%`}
+                    {formatMarginPercent(scopedMargin)}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-center">
@@ -537,9 +535,7 @@ export default async function ProposalSummaryPage({
                 </TableCell>
                 <TableCell className="text-right">
                   <Badge className={getMarginBadgeClass(migrationMargin)}>
-                    {migrationMargin === null
-                      ? "—"
-                      : `${migrationMargin.toFixed(2)}%`}
+                    {formatMarginPercent(migrationMargin)}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-center">

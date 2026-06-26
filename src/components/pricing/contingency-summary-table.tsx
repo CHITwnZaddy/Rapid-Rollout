@@ -9,7 +9,7 @@ import {
 import { formatCurrency, formatHours } from "@/lib/calculations/engine";
 import type { RolePricingBreakout } from "@/lib/calculations/contingency-pricing";
 import { Badge } from "@/components/ui/badge";
-import { getMarginBadgeClass } from "@/lib/ui/helpers";
+import { formatMarginPercent, getMarginBadgeClass } from "@/lib/ui/helpers";
 
 type ContingencySummaryTableProps = {
   rows: RolePricingBreakout[];
@@ -116,7 +116,7 @@ export function ContingencySummaryTable({
           {marginPercent !== undefined && (
             <Badge className={getMarginBadgeClass(marginPercent ?? null)}>
               Margin:{" "}
-              {marginPercent == null ? "—" : `${marginPercent.toFixed(1)}%`}
+              {formatMarginPercent(marginPercent, 1)}
             </Badge>
           )}
         </div>
