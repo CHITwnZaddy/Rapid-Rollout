@@ -10,6 +10,7 @@ import {
   bidSheetNotesInputSchema,
 } from "@/lib/validation/bid-sheet";
 import { fetchProposalSubtotal } from "@/lib/proposals/proposal-subtotal";
+import type { Database } from "@/types/database";
 
 export type UpdateBidSheetResult =
   | { ok: true }
@@ -53,6 +54,47 @@ async function revalidateBidSheetPaths(proposalId: string) {
   revalidatePath(`/proposals/${proposalId}/bid-sheet`);
 }
 
+type BidSheetUpdate =
+  | { ok: true; fields: Database["public"]["Tables"]["bid_sheets"]["Update"] }
+  | { ok: false; error: string };
+
+// Shared mutation flow for the bid-sheet updaters: authenticate, load the bid
+// sheet row, run the caller's pre-checks + field builder, then update +
+// revalidate. Each updater supplies only its validation and fields.
+async function withBidSheetMutation(
+  proposalId: string,
+  authMessage: string,
+  buildUpdate: (
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    row: BidSheetRow
+  ) => Promise<BidSheetUpdate>
+): Promise<UpdateBidSheetResult> {
+  const auth = await requireAuthenticatedResult(authMessage);
+  if (!auth.ok) return auth;
+
+  const bidSheetResult = await loadBidSheetRow(proposalId);
+  if (!bidSheetResult.ok) {
+    return { ok: false, error: bidSheetResult.error };
+  }
+
+  const supabase = await createClient();
+  const built = await buildUpdate(supabase, bidSheetResult.row);
+  if (!built.ok) {
+    return { ok: false, error: built.error };
+  }
+
+  const { error } = await supabase
+    .from("bid_sheets")
+    .update(built.fields)
+    .eq("id", bidSheetResult.row.id);
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  await revalidateBidSheetPaths(proposalId);
+  return { ok: true };
+}
+
 export async function updateBidSheetCustomer(
   proposalId: string,
   customerId: string
@@ -66,40 +108,22 @@ export async function updateBidSheetCustomer(
     };
   }
 
-  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet customer.");
-  if (!auth.ok) return auth;
-
-  const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
-  if (!bidSheetResult.ok) {
-    return { ok: false, error: bidSheetResult.error };
-  }
-
-  const supabase = await createClient();
-  const { data: customer, error: customerError } = await supabase
-    .from("customers")
-    .select("id")
-    .eq("id", parsed.data.customerId)
-    .maybeSingle();
-
-  if (customerError) {
-    return { ok: false, error: customerError.message };
-  }
-
-  if (!customer) {
-    return { ok: false, error: "Selected customer was not found." };
-  }
-
-  const { error } = await supabase
-    .from("bid_sheets")
-    .update({ customer_id: parsed.data.customerId })
-    .eq("id", bidSheetResult.row.id);
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  await revalidateBidSheetPaths(parsed.data.proposalId);
-  return { ok: true };
+  return withBidSheetMutation(
+    parsed.data.proposalId,
+    "You must be signed in to update the bid sheet customer.",
+    async (supabase) => {
+      const { data: customer, error } = await supabase
+        .from("customers")
+        .select("id")
+        .eq("id", parsed.data.customerId)
+        .maybeSingle();
+      if (error) return { ok: false, error: error.message };
+      if (!customer) {
+        return { ok: false, error: "Selected customer was not found." };
+      }
+      return { ok: true, fields: { customer_id: parsed.data.customerId } };
+    }
+  );
 }
 
 export async function updateBidSheetDiscountPercent(
@@ -119,26 +143,14 @@ export async function updateBidSheetDiscountPercent(
     };
   }
 
-  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet discount percent.");
-  if (!auth.ok) return auth;
-
-  const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
-  if (!bidSheetResult.ok) {
-    return { ok: false, error: bidSheetResult.error };
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("bid_sheets")
-    .update({ discount_percent: parsed.data.discountPercent })
-    .eq("id", bidSheetResult.row.id);
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  await revalidateBidSheetPaths(parsed.data.proposalId);
-  return { ok: true };
+  return withBidSheetMutation(
+    parsed.data.proposalId,
+    "You must be signed in to update the bid sheet discount percent.",
+    async () => ({
+      ok: true,
+      fields: { discount_percent: parsed.data.discountPercent },
+    })
+  );
 }
 
 export async function updateBidSheetCredit(
@@ -158,44 +170,32 @@ export async function updateBidSheetCredit(
     };
   }
 
-  const auth = await requireAuthenticatedResult("You must be signed in to update the bid sheet credit.");
-  if (!auth.ok) return auth;
-
-  const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
-  if (!bidSheetResult.ok) {
-    return { ok: false, error: bidSheetResult.error };
-  }
-
-  const supabase = await createClient();
-
-  // Business rule: the credit is prepaid LoE money deducted from the
-  // proposal, so it can never exceed what the proposal is worth. Computed
-  // server-side — the client-displayed subtotal is not trusted.
-  const subtotalResult = await fetchProposalSubtotal(
-    supabase,
-    parsed.data.proposalId
+  return withBidSheetMutation(
+    parsed.data.proposalId,
+    "You must be signed in to update the bid sheet credit.",
+    async (supabase) => {
+      // Business rule: the credit is prepaid LoE money deducted from the
+      // proposal, so it can never exceed what the proposal is worth. Computed
+      // server-side — the client-displayed subtotal is not trusted.
+      const subtotalResult = await fetchProposalSubtotal(
+        supabase,
+        parsed.data.proposalId
+      );
+      if (!subtotalResult.ok) {
+        return { ok: false, error: subtotalResult.error };
+      }
+      if (parsed.data.discountDollars > subtotalResult.subtotal) {
+        return {
+          ok: false,
+          error: `Credit ($${parsed.data.discountDollars.toLocaleString()}) cannot exceed the proposal subtotal ($${subtotalResult.subtotal.toLocaleString()}).`,
+        };
+      }
+      return {
+        ok: true,
+        fields: { discount_dollars: parsed.data.discountDollars },
+      };
+    }
   );
-  if (!subtotalResult.ok) {
-    return { ok: false, error: subtotalResult.error };
-  }
-  if (parsed.data.discountDollars > subtotalResult.subtotal) {
-    return {
-      ok: false,
-      error: `Credit ($${parsed.data.discountDollars.toLocaleString()}) cannot exceed the proposal subtotal ($${subtotalResult.subtotal.toLocaleString()}).`,
-    };
-  }
-
-  const { error } = await supabase
-    .from("bid_sheets")
-    .update({ discount_dollars: parsed.data.discountDollars })
-    .eq("id", bidSheetResult.row.id);
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  await revalidateBidSheetPaths(parsed.data.proposalId);
-  return { ok: true };
 }
 
 export async function updateBidSheetNotes(
@@ -211,24 +211,9 @@ export async function updateBidSheetNotes(
     };
   }
 
-  const auth = await requireAuthenticatedResult("You must be signed in to update bid sheet notes.");
-  if (!auth.ok) return auth;
-
-  const bidSheetResult = await loadBidSheetRow(parsed.data.proposalId);
-  if (!bidSheetResult.ok) {
-    return { ok: false, error: bidSheetResult.error };
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("bid_sheets")
-    .update({ notes: parsed.data.notes })
-    .eq("id", bidSheetResult.row.id);
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  await revalidateBidSheetPaths(parsed.data.proposalId);
-  return { ok: true };
+  return withBidSheetMutation(
+    parsed.data.proposalId,
+    "You must be signed in to update bid sheet notes.",
+    async () => ({ ok: true, fields: { notes: parsed.data.notes } })
+  );
 }
