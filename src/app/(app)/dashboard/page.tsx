@@ -30,6 +30,7 @@ import {
 import { DashboardWidgetLink } from "@/components/dashboard/dashboard-widget-link";
 import { ValueByStageChart } from "@/components/dashboard/value-by-stage-chart";
 import { formatCurrency } from "@/lib/calculations/engine";
+import { roundMoney } from "@/lib/calculations/rounding";
 import {
   calculateCountByStage,
   calculateOnHoldCount,
@@ -152,10 +153,6 @@ function buildReportHref(
   }
   const queryString = query.toString();
   return queryString ? `${pathname}?${queryString}` : pathname;
-}
-
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
