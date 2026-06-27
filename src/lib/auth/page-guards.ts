@@ -18,7 +18,7 @@ async function getPageUser(): Promise<PageUser | null> {
   const role = user.app_metadata?.role;
   return {
     id: user.id,
-    role: isManagerOrAdminRole(role) || role === "user" ? role : null,
+    role: isManagerOrAdminRole(role) ? role : null,
   };
 }
 
