@@ -322,6 +322,7 @@ export default async function DashboardPage({
   let closeoutMap: Awaited<ReturnType<typeof fetchCloseoutFinancials>>;
   let thresholds: Awaited<ReturnType<typeof fetchStaleThresholds>>;
   let targetAmount: number;
+  let migrationMap: Map<string, number>;
 
   try {
     proposals = await fetchRevenueReportBaseRows(supabase, {
@@ -342,6 +343,16 @@ export default async function DashboardPage({
         fetchStaleThresholds(),
         fetchTargetAmount(dateWindow.year, scope, userId),
       ]);
+    // Compute inside the try so a missing-rate throw from buildMigrationCostMap
+    // surfaces in the graceful error card below, not the page error boundary.
+    migrationMap =
+      proposalIds.length > 0
+        ? buildMigrationCostMap(
+            migrationInputs.migrationConfigRows,
+            migrationInputs.migrationLineRows,
+            migrationInputs.rateMap
+          )
+        : new Map<string, number>();
   } catch (error) {
     return (
       <div className="space-y-6">
@@ -360,17 +371,6 @@ export default async function DashboardPage({
       </div>
     );
   }
-
-  const proposalIds = proposals.map((proposal) => proposal.proposal_id);
-
-  const migrationMap =
-    proposalIds.length > 0
-      ? buildMigrationCostMap(
-          migrationInputs.migrationConfigRows,
-          migrationInputs.migrationLineRows,
-          migrationInputs.rateMap
-        )
-      : new Map<string, number>();
 
   const dashboardProposals: SalesOpsDashboardProposal[] = proposals.map((proposal) => {
     const closeout = closeoutMap.get(proposal.proposal_id);
