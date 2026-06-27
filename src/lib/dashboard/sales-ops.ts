@@ -6,6 +6,7 @@ import {
   isStaleTrackedStatus,
   type StaleTrackedStatus,
 } from "@/lib/proposals/status";
+import { roundMoney } from "@/lib/calculations/rounding";
 
 export type SalesOpsDashboardProposal = {
   id: string;
@@ -54,10 +55,6 @@ export type VarianceRollups = {
   underVarianceTotal: number;
   overVarianceTotal: number;
 };
-
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
 
 function isWithinDateRange(dateValue: string | null, dateFrom: string, dateTo: string) {
   if (!dateValue) return false;
