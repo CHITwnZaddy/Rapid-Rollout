@@ -153,13 +153,19 @@ export async function updateBidSheetDiscountPercent(
   );
 }
 
+// The UI field and this action are both called "Credit". The value persists to
+// the legacy `discount_dollars` DB column (kept as-is to avoid a schema
+// migration). It is a positive dollar amount — prepaid LoE money or a negotiated
+// concession — subtracted from the subtotal BEFORE the % discount, per
+// bid-sheet-pricing. The schema/column keep the old `discountDollars` name; the
+// action parameter uses `creditAmount` to match what it actually represents.
 export async function updateBidSheetCredit(
   proposalId: string,
-  discountDollars: number
+  creditAmount: number
 ): Promise<UpdateBidSheetResult> {
   const parsed = bidSheetDiscountDollarsInputSchema.safeParse({
     proposalId,
-    discountDollars,
+    discountDollars: creditAmount,
   });
   if (!parsed.success) {
     return {

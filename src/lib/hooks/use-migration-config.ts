@@ -82,7 +82,16 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
   const [mutatingSection, setMutatingSection] = useState<MigrationSection | null>(null);
   const [removingLineId, setRemovingLineId] = useState<string | null>(null);
 
-  // Refs for closure-safe access to latest values in callbacks/cleanup
+  // Why refs mirror state here: the migration persistence controller (created
+  // in the effect below) saves asynchronously — on a debounce, a retry, or at
+  // unmount — and a useCallback closure would capture a STALE config/lines/rate
+  // from the tick it was created in. Each ref shadows its state value so those
+  // async callbacks always read the latest snapshot without re-subscribing. The
+  // refs are written ONLY in the sync effects just below (and in
+  // syncCanonicalLines, which writes linesRef in the same tick as setLines so a
+  // save can't race a not-yet-committed render). This dual state+ref shape is
+  // intentional: a useReducer rewrite would not give the async controller
+  // mutable latest-value access, so do not "simplify" it away.
   const configRef = useRef(config);
   const linesRef = useRef(lines);
   const srImRateRef = useRef(srImRate);
