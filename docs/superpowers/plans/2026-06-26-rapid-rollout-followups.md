@@ -35,6 +35,8 @@ All 11 tickets are merged to `main` (production). Final state: `main` @ `1ba3ae4
 
 **Also this session:** the bid-sheet credit/discount order was questioned during Ticket 6 verification and **confirmed correct** (dollars/credit first, then percent — matches `bid-sheet-pricing.ts` + `pricing-rules.md`); no code change.
 
+**Post-promotion addendum — migration-ledger drift (2026-06-27).** Promoting *this* completion-status doc surfaced a pre-existing 3-way version drift on the `delete_migration_detail_line` migration: repo file `…180000`, staging ledger `…170657`, prod ledger `…171750` — the residue of the 06-19 MCP `apply_migration`, which stamps each ledger's version from its own apply wall-clock time. The name-only `Migrations drift` check had masked it; the full-version `Supabase Preview` check caught it (it had been intermittently *skipping* on the earlier promotions, so it ambushed a docs PR rather than the schema PR that caused it). Resolved by relabeling **both** ledgers' version to `…180000` to match the repo file — a metadata-only `UPDATE` (no DDL, data, or migration re-run; the function already existed in both DBs). See memory `project_mcp_migration_name_drift`.
+
 > The forward-plan sections below are retained as the historical record of what was planned and why; the table above is the source of truth for what shipped.
 
 ## Suggested batching & order
