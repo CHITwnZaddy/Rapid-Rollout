@@ -14,6 +14,31 @@
 - Investigated 2026-06-26 against current production code (`staging` @ `c65a80a`). Every item below was **confirmed still present**. Risk ratings are calibrated against the actual code, not the original review's guesses.
 - **Two review items were re-rated and one was dropped on investigation** (see each ticket): the local `roundMoney` de-dup is a subtle *behavior* change; `window.confirm → AlertDialog` is Medium; the discount/LoE "rename" is a schema migration if taken literally (skipped — code-layer clarification only).
 
+## Completion status — ALL SHIPPED ✅ (2026-06-27)
+
+All 11 tickets are merged to `main` (production). Final state: `main` @ `1ba3ae4`, `staging` content-even (0 drift), **436 tests passing**, tsc + ESLint clean throughout. Each ticket went `staging` → Vercel staging verify → promotion PR (CI-gated, auto-merged).
+
+| # | Ticket | Staging commit | Promotion PR | On-implementation note |
+| --- | --- | --- | --- | --- |
+| — | Plan doc | `db93e82` | [#112](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/112) | — |
+| 1 | Dead `salesPrice` + `RevenueReportBaseRow` order | `11ae2d3` | [#112](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/112) | `numberOrZero`→`NUM` **dropped** — they differ on `±Infinity`; the finite guard is safer |
+| 7 | Centralize `formatMarginPercent` | `8f0b6be` | [#112](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/112) | added a `digits` param to preserve each site's precision (2dp vs 1dp) |
+| 8 | `scenario-breakout` pure builder + browser download | `28ec718` | [#112](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/112) | builder now unit-testable without jsdom |
+| 6 | Extract `withBidSheetMutation` | `2ff6bf5` | [#113](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/113) | the 4 updaters live in `bid-sheet/actions.ts` (not `proposals/[id]/actions.ts`), so the helper is bid-sheet-specific; file split left optional |
+| 4 | `computeProposalMigrationTotal` dedup | `65b7b79` | [#114](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/114) | shared helper consumed by the summary page + `fetchProposalSubtotal` |
+| 5 | `window.confirm` → `AlertDialog` | `b80b4bf` | [#115](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/115) | confirm submits the external form by `id`; component API preserved |
+| 11 | Document `use-migration-config` ref pattern | `55dae3b` | [#116](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/116) | comment-only; no rewrite |
+| 9 | Credit vs legacy `discount_dollars` naming | `76fe360` | [#116](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/116) | code-layer only; DB column rename remains out of scope |
+| 2 | `roundMoney` de-dup → canonical | `27704e0` | [#117](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/117) | small *more-correct* behavior change (EPSILON + finite guard); already covered by `rounding.test.ts` |
+| 3 | Remove dead `'user'` branch in `getPageUser` | `6a21f30` | [#118](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/118) | verify-first confirmed the branch is unreachable (private fn; both callers reject non-admin/manager) |
+| 10 | Dashboard migration map inside try/catch | `6074e14` | [#119](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/119) | **descoped** from `throw → Result`: that conversion would worsen the 3 `useReportState.run`-wrapped callers (they catch throws by design). Fixed the real gap instead — the dashboard computed the map *outside* its try. See memory `project_report_aggregates_throw_convention`. |
+
+**Also this session:** the bid-sheet credit/discount order was questioned during Ticket 6 verification and **confirmed correct** (dollars/credit first, then percent — matches `bid-sheet-pricing.ts` + `pricing-rules.md`); no code change.
+
+**Post-promotion addendum — migration-ledger drift (2026-06-27).** Promoting *this* completion-status doc surfaced a pre-existing 3-way version drift on the `delete_migration_detail_line` migration: repo file `…180000`, staging ledger `…170657`, prod ledger `…171750` — the residue of the 06-19 MCP `apply_migration`, which stamps each ledger's version from its own apply wall-clock time. The name-only `Migrations drift` check had masked it; the full-version `Supabase Preview` check caught it (it had been intermittently *skipping* on the earlier promotions, so it ambushed a docs PR rather than the schema PR that caused it). Resolved by relabeling **both** ledgers' version to `…180000` to match the repo file — a metadata-only `UPDATE` (no DDL, data, or migration re-run; the function already existed in both DBs). See memory `project_mcp_migration_name_drift`.
+
+> The forward-plan sections below are retained as the historical record of what was planned and why; the table above is the source of truth for what shipped.
+
 ## Suggested batching & order
 
 | Ticket | What | Pri | Risk | Schema | Rec |
