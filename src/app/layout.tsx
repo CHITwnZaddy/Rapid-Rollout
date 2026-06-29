@@ -7,6 +7,7 @@ import {
   FONT_COOKIE_NAME,
   getGoogleFontParam,
   googleFontUrl,
+  resolveSafeFont,
 } from "@/lib/theme";
 import "./globals.css";
 
@@ -33,15 +34,11 @@ export default async function RootLayout({
   // Read the font cookie in the root layout so custom Google Fonts
   // are linked in the server-rendered head.
   const cookieStore = await cookies();
-  const savedFont = cookieStore.get(FONT_COOKIE_NAME)?.value;
-  const fontParam =
-    savedFont && savedFont !== "default"
-      ? getGoogleFontParam(savedFont)
-      : undefined;
-  const fontStyle =
-    savedFont && savedFont !== "default"
-      ? `:root { --font-sans: "${savedFont}", system-ui, sans-serif; } body { font-family: var(--font-sans); }`
-      : undefined;
+  const safeFont = resolveSafeFont(cookieStore.get(FONT_COOKIE_NAME)?.value);
+  const fontParam = safeFont ? getGoogleFontParam(safeFont) : undefined;
+  const fontStyle = safeFont
+    ? `:root { --font-sans: "${safeFont}", system-ui, sans-serif; } body { font-family: var(--font-sans); }`
+    : undefined;
 
   return (
     <html

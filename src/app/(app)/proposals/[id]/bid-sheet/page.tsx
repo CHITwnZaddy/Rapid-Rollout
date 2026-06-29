@@ -422,198 +422,206 @@ export default function BidSheetPage() {
   const finalTotal = pricing.finalTotal;
 
   const handleExport = async () => {
-    const ExcelJS = (await import("exceljs")).default;
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet("Bid Summary");
-    const titleFill = "FFC1C1DE";
-    const headerFill = "FFD5D6E9";
-    const altRowFill = "FFEAEAF4";
-    const currencyFormat = "$#,##0.00";
-    const baseFont = { name: "Calibri", size: 12 };
-    const centeredHeaderAlignment = {
-      horizontal: "center" as const,
-      vertical: "middle" as const,
-      wrapText: true,
-    };
-    const labelAlignment = {
-      horizontal: "right" as const,
-      vertical: "middle" as const,
-      wrapText: true,
-      indent: 1,
-    };
-    const valueAlignment = {
-      horizontal: "left" as const,
-      vertical: "middle" as const,
-      wrapText: true,
-      indent: 1,
-    };
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Bid Summary");
+      const titleFill = "FFC1C1DE";
+      const headerFill = "FFD5D6E9";
+      const altRowFill = "FFEAEAF4";
+      const currencyFormat = "$#,##0.00";
+      const baseFont = { name: "Calibri", size: 12 };
+      const centeredHeaderAlignment = {
+        horizontal: "center" as const,
+        vertical: "middle" as const,
+        wrapText: true,
+      };
+      const labelAlignment = {
+        horizontal: "right" as const,
+        vertical: "middle" as const,
+        wrapText: true,
+        indent: 1,
+      };
+      const valueAlignment = {
+        horizontal: "left" as const,
+        vertical: "middle" as const,
+        wrapText: true,
+        indent: 1,
+      };
 
-    worksheet.columns = [
-      { key: "field", width: 28 },
-      { key: "value", width: 42 },
-    ];
-    worksheet.mergeCells("A1:B1");
-    worksheet.getCell("A1").value = "Bid Proposal";
-    worksheet.addRow({});
-    worksheet.addRow({
-      field: "Customer Name",
-      value: selectedCustomer?.company_name ?? "",
-    });
-    worksheet.addRow({
-      field: "Customer Address",
-      value: selectedCustomer
-        ? [
-            selectedCustomer.address_line1,
-            selectedCustomer.address_line2,
-            `${selectedCustomer.city}, ${selectedCustomer.state} ${selectedCustomer.zip}`,
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : "",
-    });
-    worksheet.addRow({});
-    worksheet.addRow({ field: "Line Item", value: "Client Price" });
-    for (const item of bidLineItems) {
-      worksheet.addRow({ field: item.displayLabel ?? item.label, value: item.clientPrice });
-    }
-    worksheet.addRow({ field: "Subtotal", value: proposalSubtotal });
-    worksheet.addRow({ field: "Credit", value: discountDollars });
-    worksheet.addRow({ field: "Discount %", value: discountPercent });
-    worksheet.addRow({});
-    worksheet.addRow({ field: "Final Total", value: finalTotal });
-    worksheet.addRow({});
-    worksheet.addRow({ field: "Notes", value: notesDraft });
-
-    worksheet.getCell("A1").font = { ...baseFont, bold: true, size: 24 };
-    worksheet.getCell("A1").alignment = {
-      horizontal: "center",
-      vertical: "middle",
-    };
-    worksheet.getCell("A1").fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: titleFill },
-    };
-    worksheet.getRow(1).height = 40;
-
-    worksheet.eachRow((row) => {
-      row.height = row.number === 4 ? 54 : 22;
-      const fieldCell = row.getCell(1);
-      const valueCell = row.getCell(2);
-      if (row.number === 1) {
-        row.height = 40;
-        fieldCell.font = { ...baseFont, bold: true, size: 24 };
-        fieldCell.alignment = {
-          horizontal: "center",
-          vertical: "middle",
-        };
-        fieldCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: titleFill },
-        };
-        valueCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: titleFill },
-        };
-        return;
+      worksheet.columns = [
+        { key: "field", width: 28 },
+        { key: "value", width: 42 },
+      ];
+      worksheet.mergeCells("A1:B1");
+      worksheet.getCell("A1").value = "Bid Proposal";
+      worksheet.addRow({});
+      worksheet.addRow({
+        field: "Customer Name",
+        value: selectedCustomer?.company_name ?? "",
+      });
+      worksheet.addRow({
+        field: "Customer Address",
+        value: selectedCustomer
+          ? [
+              selectedCustomer.address_line1,
+              selectedCustomer.address_line2,
+              `${selectedCustomer.city}, ${selectedCustomer.state} ${selectedCustomer.zip}`,
+            ]
+              .filter(Boolean)
+              .join("\n")
+          : "",
+      });
+      worksheet.addRow({});
+      worksheet.addRow({ field: "Line Item", value: "Client Price" });
+      for (const item of bidLineItems) {
+        worksheet.addRow({ field: item.displayLabel ?? item.label, value: item.clientPrice });
       }
-      fieldCell.font = { ...baseFont, bold: true };
-      valueCell.font = { ...baseFont };
-      fieldCell.alignment = labelAlignment;
-      valueCell.alignment = valueAlignment;
+      worksheet.addRow({ field: "Subtotal", value: proposalSubtotal });
+      worksheet.addRow({ field: "Credit", value: discountDollars });
+      worksheet.addRow({ field: "Discount %", value: discountPercent });
+      worksheet.addRow({});
+      worksheet.addRow({ field: "Final Total", value: finalTotal });
+      worksheet.addRow({});
+      worksheet.addRow({ field: "Notes", value: notesDraft });
 
-      const fieldValue = String(fieldCell.value ?? "");
-      if (fieldValue === "Line Item") {
+      worksheet.getCell("A1").font = { ...baseFont, bold: true, size: 24 };
+      worksheet.getCell("A1").alignment = {
+        horizontal: "center",
+        vertical: "middle",
+      };
+      worksheet.getCell("A1").fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: titleFill },
+      };
+      worksheet.getRow(1).height = 40;
+
+      worksheet.eachRow((row) => {
+        row.height = row.number === 4 ? 54 : 22;
+        const fieldCell = row.getCell(1);
+        const valueCell = row.getCell(2);
+        if (row.number === 1) {
+          row.height = 40;
+          fieldCell.font = { ...baseFont, bold: true, size: 24 };
+          fieldCell.alignment = {
+            horizontal: "center",
+            vertical: "middle",
+          };
+          fieldCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: titleFill },
+          };
+          valueCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: titleFill },
+          };
+          return;
+        }
         fieldCell.font = { ...baseFont, bold: true };
-        valueCell.font = { ...baseFont, bold: true };
-        fieldCell.alignment = centeredHeaderAlignment;
-        valueCell.alignment = centeredHeaderAlignment;
-        fieldCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: headerFill },
-        };
-        valueCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: headerFill },
-        };
-      }
+        valueCell.font = { ...baseFont };
+        fieldCell.alignment = labelAlignment;
+        valueCell.alignment = valueAlignment;
 
-      if (
-        [
-          "Phase 2",
-          "Phase 3",
-          "Option 2",
-          "Option 3",
-          "Migration Services",
-          "Credit",
-          "Final Total",
-        ].includes(fieldValue)
-      ) {
-        fieldCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: altRowFill },
-        };
-        valueCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: altRowFill },
-        };
-      }
+        const fieldValue = String(fieldCell.value ?? "");
+        if (fieldValue === "Line Item") {
+          fieldCell.font = { ...baseFont, bold: true };
+          valueCell.font = { ...baseFont, bold: true };
+          fieldCell.alignment = centeredHeaderAlignment;
+          valueCell.alignment = centeredHeaderAlignment;
+          fieldCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: headerFill },
+          };
+          valueCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: headerFill },
+          };
+        }
 
-      if (["Subtotal", "Final Total"].includes(fieldValue)) {
-        valueCell.font = { ...baseFont, bold: true };
-      }
+        if (
+          [
+            "Phase 2",
+            "Phase 3",
+            "Option 2",
+            "Option 3",
+            "Migration Services",
+            "Credit",
+            "Final Total",
+          ].includes(fieldValue)
+        ) {
+          fieldCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: altRowFill },
+          };
+          valueCell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: altRowFill },
+          };
+        }
 
-      if (["Credit", "Discount %"].includes(fieldValue)) {
-        valueCell.font = { ...baseFont, italic: true };
-      }
+        if (["Subtotal", "Final Total"].includes(fieldValue)) {
+          valueCell.font = { ...baseFont, bold: true };
+        }
 
-      if (
-        [
-          "Phase 1",
-          "Phase 2",
-          "Phase 3",
-          "Option 1",
-          "Option 2",
-          "Option 3",
-          "Scoped Services",
-          "Migration Services",
-          "Subtotal",
-          "Credit",
-          "Final Total",
-        ].includes(fieldValue)
-      ) {
-        valueCell.numFmt = currencyFormat;
-      }
+        if (["Credit", "Discount %"].includes(fieldValue)) {
+          valueCell.font = { ...baseFont, italic: true };
+        }
 
-      if (fieldValue === "Discount %") {
-        valueCell.numFmt = "0.##";
-      }
+        if (
+          [
+            "Phase 1",
+            "Phase 2",
+            "Phase 3",
+            "Option 1",
+            "Option 2",
+            "Option 3",
+            "Scoped Services",
+            "Migration Services",
+            "Subtotal",
+            "Credit",
+            "Final Total",
+          ].includes(fieldValue)
+        ) {
+          valueCell.numFmt = currencyFormat;
+        }
 
-      if (fieldValue === "Discount %") {
-        valueCell.border = {
-          bottom: { style: "double", color: { argb: "FF000000" } },
-        };
-      }
-    });
+        if (fieldValue === "Discount %") {
+          valueCell.numFmt = "0.##";
+        }
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `bid-sheet-${selectedCustomer?.company_name ?? proposalId}-${new Date()
-      .toISOString()
-      .slice(0, 10)}.xlsx`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        if (fieldValue === "Discount %") {
+          valueCell.border = {
+            bottom: { style: "double", color: { argb: "FF000000" } },
+          };
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `bid-sheet-${selectedCustomer?.company_name ?? proposalId}-${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to export bid sheet. Please try again."
+      );
+    }
   };
 
   if (isLoading) {

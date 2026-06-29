@@ -191,6 +191,21 @@ export function getGoogleFontParam(fontValue: string): string | undefined {
   return fontGoogleParams[fontValue];
 }
 
+// Allowlist gate for the font cookie. The cookie is client-writable, and its
+// value is interpolated into a server-rendered <style> in the root layout, so
+// an unchecked value is an XSS vector. Only values that match a known
+// FONT_OPTIONS entry (and are not the "default" sentinel) are allowed through;
+// everything else, including injection payloads, resolves to null.
+export function resolveSafeFont(
+  cookieValue: string | null | undefined
+): string | null {
+  if (!cookieValue || cookieValue === "default") {
+    return null;
+  }
+  const match = FONT_OPTIONS.find((option) => option.value === cookieValue);
+  return match ? match.value : null;
+}
+
 export function googleFontUrl(param: string): string {
   return `https://fonts.googleapis.com/css2?family=${param}&display=swap`;
 }
