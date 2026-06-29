@@ -84,11 +84,14 @@ export async function updateSession(request: NextRequest) {
     console.error("Supabase auth user lookup failed", userError.message);
   }
 
-  // Redirect unauthenticated users to login
+  // Redirect unauthenticated users to login. The /auth namespace
+  // (/auth/confirm verifies invite/recovery links, /auth-error reports a
+  // failed verification) must stay reachable without a session, since the
+  // invitee has no session until verifyOtp runs.
   if (
     !user &&
     !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/signup") &&
+    !request.nextUrl.pathname.startsWith("/auth") &&
     request.nextUrl.pathname !== "/"
   ) {
     return redirectWithSupabaseAuthState(
@@ -99,11 +102,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Redirect authenticated users away from auth pages
-  if (
-    user &&
-    (request.nextUrl.pathname.startsWith("/login") ||
-      request.nextUrl.pathname.startsWith("/signup"))
-  ) {
+  if (user && request.nextUrl.pathname.startsWith("/login")) {
     return redirectWithSupabaseAuthState(
       request,
       supabaseResponse,
