@@ -34,11 +34,16 @@ import {
 } from "@/lib/rate-card-keys";
 import { getRequiredRateCardsError } from "@/lib/pricing/load-guards";
 import { saveScenarioGridSchema } from "@/lib/validation/scenario-grid";
+import { renameProposalSchema } from "@/lib/validation/proposal";
 import { buildDeleteConfirmationPhrase } from "@/lib/proposals/delete-confirmation";
 import type { Database } from "@/types/database";
 
 export type DeleteProposalResult =
   | { ok: true }
+  | { ok: false; error: string };
+
+export type RenameProposalResult =
+  | { ok: true; name: string }
   | { ok: false; error: string };
 
 export type UpdateComplexityFactorResult =
@@ -239,6 +244,53 @@ export async function correctClosedProposalFinancials(
   revalidatePath(`/proposals/${proposalId}`);
   revalidatePath("/proposals");
   return { ok: true };
+}
+
+/**
+ * Rename a proposal.
+ *
+ * Authorization is layered:
+ *  - The action-level requireAuthenticatedResult keeps anonymous callers out
+ *    before any query runs.
+ *  - RLS ("Users can update own proposals or admin") restricts the UPDATE to
+ *    the proposal owner or an admin. A blocked update matches zero rows
+ *    rather than erroring, so we request an exact count and surface a clean
+ *    permission error when nothing was updated.
+ */
+export async function renameProposal(
+  proposalId: string,
+  name: string
+): Promise<RenameProposalResult> {
+  const parsed = renameProposalSchema.safeParse({ name });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid proposal name.",
+    };
+  }
+
+  const auth = await requireAuthenticatedResult(
+    "You must be signed in to rename a proposal."
+  );
+  if (!auth.ok) return auth;
+
+  const supabase = await createClient();
+  const { error, count } = await supabase
+    .from("proposals")
+    .update({ name: parsed.data.name }, { count: "exact" })
+    .eq("id", proposalId);
+
+  if (error) return { ok: false, error: error.message };
+  if (count === 0) {
+    return {
+      ok: false,
+      error: "Proposal not found or you do not have permission to rename it.",
+    };
+  }
+
+  revalidatePath(`/proposals/${proposalId}`);
+  revalidatePath("/proposals");
+  return { ok: true, name: parsed.data.name };
 }
 
 function validateFactor(value: number): string | null {
