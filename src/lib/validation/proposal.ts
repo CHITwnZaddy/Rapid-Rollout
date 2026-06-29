@@ -7,18 +7,25 @@ import { z } from "zod";
 // names and malformed customer ids cannot reach Supabase.
 // ─────────────────────────────────────────────────────────────
 
+// Shared so the create form and the rename action enforce identical rules.
+const proposalNameSchema = z
+  .string({ error: "Proposal name is required" })
+  .trim()
+  .min(1, "Proposal name is required")
+  .max(200, "Proposal name cannot exceed 200 characters");
+
 export const newProposalSchema = z.object({
-  name: z
-    .string({ error: "Proposal name is required" })
-    .trim()
-    .min(1, "Proposal name is required")
-    .max(200, "Proposal name cannot exceed 200 characters"),
+  name: proposalNameSchema,
   // customerId is optional at creation time — SEs often spin up a
   // proposal before the customer record exists. Empty string →
   // null; otherwise must be a UUID.
   customerId: z
     .union([z.literal(""), z.uuid("Invalid customer selection")])
     .optional(),
+});
+
+export const renameProposalSchema = z.object({
+  name: proposalNameSchema,
 });
 
 // ─────────────────────────────────────────────────────────────
