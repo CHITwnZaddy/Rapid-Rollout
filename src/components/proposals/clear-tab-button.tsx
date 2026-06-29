@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -37,9 +38,16 @@ export function ClearTabButton({
     setClearing(true);
     try {
       await onConfirm();
+      // Close only on success so a failed clear keeps the dialog open for retry.
+      setOpen(false);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to clear tab. Please try again."
+      );
     } finally {
       setClearing(false);
-      setOpen(false);
     }
   };
 

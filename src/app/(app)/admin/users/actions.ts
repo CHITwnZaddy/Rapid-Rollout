@@ -45,10 +45,23 @@ export async function inviteUser(email: string, role: "admin" | "user") {
   }
 
   const admin = createAdminClient();
-  const { error } = await admin.auth.admin.inviteUserByEmail(parsed.data.email, {
-    data: { role: parsed.data.role },
-  });
+  // inviteUserByEmail only accepts `data` (which maps to user_metadata) and
+  // `redirectTo`. Roles MUST live in app_metadata, since that is what every
+  // auth check and RLS policy reads. So we invite first, then promote the
+  // returned user via updateUserById. Mirrors updateUserRole: only admins get
+  // an app_metadata role; plain users are left with no role claim.
+  const { data, error } = await admin.auth.admin.inviteUserByEmail(
+    parsed.data.email
+  );
   if (error) throw new Error(error.message);
+
+  if (parsed.data.role === "admin" && data.user) {
+    const { error: roleError } = await admin.auth.admin.updateUserById(
+      data.user.id,
+      { app_metadata: { role: "admin" } }
+    );
+    if (roleError) throw new Error(roleError.message);
+  }
   revalidatePath("/admin/users");
 }
 
