@@ -166,10 +166,48 @@ describe("proposal aggregates", () => {
     const rates = buildRateMap([{ lookup_key: SR_IM_RATE_KEY, rate: 275 }]);
 
     expect(() => buildMigrationCostMap(configs, [], rates)).toThrow(
-      "Migration report totals unavailable: missing required rate cards"
+      "Migration report totals unavailable:"
     );
     expect(() => buildMigrationHoursMap(configs, [], rates)).toThrow(
-      "Migration report totals unavailable: missing required rate cards"
+      "Migration report totals unavailable:"
+    );
+  });
+
+  it("fails closed when a required migration rate is zero", () => {
+    const configs: MigrationConfigRow[] = [
+      {
+        proposal_id: "p1",
+        num_projects: 1,
+        hrs_per_import: 1,
+        lines_per_import_file: 1000,
+        is_effort_included: false,
+        is_workshop_included: false,
+        complexity_factor: 1,
+        sr_im_trips: 0,
+        pm_trips: 0,
+        doc_avg_mb_per_project: 0,
+        doc_mb_per_hour: 0,
+        core_requirements_hrs: 0,
+        core_migration_plan_hrs: 0,
+        core_validation_hrs: 0,
+        core_final_qa_hrs: 0,
+        core_pm_oversight_hrs: 0,
+      },
+    ];
+    // Internal Cost Rate present but priced at 0 — must fail closed like a
+    // missing row, not silently zero migration pricing in reports.
+    const rates = buildRateMap([
+      { lookup_key: SR_IM_RATE_KEY, rate: 275 },
+      { lookup_key: PM_RATE_KEY, rate: 250 },
+      { lookup_key: TRAVEL_RATE_KEY, rate: 1000 },
+      { lookup_key: INTERNAL_COST_RATE_KEY, rate: 0 },
+    ]);
+
+    expect(() => buildMigrationCostMap(configs, [], rates)).toThrow(
+      /non-positive rate/i
+    );
+    expect(() => buildMigrationHoursMap(configs, [], rates)).toThrow(
+      /non-positive rate/i
     );
   });
 });

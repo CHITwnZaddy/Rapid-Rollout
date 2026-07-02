@@ -19,10 +19,10 @@ describe("normalizeEditableValue", () => {
     });
   });
 
-  it("treats an empty numeric input as 0", () => {
+  it("rejects an empty numeric input instead of silently coercing to 0", () => {
     expect(normalizeEditableValue("   ", numberColumn)).toEqual({
-      ok: true,
-      value: 0,
+      ok: false,
+      error: "Rate ($/hr) can't be blank — enter a number (0 for zero).",
     });
   });
 

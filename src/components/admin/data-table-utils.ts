@@ -22,7 +22,10 @@ export function normalizeEditableValue(
 
   const trimmed = rawValue.trim();
   if (trimmed === "") {
-    return { ok: true, value: 0 };
+    return {
+      ok: false,
+      error: `${column.label} can't be blank — enter a number (0 for zero).`,
+    };
   }
 
   const parsed = Number(trimmed);

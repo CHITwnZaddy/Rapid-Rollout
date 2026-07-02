@@ -110,14 +110,18 @@ export async function fetchProposalSubtotal(
     const internalCostRate = rate(INTERNAL_COST_RATE_KEY);
     if (
       srImRate === null ||
+      srImRate <= 0 ||
       pmRate === null ||
+      pmRate <= 0 ||
       travelRate === null ||
-      internalCostRate === null
+      travelRate <= 0 ||
+      internalCostRate === null ||
+      internalCostRate <= 0
     ) {
       return {
         ok: false,
         error:
-          "Pricing-critical rate card rows are missing; cannot compute the proposal subtotal.",
+          "Pricing-critical rate card rows are missing or have a non-positive rate; cannot compute the proposal subtotal.",
       };
     }
 
