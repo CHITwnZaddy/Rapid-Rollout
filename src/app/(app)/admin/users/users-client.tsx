@@ -50,35 +50,37 @@ export function UsersClient({ initialUsers }: { initialUsers: User[] }) {
     if (!inviteEmail.trim()) return;
     setError(null);
     startTransition(async () => {
-      try {
-        await inviteUser(inviteEmail.trim(), inviteRole);
+      const result = await inviteUser(inviteEmail.trim(), inviteRole);
+      if (result.ok) {
         setInviteEmail("");
-      } catch (e) {
-        setError((e as Error).message);
+      } else {
+        setError(result.error);
       }
     });
   }
 
   function handleRoleChange(userId: string, role: "admin" | "user") {
+    setError(null);
     startTransition(async () => {
-      try {
-        await updateUserRole(userId, role);
+      const result = await updateUserRole(userId, role);
+      if (result.ok) {
         setUsers((prev) =>
           prev.map((u) => (u.id === userId ? { ...u, role: role === "user" ? null : role } : u))
         );
-      } catch (e) {
-        setError((e as Error).message);
+      } else {
+        setError(result.error);
       }
     });
   }
 
   function handleDelete(userId: string) {
+    setError(null);
     startTransition(async () => {
-      try {
-        await deleteUser(userId);
+      const result = await deleteUser(userId);
+      if (result.ok) {
         setUsers((prev) => prev.filter((u) => u.id !== userId));
-      } catch (e) {
-        setError((e as Error).message);
+      } else {
+        setError(result.error);
       }
     });
   }

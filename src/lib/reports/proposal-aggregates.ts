@@ -237,12 +237,16 @@ function requireMigrationRates(rates: Map<string, number>): {
 
   if (
     srImRate == null ||
+    srImRate <= 0 ||
     pmRate == null ||
+    pmRate <= 0 ||
     travelRate == null ||
-    internalCostRate == null
+    travelRate <= 0 ||
+    internalCostRate == null ||
+    internalCostRate <= 0
   ) {
     throw new Error(
-      "Migration report totals unavailable: missing required rate cards (Sr. Implementation Manager, Program Manager, Travel Cost/Trip, Internal Cost Rate)."
+      "Migration report totals unavailable: required rate cards are missing or have a non-positive rate (Sr. Implementation Manager, Program Manager, Travel Cost/Trip, Internal Cost Rate)."
     );
   }
 
