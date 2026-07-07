@@ -71,6 +71,22 @@ export type ProposalListItem = z.infer<typeof ProposalListItemSchema>;
 
 export const ProposalListSchema = z.array(ProposalListItemSchema);
 
+// Proposal header read for the proposal detail layout. created_by is NOT NULL
+// in the schema but modelled nullable so the layout's optional "Scoped by"
+// lookup keeps compiling if a legacy row ever lacks it.
+export const ProposalHeaderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  sold_price: z.number().nullable(),
+  loe_value: z.number().nullable(),
+  created_by: z.string().nullable(),
+  customers: z
+    .union([CustomerNameSchema, z.array(CustomerNameSchema)])
+    .nullable(),
+});
+export type ProposalHeader = z.infer<typeof ProposalHeaderSchema>;
+
 export const BidSheetDataSchema = z.object({
   id: z.string(),
   customer_id: z.string().nullable(),

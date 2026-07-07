@@ -8,11 +8,24 @@ import { roundMoney } from "@/lib/calculations/rounding";
 import {
   addScopedServiceLineInputSchema,
   SCOPED_SERVICE_TYPES,
+  scopedServiceLineRowsSchema,
   updateScopedServiceLineInputSchema,
   deleteScopedServiceLineInputSchema,
 } from "@/lib/validation/scoped-services";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import type { Database } from "@/types/database";
 import { z } from "zod";
+
+// Row schemas kept local: this "use server" module can only export async
+// functions. Nullability mirrors the generated DB types.
+const proposalIdRowSchema = z.object({ id: z.string() });
+const rateCardRowSchema = z.object({
+  lookup_key: z.string(),
+  rate: z.number(),
+  activity: z.string(),
+  role_category: z.string(),
+});
+const rateCardRowsSchema = z.array(rateCardRowSchema);
 
 export type ScopedServiceLine = Pick<
   Database["public"]["Tables"]["scoped_services"]["Row"],
@@ -72,7 +85,15 @@ async function loadProposal(
     };
   }
 
-  return { ok: true, proposal: data as ProposalRow };
+  const parsed = safeParseSupabaseResult(proposalIdRowSchema, {
+    data,
+    error: null,
+  });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+
+  return { ok: true, proposal: parsed.data };
 }
 
 async function loadScopedServiceLines(
@@ -96,7 +117,15 @@ async function loadScopedServiceLines(
     };
   }
 
-  return { ok: true, lines: sortScopedLines(data as ScopedServiceLine[]) };
+  const parsed = safeParseSupabaseResult(scopedServiceLineRowsSchema, {
+    data,
+    error: null,
+  });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+
+  return { ok: true, lines: sortScopedLines(parsed.data) };
 }
 
 async function loadActiveRateCards(
@@ -118,7 +147,15 @@ async function loadActiveRateCards(
     };
   }
 
-  return { ok: true, rateCards: data as RateCardRow[] };
+  const parsed = safeParseSupabaseResult(rateCardRowsSchema, {
+    data,
+    error: null,
+  });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+
+  return { ok: true, rateCards: parsed.data };
 }
 
 export async function addScopedServiceLine(

@@ -46,7 +46,11 @@ import {
 import { ContingencySummaryTable } from "@/components/pricing/contingency-summary-table";
 import { ScopedComplexityFactor } from "@/components/proposals/scoped-complexity-factor";
 import { toast } from "sonner";
-import { SCOPED_SERVICE_TYPES } from "@/lib/validation/scoped-services";
+import {
+  SCOPED_SERVICE_TYPES,
+  scopedServiceLineRowsSchema,
+} from "@/lib/validation/scoped-services";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import {
   SCOPED_KEY_BA,
   INTERNAL_COST_RATE_KEY,
@@ -144,7 +148,15 @@ export default function ScopedServicesPage() {
           return;
         }
 
-        const scopedData = (scopedRes.data ?? []) as ScopedServiceLine[];
+        const scopedParsed = safeParseSupabaseResult(
+          scopedServiceLineRowsSchema,
+          scopedRes
+        );
+        if (!scopedParsed.ok) {
+          failLoad(`Could not load scoped services: ${scopedParsed.error}`);
+          return;
+        }
+        const scopedData = scopedParsed.data;
         const rateData = rateRes.data ?? [];
 
         const rateCardLoadError =

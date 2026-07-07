@@ -104,12 +104,13 @@ export function AdminDataTable({
       return;
     }
 
-    if (!result.row) {
+    const addedRow = result.row;
+    if (!addedRow) {
       toast.error("Couldn't add row. No row was returned.");
       return;
     }
 
-    setData((previous) => [...previous, result.row as AdminRow]);
+    setData((previous) => [...previous, addedRow]);
     toast.success("Row added.");
   }, [tableName]);
 

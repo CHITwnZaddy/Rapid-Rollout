@@ -1,7 +1,16 @@
+import { z } from "zod";
 import { type ColumnDef } from "./data-table-utils";
 
 export type AdminTableName = "customers" | "rate_cards" | "service_hours";
 export type AdminRow = Record<string, unknown> & { id: string };
+
+// The generic admin table reads columns dynamically, so it only needs a
+// guaranteed string id; catchall preserves every other column untouched.
+// This validates the id contract without duplicating each table's columns.
+export const adminRowSchema = z
+  .object({ id: z.string() })
+  .catchall(z.unknown());
+export const adminRowsSchema = z.array(adminRowSchema);
 
 type AdminTableAuth = "authenticated" | "admin";
 

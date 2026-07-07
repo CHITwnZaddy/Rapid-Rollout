@@ -4,16 +4,8 @@ import { ProposalNav } from "@/components/proposals/proposal-nav";
 import { ProposalStatus } from "@/components/proposals/proposal-status";
 import { DeleteProposalButton } from "@/components/proposals/delete-proposal-button";
 import { EditableProposalName } from "@/components/proposals/editable-proposal-name";
-
-interface ProposalData {
-  id: string;
-  name: string;
-  status: string;
-  sold_price: number | null;
-  loe_value: number | null;
-  created_by: string | null;
-  customers: { company_name: string } | { company_name: string }[] | null;
-}
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
+import { ProposalHeaderSchema } from "@/lib/validation/proposal";
 
 export default async function ProposalLayout({
   children,
@@ -25,11 +17,13 @@ export default async function ProposalLayout({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data }, { data: varianceReasons }] = await Promise.all([
+  const [proposalResult, { data: varianceReasons }] = await Promise.all([
     supabase
-    .from("proposals")
-      .select("id, name, status, sold_price, loe_value, created_by, customers ( company_name )")
-    .eq("id", id)
+      .from("proposals")
+      .select(
+        "id, name, status, sold_price, loe_value, created_by, customers ( company_name )"
+      )
+      .eq("id", id)
       .single(),
     supabase
       .from("proposal_variance_reasons")
@@ -37,9 +31,12 @@ export default async function ProposalLayout({
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
   ]);
-  const proposal = data as ProposalData | null;
 
-  if (!proposal) notFound();
+  // A missing row (single() errors) or an unexpected shape both mean there's
+  // nothing renderable here, so fall through to the not-found page.
+  const parsed = safeParseSupabaseResult(ProposalHeaderSchema, proposalResult);
+  if (!parsed.ok) notFound();
+  const proposal = parsed.data;
 
   const customer = Array.isArray(proposal.customers)
     ? proposal.customers[0]
