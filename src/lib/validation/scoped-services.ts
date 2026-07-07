@@ -43,3 +43,19 @@ export const deleteScopedServiceLineInputSchema = z.object({
   proposalId: z.uuid("Invalid proposal id"),
   lineId: z.uuid("Invalid scoped service line id"),
 });
+
+// Shape of a scoped_services row as selected by the pricing page and the
+// server actions. Nullability mirrors the generated DB types so a renamed or
+// retyped column fails validation instead of silently mis-rendering. Shared
+// here (not in the "use server" actions file, which can only export async
+// functions) so the client page and the actions validate identically.
+export const scopedServiceLineRowSchema = z.object({
+  id: z.string(),
+  service_type: z.string(),
+  description: z.string().nullable(),
+  hours: z.number(),
+  rate_card_lookup_key: z.string(),
+  cost: z.number().nullable(),
+  row_order: z.number(),
+});
+export const scopedServiceLineRowsSchema = z.array(scopedServiceLineRowSchema);

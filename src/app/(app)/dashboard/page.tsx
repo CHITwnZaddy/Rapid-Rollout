@@ -50,6 +50,8 @@ import {
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
 import type { StaleTrackedStatus } from "@/lib/proposals/status";
+import { z } from "zod";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 
 type DashboardSearchParams = {
   scope?: string | string[];
@@ -58,17 +60,18 @@ type DashboardSearchParams = {
   dateTo?: string | string[];
 };
 
-type CloseoutFinancialRow = {
-  id: string;
-  sold_price: number | null;
-  loe_value: number | null;
-  loe_signed_date: string | null;
-};
+const CloseoutFinancialRowSchema = z.object({
+  id: z.string(),
+  sold_price: z.number().nullable(),
+  loe_value: z.number().nullable(),
+  loe_signed_date: z.string().nullable(),
+});
+type CloseoutFinancialRow = z.infer<typeof CloseoutFinancialRowSchema>;
 
-type StaleThresholdRow = {
-  status: string;
-  threshold_days: number;
-};
+const StaleThresholdRowSchema = z.object({
+  status: z.string(),
+  threshold_days: z.number(),
+});
 
 type DashboardDateWindow = {
   range: DashboardDateRange;
@@ -164,38 +167,38 @@ async function fetchCloseoutFinancials(
 ): Promise<Map<string, CloseoutFinancialRow>> {
   if (proposalIds.length === 0) return new Map();
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const result = await supabase
     .from("proposals")
     .select("id, sold_price, loe_value, loe_signed_date")
     .in("id", proposalIds);
-  if (error) {
-    throw new Error(`Could not load closeout financials: ${error.message}`);
-  }
-  if (!data) {
-    throw new Error("Could not load closeout financials: no data returned.");
+  const parsed = safeParseSupabaseResult(
+    z.array(CloseoutFinancialRowSchema),
+    result
+  );
+  if (!parsed.ok) {
+    throw new Error(`Could not load closeout financials: ${parsed.error}`);
   }
 
-  return new Map(
-    (data as CloseoutFinancialRow[]).map((row) => [row.id, row])
-  );
+  return new Map(parsed.data.map((row) => [row.id, row]));
 }
 
 async function fetchStaleThresholds(): Promise<
   Partial<Record<StaleTrackedStatus, number>>
 > {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const result = await supabase
     .from("proposal_stale_thresholds")
     .select("status, threshold_days")
     .eq("is_active", true);
-  if (error) {
-    throw new Error(`Could not load stale thresholds: ${error.message}`);
-  }
-  if (!data) {
-    throw new Error("Could not load stale thresholds: no data returned.");
+  const parsed = safeParseSupabaseResult(
+    z.array(StaleThresholdRowSchema),
+    result
+  );
+  if (!parsed.ok) {
+    throw new Error(`Could not load stale thresholds: ${parsed.error}`);
   }
 
-  return (data as StaleThresholdRow[]).reduce<
+  return parsed.data.reduce<
     Partial<Record<StaleTrackedStatus, number>>
   >((thresholds, row) => {
     thresholds[row.status as StaleTrackedStatus] = row.threshold_days;

@@ -12,25 +12,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { z } from "zod";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 
-interface LogEntry {
-  id: string;
-  table_name: string;
-  action: string;
-  record_id: string;
-  created_at: string;
-  old_values: Record<string, unknown> | null;
-  new_values: Record<string, unknown> | null;
-}
+// old_values/new_values are jsonb audit snapshots the trigger always writes as
+// objects; a record schema keeps the keyed lookups below type-safe.
+const LogEntrySchema = z.object({
+  id: z.string(),
+  table_name: z.string(),
+  action: z.string(),
+  record_id: z.string(),
+  created_at: z.string().nullable(),
+  old_values: z.record(z.string(), z.unknown()).nullable(),
+  new_values: z.record(z.string(), z.unknown()).nullable(),
+});
 
 export default async function ChangeLogPage() {
   const supabase = await createClient();
-  const { data } = await supabase
+  const result = await supabase
     .from("change_log")
     .select("id, table_name, action, record_id, created_at, old_values, new_values")
     .order("created_at", { ascending: false })
     .limit(100);
-  const logs = data as LogEntry[] | null;
+  const parsed = safeParseSupabaseResult(z.array(LogEntrySchema), result);
+  const logs = parsed.ok ? parsed.data : null;
+  const loadError = parsed.ok ? null : parsed.error;
 
   return (
     <div>
@@ -48,7 +54,17 @@ export default async function ChangeLogPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(!logs || logs.length === 0) && (
+            {loadError && (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="py-8 text-center text-muted-foreground"
+                >
+                  Unable to load the change log. Refresh to retry.
+                </TableCell>
+              </TableRow>
+            )}
+            {!loadError && (!logs || logs.length === 0) && (
               <TableRow>
                 <TableCell
                   colSpan={6}
@@ -79,7 +95,9 @@ export default async function ChangeLogPage() {
               return (
                 <TableRow key={log.id}>
                   <TableCell className="text-sm whitespace-nowrap">
-                    {new Date(log.created_at).toLocaleString()}
+                    {log.created_at
+                      ? new Date(log.created_at).toLocaleString()
+                      : "—"}
                   </TableCell>
                   <TableCell>{log.table_name}</TableCell>
                   <TableCell>

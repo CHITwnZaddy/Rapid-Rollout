@@ -10,7 +10,9 @@ import {
   bidSheetNotesInputSchema,
 } from "@/lib/validation/bid-sheet";
 import { fetchProposalSubtotal } from "@/lib/proposals/proposal-subtotal";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import type { Database } from "@/types/database";
+import { z } from "zod";
 
 export type UpdateBidSheetResult =
   | { ok: true }
@@ -20,6 +22,12 @@ type BidSheetRow = {
   id: string;
   proposal_id: string;
 };
+
+// Local (this "use server" module can only export async functions).
+const bidSheetRowSchema = z.object({
+  id: z.string(),
+  proposal_id: z.string(),
+});
 
 async function loadBidSheetRow(
   proposalId: string
@@ -46,7 +54,15 @@ async function loadBidSheetRow(
     };
   }
 
-  return { ok: true, row: data as BidSheetRow };
+  const parsed = safeParseSupabaseResult(bidSheetRowSchema, {
+    data,
+    error: null,
+  });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+
+  return { ok: true, row: parsed.data };
 }
 
 async function revalidateBidSheetPaths(proposalId: string) {
