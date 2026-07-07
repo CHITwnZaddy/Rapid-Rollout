@@ -23,7 +23,17 @@ import {
 } from "@/lib/rate-card-keys";
 import { getRequiredRateCardsError } from "@/lib/pricing/load-guards";
 import { saveScenarioGridSchema } from "@/lib/validation/scenario-grid";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import type { Database } from "@/types/database";
+import { z } from "zod";
+
+// Local (this "use server" module can only export async functions); nullability
+// mirrors the generated scenarios row.
+const scenarioRecordSchema = z.object({
+  id: z.string(),
+  proposal_id: z.string(),
+  scenario_type: z.string(),
+});
 
 export type SaveScenarioGridResult =
   | { ok: true; lines: ScenarioGridPersistLine[] }
@@ -62,21 +72,24 @@ export async function saveScenarioGridSelections(
 
   const supabase = await createClient();
 
-  const { data: scenarioData, error: scenarioError } = await supabase
+  const scenarioResult = await supabase
     .from("scenarios")
     .select("id, proposal_id, scenario_type")
     .eq("id", parsed.data.scenarioId)
     .eq("proposal_id", parsed.data.proposalId)
     .single();
 
-  const scenario = scenarioData as ScenarioRecord | null;
-
-  if (scenarioError || !scenario) {
+  const scenarioParsed = safeParseSupabaseResult(
+    scenarioRecordSchema,
+    scenarioResult
+  );
+  if (!scenarioParsed.ok) {
     return {
       ok: false,
       error: "Scenario not found or you do not have permission to edit it.",
     };
   }
+  const scenario: ScenarioRecord = scenarioParsed.data;
 
   const { data: lineRows, error: lineError } = await supabase
     .from("scenario_lines")

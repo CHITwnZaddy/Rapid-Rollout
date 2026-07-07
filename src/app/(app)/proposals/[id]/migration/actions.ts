@@ -21,6 +21,7 @@ import {
   removeMigrationDetailLineSchema,
   type MigrationSection,
 } from "@/lib/validation/migration";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import type { Database } from "@/types/database";
 import { z } from "zod";
 
@@ -37,6 +38,81 @@ type MigrationConfigRow = MigrationConfigState & {
 type MigrationDetailLineRow = MigrationLineState & {
   proposal_id: string;
 };
+
+// migration_config/detail columns are nullable in the DB, but the state types
+// they feed are non-null. These schemas validate the real (nullable) row shape
+// then coalesce nulls to the same defaults the compute layer already applies
+// (NUM() maps null -> 0; booleans -> false), so pricing math is unchanged while
+// a renamed/retyped column now fails validation instead of silently passing.
+// Kept local: this "use server" module can only export async functions.
+const migrationConfigRowSchema = z
+  .object({
+    id: z.string(),
+    proposal_id: z.string(),
+    num_projects: z.number().nullable(),
+    hrs_per_import: z.number().nullable(),
+    lines_per_import_file: z.number().nullable(),
+    is_effort_included: z.boolean().nullable(),
+    is_workshop_included: z.boolean().nullable(),
+    complexity_factor: z.number(),
+    sr_im_trips: z.number().nullable(),
+    pm_trips: z.number().nullable(),
+    doc_avg_mb_per_project: z.number().nullable(),
+    doc_mb_per_hour: z.number().nullable(),
+    core_requirements_hrs: z.number().nullable(),
+    core_migration_plan_hrs: z.number().nullable(),
+    core_validation_hrs: z.number().nullable(),
+    core_final_qa_hrs: z.number().nullable(),
+    core_pm_oversight_hrs: z.number().nullable(),
+    computed_total_cost: z.number().nullable(),
+  })
+  .transform(
+    (row): MigrationConfigRow => ({
+      id: row.id,
+      proposal_id: row.proposal_id,
+      num_projects: row.num_projects ?? 0,
+      hrs_per_import: row.hrs_per_import ?? 0,
+      lines_per_import_file: row.lines_per_import_file ?? 0,
+      is_effort_included: row.is_effort_included ?? false,
+      is_workshop_included: row.is_workshop_included ?? false,
+      complexity_factor: row.complexity_factor,
+      sr_im_trips: row.sr_im_trips ?? 0,
+      pm_trips: row.pm_trips ?? 0,
+      doc_avg_mb_per_project: row.doc_avg_mb_per_project ?? 0,
+      doc_mb_per_hour: row.doc_mb_per_hour ?? 0,
+      core_requirements_hrs: row.core_requirements_hrs ?? 0,
+      core_migration_plan_hrs: row.core_migration_plan_hrs ?? 0,
+      core_validation_hrs: row.core_validation_hrs ?? 0,
+      core_final_qa_hrs: row.core_final_qa_hrs ?? 0,
+      core_pm_oversight_hrs: row.core_pm_oversight_hrs ?? 0,
+      computed_total_cost: row.computed_total_cost ?? 0,
+    })
+  );
+
+const migrationDetailLineRowSchema = z
+  .object({
+    id: z.string(),
+    proposal_id: z.string(),
+    section: z.string(),
+    label: z.string(),
+    quantity: z.number().nullable(),
+    items_per_object: z.number().nullable(),
+    total_line_items: z.number().nullable(),
+    row_order: z.number().nullable(),
+  })
+  .transform(
+    (row): MigrationDetailLineRow => ({
+      id: row.id,
+      proposal_id: row.proposal_id,
+      section: row.section,
+      label: row.label,
+      quantity: row.quantity ?? 0,
+      items_per_object: row.items_per_object ?? 0,
+      total_line_items: row.total_line_items ?? 0,
+      row_order: row.row_order ?? 0,
+    })
+  );
+const migrationDetailLineRowsSchema = z.array(migrationDetailLineRowSchema);
 
 const SECTION_ORDER: Record<MigrationSection, number> = {
   project: 0,
@@ -98,7 +174,15 @@ async function loadMigrationConfig(
     };
   }
 
-  return { ok: true, config: data as MigrationConfigRow };
+  const parsed = safeParseSupabaseResult(migrationConfigRowSchema, {
+    data,
+    error: null,
+  });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+
+  return { ok: true, config: parsed.data };
 }
 
 async function loadMigrationLines(
@@ -120,7 +204,15 @@ async function loadMigrationLines(
     };
   }
 
-  return { ok: true, lines: sortMigrationLines(data as MigrationDetailLineRow[]) };
+  const parsed = safeParseSupabaseResult(migrationDetailLineRowsSchema, {
+    data,
+    error: null,
+  });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+
+  return { ok: true, lines: sortMigrationLines(parsed.data) };
 }
 
 async function loadMigrationRates(

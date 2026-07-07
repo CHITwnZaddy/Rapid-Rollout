@@ -14,10 +14,12 @@ import {
   type ColumnDef,
 } from "./data-table-utils";
 import {
+  adminRowSchema,
   getAdminTableConfig,
   type AdminRow,
   type AdminTableName,
 } from "./data-table-config";
+import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 
 const adminTableNameSchema = z.enum(["customers", "rate_cards", "service_hours"]);
 
@@ -95,7 +97,12 @@ async function loadRow(
     return { ok: false, error: "The requested row was not found." };
   }
 
-  return { ok: true, row: data as AdminRow };
+  const parsed = safeParseSupabaseResult(adminRowSchema, { data, error: null });
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+
+  return { ok: true, row: parsed.data };
 }
 
 function findEditableColumn(
@@ -137,8 +144,16 @@ export async function addAdminTableRow(tableName: AdminTableName): Promise<Admin
     };
   }
 
+  const parsedRow = safeParseSupabaseResult(adminRowSchema, {
+    data,
+    error: null,
+  });
+  if (!parsedRow.ok) {
+    return { ok: false, error: parsedRow.error };
+  }
+
   await revalidateAdminTablePaths(parsed.data.tableName);
-  return { ok: true, row: data as AdminRow };
+  return { ok: true, row: parsedRow.data };
 }
 
 export async function updateAdminTableCell(
