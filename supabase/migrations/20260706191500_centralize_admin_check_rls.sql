@@ -23,10 +23,15 @@
 -- Security: SECURITY INVOKER (the default). It reads only auth.jwt() -- the
 -- caller's own token -- so it needs no elevated rights. search_path is pinned
 -- to '' (advisor 0011); auth.jwt() is fully schema-qualified and the -> / ->>
--- operators resolve from pg_catalog. EXECUTE is granted only to the
--- authenticated role (which every one of these policies runs under);
--- PUBLIC/anon are not granted, matching the least-privilege posture of
--- 20260629184500_lock_down_definer_function_execute.
+-- operators resolve from pg_catalog. EXECUTE is restricted to the
+-- authenticated role (which every one of these policies runs under). PUBLIC
+-- and anon are revoked: Supabase's default privileges would otherwise grant
+-- anon EXECUTE on a new public function, and although this INVOKER helper only
+-- reads the caller's own JWT (an anon caller would simply learn it is not an
+-- admin), removing the grant keeps the /rest/v1/rpc surface minimal and
+-- consistent with 20260629184500_lock_down_definer_function_execute.
+-- service_role keeps its default grant (server-side only, and it bypasses RLS
+-- regardless).
 --
 -- Policies are updated with ALTER POLICY (not DROP/CREATE): there is no window
 -- where the row is unprotected, and cmd/roles are preserved untouched. Each
@@ -51,7 +56,7 @@ AS $$
   );
 $$;
 
-REVOKE ALL ON FUNCTION public.auth_is_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.auth_is_admin() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.auth_is_admin() TO authenticated;
 
 -- 2. bid_sheets -- mutate rows whose parent proposal is owned by the caller
