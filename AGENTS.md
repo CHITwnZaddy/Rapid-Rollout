@@ -8,6 +8,28 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 Two Vercel environments: **staging** (deploys from the `staging` branch) and **production** (deploys from `main`). All PRs target `staging` by default — never main directly. Promote staging → main with a separate PR only after Austin verifies the Vercel staging deploy.
 
+## Promote routine (staging → main)
+
+Promotion PRs squash-merge into `main`, which creates a commit on `main` that
+`staging` does not have. Left unreconciled, `staging` and `main` diverge and the
+next promotion PR shows phantom merge conflicts (same content, different squash
+history). To prevent this, **immediately after a promotion PR merges into
+`main`, back-merge `main` into `staging`:**
+
+```
+git fetch origin main staging
+git checkout staging && git reset --hard origin/staging
+# staging already contains all of main's content, so keep staging's tree:
+git merge -s ours origin/main -m "Merge main into staging after promotion (reconcile squash divergence)"
+git push origin staging
+```
+
+Before using `-s ours`, verify `staging` is a content superset of `main` with
+`git diff --name-only origin/main origin/staging` — it should list only the
+files from the just-promoted change. If it lists anything `main` has that
+`staging` lacks, STOP and reconcile manually instead (do not discard main's
+work).
+
 # Pull/merge caveat
 
 Claude may pull and merge PRs autonomously (the relevant `git pull`, `gh pr merge`, and `git branch -d` commands are pre-approved in `.claude/settings.local.json`).
