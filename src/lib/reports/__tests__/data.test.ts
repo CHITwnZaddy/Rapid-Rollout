@@ -70,6 +70,68 @@ function mockTableClient(
   return { client, queries };
 }
 
+// Full-shape row factories. The fetchers now validate every read against a Zod
+// schema, so query-construction tests must supply every selected column (as a
+// real PostgREST response would) rather than a `{ proposal_id }` stub.
+function scenarioCostRow(overrides: Record<string, unknown> = {}) {
+  return {
+    proposal_id: "p1",
+    scenario_type: "P1",
+    summary_total_cost: null,
+    complexity_factor: null,
+    ...overrides,
+  };
+}
+
+function scopedCostRow(overrides: Record<string, unknown> = {}) {
+  return { proposal_id: "p1", cost: null, ...overrides };
+}
+
+function scenarioLineRow(overrides: Record<string, unknown> = {}) {
+  return {
+    scenario_id: "s1",
+    sr_im_hours: null,
+    pm_hours: null,
+    ba_hours: null,
+    ...overrides,
+  };
+}
+
+function migrationConfigRow(overrides: Record<string, unknown> = {}) {
+  return {
+    proposal_id: "p1",
+    num_projects: null,
+    hrs_per_import: null,
+    lines_per_import_file: null,
+    is_effort_included: false,
+    is_workshop_included: false,
+    complexity_factor: null,
+    sr_im_trips: null,
+    pm_trips: null,
+    doc_avg_mb_per_project: null,
+    doc_mb_per_hour: null,
+    core_requirements_hrs: null,
+    core_migration_plan_hrs: null,
+    core_validation_hrs: null,
+    core_final_qa_hrs: null,
+    core_pm_oversight_hrs: null,
+    ...overrides,
+  };
+}
+
+function migrationLineRow(overrides: Record<string, unknown> = {}) {
+  return {
+    proposal_id: "p1",
+    section: "project",
+    label: "Line",
+    quantity: null,
+    items_per_object: null,
+    total_line_items: null,
+    row_order: null,
+    ...overrides,
+  };
+}
+
 describe("fetchCustomerMap", () => {
   it("builds id → company_name map", async () => {
     const client = mockCustomersClient({
@@ -413,10 +475,10 @@ describe("fetchRevenueAggregateInputs", () => {
 
   it("fetches revenue aggregate source tables and required rates", async () => {
     const { client, queries } = mockTableClient({
-      scenarios: { data: [{ proposal_id: "p1" }], error: null },
-      scoped_services: { data: [{ proposal_id: "p1" }], error: null },
-      migration_config: { data: [{ proposal_id: "p1" }], error: null },
-      migration_detail_lines: { data: [{ proposal_id: "p1" }], error: null },
+      scenarios: { data: [scenarioCostRow()], error: null },
+      scoped_services: { data: [scopedCostRow()], error: null },
+      migration_config: { data: [migrationConfigRow()], error: null },
+      migration_detail_lines: { data: [migrationLineRow()], error: null },
       rate_cards: {
         data: [{ lookup_key: "Sr. Implementation Manager", rate: 1 }],
         error: null,
@@ -473,8 +535,8 @@ describe("fetchMigrationCostInputs", () => {
 
   it("fetches only migration source tables and required rates", async () => {
     const { client, queries } = mockTableClient({
-      migration_config: { data: [{ proposal_id: "p1" }], error: null },
-      migration_detail_lines: { data: [{ proposal_id: "p1" }], error: null },
+      migration_config: { data: [migrationConfigRow()], error: null },
+      migration_detail_lines: { data: [migrationLineRow()], error: null },
       rate_cards: {
         data: [{ lookup_key: "Master|Program Manager", rate: 1 }],
         error: null,
@@ -559,7 +621,7 @@ describe("fetchHoursAggregateInputs", () => {
         data: [{ id: "s1", proposal_id: "p1", scenario_type: "P1" }],
         error: null,
       },
-      scenario_lines: { data: [{ scenario_id: "s1" }], error: null },
+      scenario_lines: { data: [scenarioLineRow()], error: null },
       scoped_services: { data: [], error: null },
       migration_config: { data: [], error: null },
       migration_detail_lines: { data: [], error: null },

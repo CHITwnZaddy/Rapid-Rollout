@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z, type ZodType } from "zod";
 import {
   buildRateMap,
   type MigrationConfigRow,
@@ -7,11 +8,7 @@ import {
   type ScopedCostRow,
   type ScopedHoursRow,
 } from "./proposal-aggregates";
-import {
-  buildStatusMetricsMap,
-  type StatusHistoryRow,
-  type StatusMetrics,
-} from "./status-history";
+import { buildStatusMetricsMap, type StatusMetrics } from "./status-history";
 import {
   INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
@@ -238,6 +235,175 @@ function requireReportData<T>(
   return result.data;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Row schemas
+// ─────────────────────────────────────────────────────────────
+// These fetchers use an untyped generic SupabaseClient, so reads used to be
+// `as`-cast to hand-written row types. Validating with Zod instead means a
+// renamed/dropped column throws a clear error at the boundary instead of
+// surfacing as NaN/undefined deep in a report aggregate.
+//
+// Numeric columns stay permissive (number | string | null): PostgREST returns
+// `numeric` columns as strings and the aggregators already funnel every value
+// through NUM(), so tightening to z.number() would risk rejecting valid rows
+// without changing any output. Schemas mirror the exported row types; each
+// fetcher's return type enforces they stay in sync.
+const numericish = z.union([z.number(), z.string(), z.null()]);
+
+// migration_config booleans are nullable in the DB but the engine reads them
+// as plain booleans; coalesce null -> false to match the current falsy handling
+// without throwing on a null row.
+const migrationBool = z.boolean().nullable().transform((v) => v ?? false);
+
+const reportProposalRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    status: z.string(),
+    customer_id: z.string().nullable(),
+    created_by: z.string().nullable().optional(),
+    created_at: z.string().nullable().optional(),
+    updated_at: z.string().nullable().optional(),
+    scoped_complexity_factor: numericish.optional(),
+  })
+);
+
+const revenueReportBaseRowsSchema = z.array(
+  z.object({
+    proposal_id: z.string(),
+    proposal_name: z.string(),
+    status: z.string(),
+    customer_id: z.string().nullable(),
+    customer_name: z.string().nullable(),
+    created_by: z.string().nullable(),
+    created_at: z.string().nullable(),
+    updated_at: z.string().nullable(),
+    scoped_complexity_factor: numericish,
+    p1_cost: numericish,
+    p2_cost: numericish,
+    p3_cost: numericish,
+    opt1_cost: numericish,
+    opt2_cost: numericish,
+    opt3_cost: numericish,
+    scenario_total: numericish,
+    scoped_total: numericish,
+  })
+);
+
+const scenarioCostRowsSchema = z.array(
+  z.object({
+    proposal_id: z.string(),
+    scenario_type: z.string(),
+    summary_total_cost: numericish,
+    complexity_factor: numericish,
+  })
+);
+
+const scopedCostRowsSchema = z.array(
+  z.object({
+    proposal_id: z.string(),
+    cost: numericish,
+  })
+);
+
+const scopedHoursRowsSchema = z.array(
+  z.object({
+    proposal_id: z.string(),
+    hours: numericish,
+    rate_card_lookup_key: z.string().nullable(),
+  })
+);
+
+const migrationConfigRowsSchema = z.array(
+  z.object({
+    proposal_id: z.string(),
+    num_projects: numericish,
+    hrs_per_import: numericish,
+    lines_per_import_file: numericish,
+    is_effort_included: migrationBool,
+    is_workshop_included: migrationBool,
+    complexity_factor: numericish,
+    sr_im_trips: numericish,
+    pm_trips: numericish,
+    doc_avg_mb_per_project: numericish,
+    doc_mb_per_hour: numericish,
+    core_requirements_hrs: numericish,
+    core_migration_plan_hrs: numericish,
+    core_validation_hrs: numericish,
+    core_final_qa_hrs: numericish,
+    core_pm_oversight_hrs: numericish,
+  })
+);
+
+const migrationLineRowsSchema = z.array(
+  z.object({
+    proposal_id: z.string(),
+    id: z.string().nullable().optional(),
+    section: z.string(),
+    label: z.string(),
+    quantity: numericish,
+    items_per_object: numericish,
+    total_line_items: numericish,
+    row_order: z.number().nullable().optional(),
+  })
+);
+
+const hoursScenarioRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    proposal_id: z.string(),
+    scenario_type: z.string(),
+  })
+);
+
+const hoursScenarioLineRowsSchema = z.array(
+  z.object({
+    scenario_id: z.string(),
+    sr_im_hours: numericish,
+    pm_hours: numericish,
+    ba_hours: numericish,
+  })
+);
+
+const statusHistoryRowsSchema = z.array(
+  z.object({
+    proposal_id: z.string(),
+    old_status: z.string().nullable(),
+    new_status: z.string(),
+    changed_at: z.string(),
+  })
+);
+
+const rateRowsSchema = z.array(
+  z.object({ lookup_key: z.string(), rate: numericish })
+);
+
+const customerRowsSchema = z.array(
+  z.object({ id: z.string(), company_name: z.string() })
+);
+
+// Combines the existing error/null guard with Zod validation: throws the same
+// "Could not load ..." error on a query failure, and a clear shape error if the
+// rows don't match the expected schema.
+function parseReportRows<T>(
+  schema: ZodType<T>,
+  result: ReportQueryResult<unknown>,
+  source: string
+): T {
+  const data = requireReportData(result, source);
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) {
+    console.error(
+      `Report data failed schema validation (${source}):`,
+      parsed.error
+    );
+    throw new Error(
+      `Could not load ${source}: the data was in an unexpected format.`
+    );
+  }
+  return parsed.data;
+}
+
 export async function fetchReportProposals(
   client: SupabaseClient,
   filters: ReportProposalFilters
@@ -270,7 +436,7 @@ export async function fetchReportProposals(
   }
 
   const result = await query;
-  return requireReportData(result, "report proposals") as unknown as ReportProposalRow[];
+  return parseReportRows(reportProposalRowsSchema, result, "report proposals");
 }
 
 export async function fetchRevenueReportBaseRows(
@@ -307,10 +473,11 @@ export async function fetchRevenueReportBaseRows(
   }
 
   const result = await query;
-  return requireReportData(
+  return parseReportRows(
+    revenueReportBaseRowsSchema,
     result,
     "revenue report base"
-  ) as unknown as RevenueReportBaseRow[];
+  );
 }
 
 export async function fetchMigrationCostInputs(
@@ -336,20 +503,17 @@ export async function fetchMigrationCostInputs(
   ]);
 
   return {
-    migrationConfigRows: requireReportData(
+    migrationConfigRows: parseReportRows(
+      migrationConfigRowsSchema,
       migrationRes,
       "migration config"
-    ) as MigrationConfigRow[],
-    migrationLineRows: requireReportData(
+    ),
+    migrationLineRows: parseReportRows(
+      migrationLineRowsSchema,
       migrationLineRes,
       "migration detail lines"
-    ) as MigrationLineRow[],
-    rateMap: buildRateMap(
-      requireReportData(rateRes, "rate cards") as {
-        lookup_key: string;
-        rate: unknown;
-      }[]
     ),
+    rateMap: buildRateMap(parseReportRows(rateRowsSchema, rateRes, "rate cards")),
   };
 }
 
@@ -390,28 +554,27 @@ export async function fetchRevenueAggregateInputs(
   ]);
 
   return {
-    scenarioRows: requireReportData(
+    scenarioRows: parseReportRows(
+      scenarioCostRowsSchema,
       scenarioRes,
       "scenarios"
-    ) as ScenarioCostRow[],
-    scopedRows: requireReportData(
+    ),
+    scopedRows: parseReportRows(
+      scopedCostRowsSchema,
       scopedRes,
       "scoped services"
-    ) as ScopedCostRow[],
-    migrationConfigRows: requireReportData(
+    ),
+    migrationConfigRows: parseReportRows(
+      migrationConfigRowsSchema,
       migrationRes,
       "migration config"
-    ) as MigrationConfigRow[],
-    migrationLineRows: requireReportData(
+    ),
+    migrationLineRows: parseReportRows(
+      migrationLineRowsSchema,
       migrationLineRes,
       "migration detail lines"
-    ) as MigrationLineRow[],
-    rateMap: buildRateMap(
-      requireReportData(rateRes, "rate cards") as {
-        lookup_key: string;
-        rate: unknown;
-      }[]
     ),
+    rateMap: buildRateMap(parseReportRows(rateRowsSchema, rateRes, "rate cards")),
   };
 }
 
@@ -425,10 +588,11 @@ export async function fetchHoursAggregateInputs(
     .from("scenarios")
     .select("id, proposal_id, scenario_type")
     .in("proposal_id", proposalIds);
-  const scenarioRows = requireReportData(
+  const scenarioRows = parseReportRows(
+    hoursScenarioRowsSchema,
     scenarioRes,
     "hours scenarios"
-  ) as HoursScenarioRow[];
+  );
   const scenarioIds = scenarioRows.map((scenario) => scenario.id);
 
   const [scenarioLineRes, scopedRes, migrationRes, migrationLineRes, rateRes] =
@@ -438,7 +602,7 @@ export async function fetchHoursAggregateInputs(
             .from("scenario_lines")
             .select("scenario_id, sr_im_hours, pm_hours, ba_hours")
             .in("scenario_id", scenarioIds)
-        : Promise.resolve({ data: [] as HoursScenarioLineRow[], error: null }),
+        : Promise.resolve({ data: [], error: null }),
       client
         .from("scoped_services")
         .select("proposal_id, hours, rate_card_lookup_key")
@@ -460,28 +624,27 @@ export async function fetchHoursAggregateInputs(
 
   return {
     scenarioRows,
-    scenarioLineRows: requireReportData(
+    scenarioLineRows: parseReportRows(
+      hoursScenarioLineRowsSchema,
       scenarioLineRes,
       "scenario lines"
-    ) as HoursScenarioLineRow[],
-    scopedRows: requireReportData(
+    ),
+    scopedRows: parseReportRows(
+      scopedHoursRowsSchema,
       scopedRes,
       "scoped services"
-    ) as ScopedHoursRow[],
-    migrationConfigRows: requireReportData(
+    ),
+    migrationConfigRows: parseReportRows(
+      migrationConfigRowsSchema,
       migrationRes,
       "migration config"
-    ) as MigrationConfigRow[],
-    migrationLineRows: requireReportData(
+    ),
+    migrationLineRows: parseReportRows(
+      migrationLineRowsSchema,
       migrationLineRes,
       "migration detail lines"
-    ) as MigrationLineRow[],
-    rateMap: buildRateMap(
-      requireReportData(rateRes, "rate cards") as {
-        lookup_key: string;
-        rate: unknown;
-      }[]
     ),
+    rateMap: buildRateMap(parseReportRows(rateRowsSchema, rateRes, "rate cards")),
   };
 }
 
@@ -493,10 +656,11 @@ export async function fetchCustomerMap(
     .from("customers")
     .select("id, company_name")
     .order("company_name");
-  const customers = requireReportData({ data, error }, "customers") as {
-    id: string;
-    company_name: string;
-  }[];
+  const customers = parseReportRows(
+    customerRowsSchema,
+    { data, error },
+    "customers"
+  );
   return new Map(customers.map((c) => [c.id, c.company_name]));
 }
 
@@ -517,10 +681,7 @@ export async function fetchStatusHistoryMap(
     .select("proposal_id, old_status, new_status, changed_at")
     .in("proposal_id", proposalIds);
   return buildStatusMetricsMap(
-    requireReportData(
-      { data, error },
-      "proposal status history"
-    ) as StatusHistoryRow[],
+    parseReportRows(statusHistoryRowsSchema, { data, error }, "proposal status history"),
     now
   );
 }
