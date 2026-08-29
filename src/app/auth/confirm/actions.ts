@@ -2,7 +2,7 @@
 
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
-import { sanitizeNextPath } from "@/lib/auth/safe-redirect";
+import { sanitizeNextPath, withParam } from "@/lib/auth/safe-redirect";
 import { createClient } from "@/lib/supabase/server";
 
 // Email link types Supabase can hand us via the confirm link. Anything else is
@@ -33,21 +33,36 @@ export async function confirmEmailOtp(formData: FormData) {
     typeof rawNext === "string" ? rawNext : null
   );
 
+  // Narrowed to a known OTP type, or null. Only a validated value is ever
+  // reflected back into the error page's query string.
+  const otpType =
+    typeof rawType === "string" && isEmailOtpType(rawType) ? rawType : null;
+
   let verified = false;
-  if (
-    typeof tokenHash === "string" &&
-    typeof rawType === "string" &&
-    isEmailOtpType(rawType)
-  ) {
+  if (typeof tokenHash === "string" && otpType) {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({
-      type: rawType,
+      type: otpType,
       token_hash: tokenHash,
     });
     verified = !error;
   }
 
+  // The recovery mode is derived here rather than defaulted in the confirm
+  // page, so it holds whether or not the email template supplies `next`. The
+  // templates are edited in the Supabase dashboard, outside this repo — a
+  // Recovery template copied from the invite one would carry
+  // `next=/set-password` and silently land the user on invite copy.
+  const destination =
+    otpType === "recovery" ? withParam(next, "mode", "recovery") : next;
+
+  // Carry the type through so /auth-error can tell someone whose reset link
+  // expired to request a new one, rather than to ask an admin for an invite.
+  const failure = otpType
+    ? withParam("/auth-error", "type", otpType)
+    : "/auth-error";
+
   // redirect() throws NEXT_REDIRECT, so it must run after the async work and
   // outside any try/catch.
-  redirect(verified ? next : "/auth-error");
+  redirect(verified ? destination : failure);
 }

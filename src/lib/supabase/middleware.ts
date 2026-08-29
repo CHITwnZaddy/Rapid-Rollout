@@ -1,5 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  isAuthenticatedRedirectPath,
+  isPublicPath,
+} from "@/lib/auth/public-paths";
 import { getRequiredEnv } from "@/lib/env";
 import type { Database } from "@/types/database";
 
@@ -84,16 +88,12 @@ export async function updateSession(request: NextRequest) {
     console.error("Supabase auth user lookup failed", userError.message);
   }
 
-  // Redirect unauthenticated users to login. The /auth namespace
-  // (/auth/confirm verifies invite/recovery links, /auth-error reports a
-  // failed verification) must stay reachable without a session, since the
-  // invitee has no session until verifyOtp runs.
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth") &&
-    request.nextUrl.pathname !== "/"
-  ) {
+  const { pathname } = request.nextUrl;
+
+  // Redirect unauthenticated users to login. The public set is enumerated in
+  // @/lib/auth/public-paths so the exemptions are explicit and testable rather
+  // than an incidental consequence of prefix matching.
+  if (!user && !isPublicPath(pathname)) {
     return redirectWithSupabaseAuthState(
       request,
       supabaseResponse,
@@ -101,8 +101,9 @@ export async function updateSession(request: NextRequest) {
     );
   }
 
-  // Redirect authenticated users away from auth pages
-  if (user && request.nextUrl.pathname.startsWith("/login")) {
+  // Redirect authenticated users away from the sign-in surfaces. This set
+  // deliberately excludes /auth/confirm — see the warning in public-paths.ts.
+  if (user && isAuthenticatedRedirectPath(pathname)) {
     return redirectWithSupabaseAuthState(
       request,
       supabaseResponse,
