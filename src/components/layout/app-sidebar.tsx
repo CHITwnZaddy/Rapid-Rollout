@@ -18,6 +18,7 @@ import {
   Palette,
   Settings,
   Target,
+  User,
   Users,
   UserCog,
   X,
@@ -153,6 +154,21 @@ export function AppSidebar() {
         </nav>
 
         <div className="border-t p-3">
+          <Link
+            href="/account"
+            title={isCollapsed ? "Account" : undefined}
+            onClick={closeMobile}
+            className={cn(
+              "mb-2 flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              isCollapsed && "justify-center px-2",
+              pathname.startsWith("/account")
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+            )}
+          >
+            <User className="size-4 shrink-0" />
+            {!isCollapsed && <span>Account</span>}
+          </Link>
           {!isCollapsed && (
             <div className="mb-2 truncate px-3 text-sm text-sidebar-foreground/70">
               {user?.email}

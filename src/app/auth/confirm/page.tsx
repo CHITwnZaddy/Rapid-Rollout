@@ -17,8 +17,25 @@ import { confirmEmailOtp } from "./actions";
 // the single-use token before the human ever clicks — the cause of the
 // "otp_expired / Email link is invalid or has expired" error.
 //
-// The Supabase email templates must link here, e.g.:
-//   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type={{ .Type }}&next=/set-password
+// The Supabase email templates must link here:
+//   Invite   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type={{ .Type }}&next=/set-password
+//   Recovery {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery
+//
+// The Recovery template needs no `next` — confirmEmailOtp derives
+// /set-password?mode=recovery from the type itself.
+const COPY = {
+  recovery: {
+    title: "Reset your password",
+    description:
+      "Click continue to verify this link and choose a new password.",
+  },
+  default: {
+    title: "Confirm your account",
+    description:
+      "Click continue to verify your invite and finish setting up your account.",
+  },
+} as const;
+
 export default async function ConfirmPage({
   searchParams,
 }: {
@@ -34,16 +51,15 @@ export default async function ConfirmPage({
     redirect("/auth-error");
   }
 
+  const copy = type === "recovery" ? COPY.recovery : COPY.default;
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30">
       <div className="w-full max-w-md px-4">
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Confirm your account</CardTitle>
-            <CardDescription>
-              Click continue to verify your invite and finish setting up your
-              account.
-            </CardDescription>
+            <CardTitle className="text-2xl">{copy.title}</CardTitle>
+            <CardDescription>{copy.description}</CardDescription>
           </CardHeader>
           <CardContent>
             <form action={confirmEmailOtp}>
