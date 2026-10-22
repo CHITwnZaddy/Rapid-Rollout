@@ -18,12 +18,12 @@
 
 ## Decisions needed from Austin (before the ticket that cites them)
 
-| # | Decision | Recommendation | Cited by |
-| --- | --- | --- | --- |
-| D1 | How "Remove user" should work: **soft delete** (no schema change; audit rows keep the actor id; email becomes reusable) vs **hard delete + FK migration** (`ON DELETE SET NULL` on three columns) | Soft delete | Ticket 4 |
-| D2 | Dashboard window semantics: should pipeline widgets (open value, stage charts, stale, on hold) show the **current snapshot regardless of creation date**, with the date window applying only to closed-won revenue / variance by LoE signed date? | Yes (snapshot for pipeline, LoE-signed window for revenue) | Ticket 9 |
-| D3 | Closed Won: reject **blank** sold price / LoE value only (keep the current "zero or greater" rule), or require **> 0**? | Reject blank; allow 0 only with an explicit confirmation | Ticket 12 |
-| D4 | Non-owner editing: hide/disable edit controls for SEs who did not create the proposal (admins keep full edit), or keep the UI open and rely on the new error messages? | Disable + banner | Ticket 7 |
+| # | Decision | Recommendation | Cited by | Austin's call (2026-10-22) |
+| --- | --- | --- | --- | --- |
+| D1 | How "Remove user" should work: **soft delete** (no schema change; audit rows keep the actor id; email becomes reusable) vs **hard delete + FK migration** (`ON DELETE SET NULL` on three columns) | Soft delete | Ticket 4 | **Soft delete** |
+| D2 | Dashboard window semantics: should pipeline widgets (open value, stage charts, stale, on hold) show the **current snapshot regardless of creation date**, with the date window applying only to closed-won revenue / variance by LoE signed date? | Yes (snapshot for pipeline, LoE-signed window for revenue) | Ticket 9 | **Yes, as recommended** |
+| D3 | Closed Won: reject **blank** sold price / LoE value only (keep the current "zero or greater" rule), or require **> 0**? | Reject blank; allow 0 only with an explicit confirmation | Ticket 12 | **Reject blank; 0 only with explicit confirmation** |
+| D4 | Non-owner editing: hide/disable edit controls for SEs who did not create the proposal (admins keep full edit), or keep the UI open and rely on the new error messages? | Disable + banner | Ticket 7 | **Keep the controls enabled and keep the banner: SEs back each other up.** Open follow-up: the live RLS lets only the owner or an admin write the proposal child tables, so a backup SE's edits are rejected at the database today; Ticket 7 must either widen those policies to all authenticated users (SCHEMA ticket, pause for approval) or the banner must say the edit will be refused. |
 
 ## Suggested batching & order
 

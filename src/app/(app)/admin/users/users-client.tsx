@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { inviteUser, updateUserRole, deleteUser } from "./actions";
+import { inviteUser, updateUserRole, deleteUser, type UserRow } from "./actions";
+import type { AppRole } from "@/lib/auth/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,18 +32,20 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-type User = {
-  id: string;
-  email: string;
-  role: string | null;
-  createdAt: string;
-  lastSignIn: string | null;
-};
+const ROLE_OPTIONS: Array<{ value: AppRole; label: string }> = [
+  { value: "user", label: "User (SE)" },
+  { value: "manager", label: "Manager" },
+  { value: "admin", label: "Admin" },
+];
 
-export function UsersClient({ initialUsers }: { initialUsers: User[] }) {
+function roleSelectValue(role: AppRole | null): AppRole {
+  return role ?? "user";
+}
+
+export function UsersClient({ initialUsers }: { initialUsers: UserRow[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "user">("user");
+  const [inviteRole, setInviteRole] = useState<AppRole>("user");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -53,19 +56,29 @@ export function UsersClient({ initialUsers }: { initialUsers: User[] }) {
       const result = await inviteUser(inviteEmail.trim(), inviteRole);
       if (result.ok) {
         setInviteEmail("");
+        // Append the new account right away. This component seeds its own
+        // state from the server prop, so the revalidated page alone would not
+        // show the invite until a full reload (and admins re-invited).
+        setUsers((prev) =>
+          prev.some((u) => u.id === result.user.id)
+            ? prev
+            : [...prev, result.user]
+        );
       } else {
         setError(result.error);
       }
     });
   }
 
-  function handleRoleChange(userId: string, role: "admin" | "user") {
+  function handleRoleChange(userId: string, role: AppRole) {
     setError(null);
     startTransition(async () => {
       const result = await updateUserRole(userId, role);
       if (result.ok) {
         setUsers((prev) =>
-          prev.map((u) => (u.id === userId ? { ...u, role: role === "user" ? null : role } : u))
+          prev.map((u) =>
+            u.id === userId ? { ...u, role: role === "user" ? null : role } : u
+          )
         );
       } else {
         setError(result.error);
@@ -103,14 +116,17 @@ export function UsersClient({ initialUsers }: { initialUsers: User[] }) {
           <label className="text-sm font-medium">Role</label>
           <Select
             value={inviteRole}
-            onValueChange={(v) => setInviteRole(v as "admin" | "user")}
+            onValueChange={(v) => setInviteRole((v as AppRole | null) ?? "user")}
           >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="user">User (SE)</SelectItem>
-              <SelectItem value="admin">Admin</SelectItem>
+              {ROLE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -141,9 +157,9 @@ export function UsersClient({ initialUsers }: { initialUsers: User[] }) {
                 <TableCell className="font-medium">{user.email}</TableCell>
                 <TableCell>
                   <Select
-                    value={user.role === "admin" ? "admin" : "user"}
+                    value={roleSelectValue(user.role)}
                     onValueChange={(v) =>
-                      handleRoleChange(user.id, v as "admin" | "user")
+                      handleRoleChange(user.id, (v as AppRole | null) ?? "user")
                     }
                     disabled={isPending}
                   >
@@ -151,8 +167,11 @@ export function UsersClient({ initialUsers }: { initialUsers: User[] }) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="user">User</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
+                      {ROLE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </TableCell>
@@ -177,8 +196,11 @@ export function UsersClient({ initialUsers }: { initialUsers: User[] }) {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Remove user?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This permanently deletes <strong>{user.email}</strong> from
-                          the system. Their proposals will remain. This cannot be undone.
+                          This removes <strong>{user.email}</strong>&apos;s access:
+                          they are signed out everywhere and can no longer sign
+                          in. Their proposals and history remain, and the email
+                          address can be invited again later. This cannot be
+                          undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
