@@ -70,10 +70,6 @@ export const adminTableConfigs: Record<AdminTableName, AdminTableConfig> = {
       { key: "pm_hours", label: "PM Hrs", type: "number", width: "100px" },
       { key: "ba_hours", label: "BA Hrs", type: "number", width: "100px" },
       { key: "service_group", label: "Group", type: "text" },
-      // sort_order is NOT NULL with no DB default and drives the module order
-      // that create_proposal_bundle seeds into every new proposal's grids. The
-      // create default is computed server-side (max + 1) in actions.ts.
-      { key: "sort_order", label: "Sort", type: "number", width: "80px" },
       { key: "status", label: "Status", type: "text", width: "100px" },
       { key: "lookup_key", label: "Lookup Key", type: "text" },
     ],

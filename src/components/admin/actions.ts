@@ -105,40 +105,6 @@ async function loadRow(
   return { ok: true, row: parsed.data };
 }
 
-// Create defaults that depend on current table data. service_hours.sort_order
-// is NOT NULL with no database default (migration 20260424195025) and orders
-// the modules create_proposal_bundle seeds into new proposals, so a new row is
-// appended after the current last one instead of failing the insert.
-async function computeCreateDefaults(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  tableName: AdminTableName
-): Promise<
-  | { ok: true; defaults: Record<string, unknown> }
-  | { ok: false; error: string }
-> {
-  if (tableName !== "service_hours") {
-    return { ok: true, defaults: {} };
-  }
-
-  const { data, error } = await supabase
-    .from("service_hours")
-    .select("sort_order")
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  const maxSortOrder =
-    typeof data?.sort_order === "number" && Number.isFinite(data.sort_order)
-      ? data.sort_order
-      : -1;
-
-  return { ok: true, defaults: { sort_order: maxSortOrder + 1 } };
-}
-
 function findEditableColumn(
   columns: ColumnDef[],
   key: string
@@ -164,16 +130,7 @@ export async function addAdminTableRow(tableName: AdminTableName): Promise<Admin
 
   const { columns, createDefaults } = getAdminTableConfig(parsed.data.tableName);
   const supabase = await createClient();
-  const computed = await computeCreateDefaults(supabase, parsed.data.tableName);
-  if (!computed.ok) {
-    return { ok: false, error: computed.error };
-  }
-
-  const nextRow = buildNewRow(
-    columns,
-    { ...createDefaults, ...computed.defaults },
-    Date.now()
-  );
+  const nextRow = buildNewRow(columns, createDefaults, Date.now());
   const { data, error } = await supabase
     .from(parsed.data.tableName)
     .insert(nextRow as never)

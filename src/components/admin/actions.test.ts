@@ -39,7 +39,6 @@ type ServiceHoursRow = {
   pm_hours: number;
   ba_hours: number;
   service_group: string;
-  sort_order: number;
   status: string;
   lookup_key: string;
 };
@@ -82,22 +81,6 @@ function createTableApi(tableName: string) {
             async maybeSingle() {
               const row = getRows().find((candidate) => candidate.id === value) ?? null;
               return { data: row, error: null };
-            },
-          };
-        },
-        order(column: string, options?: { ascending?: boolean }) {
-          return {
-            limit(count: number) {
-              return {
-                async maybeSingle() {
-                  const sorted = [...getRows()].sort((a, b) => {
-                    const left = Number((a as Record<string, unknown>)[column] ?? 0);
-                    const right = Number((b as Record<string, unknown>)[column] ?? 0);
-                    return options?.ascending === false ? right - left : left - right;
-                  });
-                  return { data: sorted.slice(0, count)[0] ?? null, error: null };
-                },
-              };
             },
           };
         },
@@ -219,7 +202,6 @@ describe("admin data table actions", () => {
         pm_hours: 1,
         ba_hours: 1,
         service_group: "Core",
-        sort_order: 7,
         status: "Active",
         lookup_key: "Service|Included",
       },
@@ -288,35 +270,6 @@ describe("admin data table actions", () => {
         lookup_key: "NewService|Included123456",
       }),
     });
-  });
-
-  // service_hours.sort_order is NOT NULL with no DB default; the insert used to
-  // omit it and fail. New rows go after the current highest sort value.
-  it("appends a service_hours row after the current highest sort_order", async () => {
-    const result = await addAdminTableRow("service_hours");
-
-    expect(result).toEqual({
-      ok: true,
-      row: expect.objectContaining({ sort_order: 8 }),
-    });
-  });
-
-  it("starts service_hours sort_order at 0 when the table is empty", async () => {
-    serviceHoursRows = [];
-
-    const result = await addAdminTableRow("service_hours");
-
-    expect(result).toEqual({
-      ok: true,
-      row: expect.objectContaining({ sort_order: 0 }),
-    });
-  });
-
-  it("does not add computed defaults to tables that have none", async () => {
-    const result = await addAdminTableRow("rate_cards");
-
-    expect(result.ok).toBe(true);
-    expect(result.ok ? result.row : undefined).not.toHaveProperty("sort_order");
   });
 
   it("deletes rows and revalidates the matching table pages", async () => {

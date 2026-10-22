@@ -29,7 +29,7 @@
 
 | Batch | Tickets | What | Schema | PRs |
 | --- | --- | --- | --- | --- |
-| **1 — stop the bleeding** | 1, 2, 3, 4, 5 | font, service-hours Add Row, admin Users page, user removal, re-invites + Supabase dashboard checklist | 4 only if D1 = hard delete | 1 PR for tickets 1–2, 1 PR for 3–4, ticket 5 is operational |
+| **1 — stop the bleeding** | 1, 2, 3, 4, 5 | font, service-hours Add Row, admin Users page, user removal, re-invites + Supabase dashboard checklist | No (D1 = soft delete) | Ticket 1 = [#146](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/146), Ticket 2 = [#148](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/148), Tickets 3–4 = [#147](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/147); ticket 5 is operational |
 | **2 — silent no-op writes** | 6, 7 | affected-row checks everywhere, then ownership-aware UI | No | 1 PR each |
 | **3 — dashboard & reports** | 8, 9, 10, 11 | stale thresholds, quota window, inclusive dates + DST, Proposal Log/Hours/Breakout | No | 1 PR for 8–9, 1 PR for 10–11 |
 | **4 — proposal lifecycle** | 12, 13, 14 | closeout validation + delete ordering + Closed Lost, scenario grid resilience, correction UI | No | 1 PR each |
@@ -41,6 +41,8 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 ---
 
 ## Ticket 1: Restore the Geist font (self-referencing `--font-sans`)  P1
+
+> Status: implemented in [#146](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/146) (opened from the review session's task card); CI green, awaiting staging verification.
 
 **Purpose:** `src/app/globals.css:10` declares `--font-sans: var(--font-sans);` inside `@theme inline`. A cyclic custom property is invalid at computed-value time, and the `html { @apply font-sans; }` rule (lines ~127-129) then resolves to the browser default serif font. Compiling the stylesheet with the project's Tailwind confirms `html{font-family:var(--font-sans)}` is the winning rule. Present since 2026-05-13 (`2fb9e12`); masked only for users who picked a Google font on `/admin/theme`.
 
@@ -58,6 +60,8 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 
 ## Ticket 2: `/admin/service-hours` "Add Row" always fails (NOT NULL `sort_order`)  P1
 
+> Status: implemented in [#148](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/148) (opened from the review session's task card); CI green, awaiting staging verification.
+
 **Purpose:** `service_hours.sort_order` is `integer NOT NULL` with no default *(live)*; `createDefaults` for `service_hours` in `src/components/admin/data-table-config.ts` (~lines 76-86) never supplies it, so `addAdminTableRow` (`src/components/admin/actions.ts:133-138`) inserts NULL and Postgres rejects it. Migration `20260424195025_service_hours_sort_order.sql` (lines 21-22) said the admin UI would be updated in a follow-up; it never was.
 
 **Files:** `src/components/admin/data-table-config.ts`, `src/components/admin/actions.ts`, `src/components/admin/data-table-utils.ts`, `src/components/admin/actions.test.ts`.
@@ -73,6 +77,8 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 ---
 
 ## Ticket 3: Admin Users page — demotion no-op, invite list, list cap, manager role  P1
+
+> Status: implemented in [#147](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/147) together with Ticket 4.
 
 **Purpose:** Four defects in `src/app/(app)/admin/users/`:
 1. Demoting to "User" sends `updateUserById(id, { app_metadata: {} })` (`actions.ts` ~119-122). GoTrue merges `app_metadata` key by key, so `role: "admin"` survives; the UI shows "User" until reload and every guard still treats the person as admin.
@@ -94,7 +100,9 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 
 ---
 
-## Ticket 4: "Remove user" fails for anyone who ever touched a proposal  P1  *(decision D1; SCHEMA only if hard delete)*
+## Ticket 4: "Remove user" fails for anyone who ever touched a proposal  P1  *(decision D1 = soft delete; no schema change)*
+
+> Status: implemented in [#147](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/147) (soft delete).
 
 **Purpose:** `deleteUser` hard-deletes via `admin.auth.admin.deleteUser(id)` (`actions.ts:148`). Live FKs `proposal_status_history.changed_by`, `proposal_stale_thresholds.updated_by`, `proposals.closed_financials_corrected_by` are `ON DELETE NO ACTION`, and every proposal bootstrap / status change inserts a history row, so Postgres rejects the delete → "Database error deleting user". The dialog promises "Their proposals will remain".
 
