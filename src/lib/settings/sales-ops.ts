@@ -49,14 +49,22 @@ export async function listKpiUserTargets(): Promise<KpiUserTarget[]> {
 export async function listSettingsUsers(): Promise<SettingsUser[]> {
   await assertManagerOrAdmin();
   const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.listUsers();
+  // GoTrue pages at 50 by default; ask for the maximum so every SE can be
+  // assigned a target. Soft-deleted accounts (admin "Remove user") still come
+  // back from the API and are skipped here.
+  const { data, error } = await admin.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
 
   if (error) throw new Error(error.message);
-  return data.users.map((user) => ({
-    id: user.id,
-    email: user.email ?? user.id,
-    role: (user.app_metadata?.role as string | undefined) ?? null,
-  }));
+  return data.users
+    .filter((user) => !user.deleted_at)
+    .map((user) => ({
+      id: user.id,
+      email: user.email ?? user.id,
+      role: (user.app_metadata?.role as string | undefined) ?? null,
+    }));
 }
 
 export async function listStaleThresholds(): Promise<ProposalStaleThreshold[]> {

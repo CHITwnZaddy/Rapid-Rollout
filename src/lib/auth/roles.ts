@@ -13,3 +13,7 @@ export function isManagerRole(role: unknown): role is "manager" {
 export function isManagerOrAdminRole(role: unknown): role is "manager" | "admin" {
   return role === "manager" || role === "admin";
 }
+
+export function isAppRole(role: unknown): role is AppRole {
+  return (APP_ROLES as readonly unknown[]).includes(role);
+}
