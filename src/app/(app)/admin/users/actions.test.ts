@@ -9,6 +9,8 @@ const {
   updateUserByIdMock,
   deleteUserMock,
   listUsersMock,
+  fromMock,
+  targetsDeleteEqMock,
 } = vi.hoisted(() => ({
   assertAdminMock: vi.fn(),
   createAdminClientMock: vi.fn(),
@@ -17,6 +19,8 @@ const {
   updateUserByIdMock: vi.fn(),
   deleteUserMock: vi.fn(),
   listUsersMock: vi.fn(),
+  fromMock: vi.fn(),
+  targetsDeleteEqMock: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-admin", async () => {
@@ -58,6 +62,8 @@ beforeEach(() => {
   updateUserByIdMock.mockReset();
   deleteUserMock.mockReset();
   listUsersMock.mockReset();
+  fromMock.mockReset();
+  targetsDeleteEqMock.mockReset();
 
   assertAdminMock.mockResolvedValue({
     id: callerId,
@@ -70,7 +76,12 @@ beforeEach(() => {
   updateUserByIdMock.mockResolvedValue({ data: {}, error: null });
   deleteUserMock.mockResolvedValue({ data: {}, error: null });
   listUsersMock.mockResolvedValue({ data: { users: [] }, error: null });
+  targetsDeleteEqMock.mockResolvedValue({ error: null });
+  fromMock.mockReturnValue({
+    delete: () => ({ eq: targetsDeleteEqMock }),
+  });
   createAdminClientMock.mockReturnValue({
+    from: fromMock,
     auth: {
       admin: {
         inviteUserByEmail: inviteUserByEmailMock,
@@ -262,6 +273,40 @@ describe("deleteUser", () => {
     expect(result).toEqual({ ok: true });
     expect(deleteUserMock).toHaveBeenCalledWith(otherUserId, true);
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/users");
+  });
+
+  // The old hard delete cascaded kpi_user_targets; a soft delete keeps the
+  // auth row, so the action clears the removed user's targets itself.
+  it("clears the removed user's KPI targets", async () => {
+    const result = await deleteUser(otherUserId);
+
+    expect(result).toEqual({ ok: true });
+    expect(fromMock).toHaveBeenCalledWith("kpi_user_targets");
+    expect(targetsDeleteEqMock).toHaveBeenCalledWith("user_id", otherUserId);
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/kpi-targets");
+  });
+
+  it("does not touch KPI targets when the removal itself fails", async () => {
+    deleteUserMock.mockResolvedValue({
+      data: null,
+      error: { message: "Database error deleting user" },
+    });
+
+    const result = await deleteUser(otherUserId);
+
+    expect(result).toEqual({ ok: false, error: "Database error deleting user" });
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it("reports when the KPI target cleanup fails after the removal", async () => {
+    targetsDeleteEqMock.mockResolvedValue({ error: { message: "boom" } });
+
+    const result = await deleteUser(otherUserId);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "The user was removed, but their KPI targets could not be cleared: boom",
+    });
   });
 
   it("blocks an admin from deleting their own account", async () => {

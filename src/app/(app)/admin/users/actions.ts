@@ -201,7 +201,22 @@ export async function deleteUser(userId: string): Promise<ActionResult> {
     // the auth row (and so the audit trail and "Scoped by" names) intact.
     const { error } = await admin.auth.admin.deleteUser(parsed.data.userId, true);
     if (error) return { ok: false, error: error.message };
+
+    // kpi_user_targets.user_id is ON DELETE CASCADE, which only fired on the
+    // old hard delete. The soft-deleted row stays, so clear the user's targets
+    // here; otherwise they linger on /admin/kpi-targets under a bare user id.
+    const { error: targetsError } = await admin
+      .from("kpi_user_targets")
+      .delete()
+      .eq("user_id", parsed.data.userId);
     revalidatePath("/admin/users");
+    revalidatePath("/admin/kpi-targets");
+    if (targetsError) {
+      return {
+        ok: false,
+        error: `The user was removed, but their KPI targets could not be cleared: ${targetsError.message}`,
+      };
+    }
     return { ok: true };
   } catch (error) {
     return actionError(error, "Unable to remove the user.");
