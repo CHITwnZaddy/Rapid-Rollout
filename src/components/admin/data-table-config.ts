@@ -113,7 +113,18 @@ export const adminTableConfigs: Record<AdminTableName, AdminTableConfig> = {
   service_hours: {
     columns: [
       { key: "service_name", label: "Service Name", type: "text" },
-      { key: "sort_order", label: "Sort Order", type: "number", width: "100px" },
+      // Read-only: module order in new proposals is MIN(sort_order) per
+      // service_name, so a per-row edit is misleading (raising one row of a
+      // service changes nothing) and the generic number editor would accept
+      // decimals the INTEGER column rejects with a raw Postgres error. New rows
+      // still get max + 1 from computeCreateDefaults below.
+      {
+        key: "sort_order",
+        label: "Sort Order",
+        type: "number",
+        width: "100px",
+        editable: false,
+      },
       { key: "scope_value", label: "Scope Value", type: "text" },
       { key: "scope_label", label: "Scope Label", type: "text" },
       { key: "sr_im_hours", label: "Sr. IM Hrs", type: "number", width: "100px" },

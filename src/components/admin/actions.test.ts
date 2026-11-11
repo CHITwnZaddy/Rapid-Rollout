@@ -374,6 +374,26 @@ describe("admin data table actions", () => {
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
+  // Module order is MIN(sort_order) per service_name, so per-row edits from the
+  // generic grid are refused server-side; only Add Row assigns the value.
+  it("refuses edits to the read-only service_hours sort_order column", async () => {
+    const before = JSON.stringify(serviceHoursRows);
+
+    const result = await updateAdminTableCell(
+      "service_hours",
+      "33333333-3333-4333-8333-333333333332",
+      "sort_order",
+      "1.5"
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Couldn't save that field because its column is missing.",
+    });
+    expect(JSON.stringify(serviceHoursRows)).toBe(before);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
   it("deletes rows and revalidates the matching table pages", async () => {
     const result = await deleteAdminTableRow(
       "service_hours",
