@@ -74,28 +74,32 @@ describe("sales ops settings loaders", () => {
   });
 
   it("loads users with id, email, and role for target assignment", async () => {
-    createAdminClientMock.mockReturnValue({
-      auth: {
-        admin: {
-          listUsers: vi.fn(async () => ({
-            data: {
-              users: [
-                {
-                  id: "user-1",
-                  email: "se@example.com",
-                  app_metadata: { role: "user" },
-                },
-              ],
-            },
-            error: null,
-          })),
-        },
+    const listUsers = vi.fn(async () => ({
+      data: {
+        users: [
+          {
+            id: "user-1",
+            email: "se@example.com",
+            app_metadata: { role: "user" },
+          },
+          {
+            id: "user-2",
+            email: "removed@example.com",
+            app_metadata: {},
+            deleted_at: "2026-10-01T00:00:00.000Z",
+          },
+        ],
       },
-    });
+      error: null,
+    }));
+    createAdminClientMock.mockReturnValue({ auth: { admin: { listUsers } } });
 
+    // Soft-deleted ("removed") accounts are left out, and the request asks for
+    // more than GoTrue's default page of 50.
     await expect(listSettingsUsers()).resolves.toEqual([
       { id: "user-1", email: "se@example.com", role: "user" },
     ]);
+    expect(listUsers).toHaveBeenCalledWith({ page: 1, perPage: 1000 });
   });
 
   it("loads stale thresholds", async () => {
