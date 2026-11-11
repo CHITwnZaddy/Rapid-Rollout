@@ -128,9 +128,28 @@ export async function addAdminTableRow(tableName: AdminTableName): Promise<Admin
     return permission;
   }
 
-  const { columns, createDefaults } = getAdminTableConfig(parsed.data.tableName);
+  const { columns, createDefaults, computeCreateDefaults } = getAdminTableConfig(
+    parsed.data.tableName
+  );
   const supabase = await createClient();
-  const nextRow = buildNewRow(columns, createDefaults, Date.now());
+
+  // Table-specific defaults that depend on existing rows (for example
+  // service_hours.sort_order). A failed lookup aborts the add instead of
+  // inserting a row that would violate NOT NULL or land in the wrong position.
+  let computedDefaults: Record<string, unknown> = {};
+  if (computeCreateDefaults) {
+    const computed = await computeCreateDefaults(supabase);
+    if (!computed.ok) {
+      return { ok: false, error: computed.error };
+    }
+    computedDefaults = computed.defaults;
+  }
+
+  const nextRow = buildNewRow(
+    columns,
+    { ...createDefaults, ...computedDefaults },
+    Date.now()
+  );
   const { data, error } = await supabase
     .from(parsed.data.tableName)
     .insert(nextRow as never)
