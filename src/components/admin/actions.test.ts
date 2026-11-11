@@ -41,13 +41,22 @@ type ServiceHoursRow = {
   service_group: string;
   status: string;
   lookup_key: string;
+  sort_order: number;
 };
 
 let customersRows: CustomerRow[] = [];
 let rateCardRows: RateCardRow[] = [];
 let serviceHoursRows: ServiceHoursRow[] = [];
 
+// When set, the ordered select used for computed defaults (max sort_order)
+// fails with this message so the error path can be exercised.
+let orderedSelectError: string | null = null;
+
 type AnyRow = CustomerRow | RateCardRow | ServiceHoursRow;
+
+function numberAt(row: AnyRow, column: string): number {
+  return Number((row as Record<string, unknown>)[column]);
+}
 
 function createTableApi(tableName: string) {
   const getRows = (): AnyRow[] => {
@@ -81,6 +90,25 @@ function createTableApi(tableName: string) {
             async maybeSingle() {
               const row = getRows().find((candidate) => candidate.id === value) ?? null;
               return { data: row, error: null };
+            },
+          };
+        },
+        order(column: string, options?: { ascending?: boolean }) {
+          return {
+            limit(count: number) {
+              return {
+                async maybeSingle() {
+                  if (orderedSelectError) {
+                    return { data: null, error: { message: orderedSelectError } };
+                  }
+                  const direction = options?.ascending === false ? -1 : 1;
+                  const sorted = [...getRows()].sort(
+                    (left, right) =>
+                      direction * (numberAt(left, column) - numberAt(right, column))
+                  );
+                  return { data: sorted.slice(0, count)[0] ?? null, error: null };
+                },
+              };
             },
           };
         },
@@ -166,6 +194,7 @@ describe("admin data table actions", () => {
     assertAdminMock.mockReset();
     assertAuthenticatedMock.mockReset();
     revalidatePathMock.mockReset();
+    orderedSelectError = null;
 
     assertAdminMock.mockResolvedValue({ id: "admin-1" });
     assertAuthenticatedMock.mockResolvedValue({ id: "user-1" });
@@ -204,6 +233,7 @@ describe("admin data table actions", () => {
         service_group: "Core",
         status: "Active",
         lookup_key: "Service|Included",
+        sort_order: 0,
       },
     ];
   });
@@ -270,6 +300,78 @@ describe("admin data table actions", () => {
         lookup_key: "NewService|Included123456",
       }),
     });
+  });
+
+  it("adds rate_cards rows from static defaults alone", async () => {
+    vi.spyOn(Date, "now").mockReturnValueOnce(654321);
+
+    const result = await addAdminTableRow("rate_cards");
+
+    expect(result).toEqual({
+      ok: true,
+      row: expect.objectContaining({
+        rate_card_name: "Master",
+        activity: "New Role",
+        rate: 0,
+        role_category: "Professional Services",
+        status: "Active",
+        lookup_key: "Master|NewRole654321",
+      }),
+    });
+  });
+
+  it("inserts new service_hours rows with sort_order = max(sort_order) + 1", async () => {
+    // Highest sort_order deliberately comes first so "last row" and "max" differ.
+    serviceHoursRows = [
+      {
+        id: "33333333-3333-4333-8333-333333333334",
+        service_name: "Reporting",
+        scope_value: "Included",
+        scope_label: "Included",
+        sr_im_hours: 2,
+        pm_hours: 2,
+        ba_hours: 2,
+        service_group: "Core",
+        status: "Active",
+        lookup_key: "Reporting|Included",
+        sort_order: 7,
+      },
+      ...serviceHoursRows,
+    ];
+
+    const result = await addAdminTableRow("service_hours");
+
+    expect(result).toEqual({
+      ok: true,
+      row: expect.objectContaining({ service_name: "New Service", sort_order: 8 }),
+    });
+    expect(serviceHoursRows.at(-1)).toEqual(
+      expect.objectContaining({ service_name: "New Service", sort_order: 8 })
+    );
+  });
+
+  it("starts sort_order at 0 for the first service_hours row", async () => {
+    serviceHoursRows = [];
+
+    const result = await addAdminTableRow("service_hours");
+
+    expect(result).toEqual({
+      ok: true,
+      row: expect.objectContaining({ sort_order: 0 }),
+    });
+  });
+
+  it("does not insert a service_hours row when the sort_order lookup fails", async () => {
+    orderedSelectError = "permission denied for table service_hours";
+
+    const result = await addAdminTableRow("service_hours");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "permission denied for table service_hours",
+    });
+    expect(serviceHoursRows).toHaveLength(1);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   it("deletes rows and revalidates the matching table pages", async () => {
