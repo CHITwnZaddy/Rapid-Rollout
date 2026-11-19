@@ -1,10 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import { PROPOSAL_CHANGE_NOT_SAVED } from "@/lib/supabase/affected-rows";
 import {
   assertMigrationWriteSaved,
   createMigrationPersistenceController,
   MigrationSaveRefusedError,
 } from "./migration-persistence";
+
+describe("MigrationSaveRefusedError", () => {
+  it("defaults to the shared not-saved message", () => {
+    const error = new MigrationSaveRefusedError();
+
+    expect(error.message).toBe(PROPOSAL_CHANGE_NOT_SAVED);
+    expect(error.name).toBe("MigrationSaveRefusedError");
+  });
+});
 
 describe("assertMigrationWriteSaved", () => {
   it("accepts a write that changed a row", () => {
@@ -13,7 +22,7 @@ describe("assertMigrationWriteSaved", () => {
     ).not.toThrow();
   });
 
-  it("throws the not-permitted refusal when RLS let the write through with zero rows", () => {
+  it("throws the not-saved refusal when the write matched zero rows (deleted row / ended session)", () => {
     let thrown: unknown;
     try {
       assertMigrationWriteSaved({ error: null, count: 0 }, "Couldn't save.");
@@ -22,7 +31,7 @@ describe("assertMigrationWriteSaved", () => {
     }
 
     expect(thrown).toBeInstanceOf(MigrationSaveRefusedError);
-    expect((thrown as Error).message).toBe(PROPOSAL_EDIT_NOT_PERMITTED);
+    expect((thrown as Error).message).toBe(PROPOSAL_CHANGE_NOT_SAVED);
   });
 
   it("treats a missing count (no { count: \"exact\" }) as a refusal, not a save", () => {
@@ -265,7 +274,7 @@ describe("createMigrationPersistenceController", () => {
     expect(saveLine.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("reports a zero-row (RLS-refused) write as an error instead of saved", async () => {
+  it("reports a zero-row write (deleted row / ended session) as an error instead of saved", async () => {
     const statuses: string[] = [];
     const errors: string[] = [];
     const saveComputedTotal = vi.fn(async () => undefined);
@@ -277,7 +286,8 @@ describe("createMigrationPersistenceController", () => {
         lines: [{ id: "line-1", quantity: 7 }],
       }),
       saveConfig: vi.fn(async () => undefined),
-      // What the hook's saveLine does with Supabase's reply for a non-owner.
+      // What the hook's saveLine does with Supabase's zero-row reply when the
+      // row is gone or the session ended.
       saveLine: vi.fn(async () => {
         assertMigrationWriteSaved(
           { error: null, count: 0 },
@@ -297,7 +307,7 @@ describe("createMigrationPersistenceController", () => {
     await vi.advanceTimersByTimeAsync(50);
 
     expect(statuses).toEqual(["saving", "error"]);
-    expect(errors).toEqual([PROPOSAL_EDIT_NOT_PERMITTED]);
+    expect(errors).toEqual([PROPOSAL_CHANGE_NOT_SAVED]);
     expect(saveComputedTotal).not.toHaveBeenCalled();
   });
 

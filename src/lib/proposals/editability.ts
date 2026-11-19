@@ -1,4 +1,4 @@
-import { isAdminRole, isManagerRole } from "@/lib/auth/roles";
+import { isAdminRole } from "@/lib/auth/roles";
 
 export type ProposalEditabilityInput = {
   /** The signed-in user's id, or null when there is no session. */
@@ -10,38 +10,47 @@ export type ProposalEditabilityInput = {
 };
 
 export type ProposalEditability = {
-  /** May save the proposal's child tables (scenarios, bid sheet, scope, migration). */
-  canEditContent: boolean;
-  /** May update the proposals row itself (status, name, closeout figures). */
-  canChangeStatus: boolean;
+  /**
+   * May save changes to the proposal and every tab (scenario grid, complexity
+   * factors, bid sheet, scoped services, migration), rename it, change its
+   * status and close it won/lost.
+   */
+  canEdit: boolean;
   /** May delete the proposal. */
   canDelete: boolean;
   isOwner: boolean;
 };
 
 /**
- * Mirrors the live RLS matrix for a proposal so the UI can tell a user, up
- * front, when the database will refuse their writes:
- *   - child tables: owner or admin
- *   - proposals row update: owner, manager or admin
- *   - proposals row delete: owner or admin
- *
- * Decision D4: controls stay enabled for everyone (SEs back each other up),
- * so this only drives an informational notice; it never gates a control.
+ * Mirrors the live RLS matrix for a proposal (migration
+ * 20261119220158_allow_any_se_to_edit_proposals) so the UI can show who may
+ * do what. SEs act as backups for each other, so editing is shared:
+ *   - edit any tab (scenario grid, complexity factors, bid sheet, scoped
+ *     services lines incl. add/remove/Clear Tab, migration config and rows
+ *     incl. add/remove/Clear Tab): any signed-in user
+ *   - rename, change status, close won/lost (sold price, LoE value/date):
+ *     any signed-in user
+ *   - correct closed-won financials: manager or admin (enforced by
+ *     correctClosedProposalFinancials and a DB guard on the correction stamp;
+ *     not modelled here)
+ *   - delete the proposal: owner or admin
+ *   - change who owns it (created_by): admin only (DB trigger, 42501; the app
+ *     never does this)
+ * Edits are not attributed yet (no change tracking); status changes still
+ * record who made them.
  */
 export function getProposalEditability({
   userId,
   role,
   createdBy,
 }: ProposalEditabilityInput): ProposalEditability {
-  const isOwner = Boolean(userId) && Boolean(createdBy) && userId === createdBy;
+  const isSignedIn = Boolean(userId);
+  const isOwner = isSignedIn && Boolean(createdBy) && userId === createdBy;
   const isAdmin = isAdminRole(role);
-  const isManager = isManagerRole(role);
 
   return {
-    canEditContent: isOwner || isAdmin,
-    canChangeStatus: isOwner || isManager || isAdmin,
-    canDelete: isOwner || isAdmin,
+    canEdit: isSignedIn,
+    canDelete: isSignedIn && (isOwner || isAdmin),
     isOwner,
   };
 }

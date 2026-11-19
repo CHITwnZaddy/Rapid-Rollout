@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import { PROPOSAL_CHANGE_NOT_SAVED } from "@/lib/supabase/affected-rows";
 import { MigrationSaveRefusedError } from "./migration-persistence";
 import {
   writeMigrationComputedTotal,
@@ -69,7 +69,7 @@ describe("writeMigrationConfig", () => {
     expect(fake.updateEq).toHaveBeenCalledWith("id", "cfg-1");
   });
 
-  it("reports a refusal when RLS changed zero rows", async () => {
+  it("reports the write as not saved when it changed zero rows (deleted row / ended session)", async () => {
     const fake = fakeClient({ error: null, count: 0 });
 
     const error = await thrownBy(
@@ -77,7 +77,7 @@ describe("writeMigrationConfig", () => {
     );
 
     expect(error).toBeInstanceOf(MigrationSaveRefusedError);
-    expect((error as Error).message).toBe(PROPOSAL_EDIT_NOT_PERMITTED);
+    expect((error as Error).message).toBe(PROPOSAL_CHANGE_NOT_SAVED);
   });
 
   it("keeps a Supabase error retryable", async () => {
@@ -127,7 +127,7 @@ describe("writeMigrationLine", () => {
     expect(fake.selectEq).toHaveBeenCalledWith("id", "line-1");
   });
 
-  it("reports a refusal when zero rows changed but the row is still there", async () => {
+  it("reports the write as not saved when zero rows changed but the row is still there", async () => {
     const fake = fakeClient(
       { error: null, count: 0 },
       { data: { id: "line-1" }, error: null }
@@ -136,7 +136,7 @@ describe("writeMigrationLine", () => {
     const error = await thrownBy(writeMigrationLine(fake.client, LINE));
 
     expect(error).toBeInstanceOf(MigrationSaveRefusedError);
-    expect((error as Error).message).toBe(PROPOSAL_EDIT_NOT_PERMITTED);
+    expect((error as Error).message).toBe(PROPOSAL_CHANGE_NOT_SAVED);
   });
 
   it("keeps the save retryable when the follow-up lookup fails", async () => {
@@ -191,7 +191,7 @@ describe("writeMigrationComputedTotal", () => {
     expect(fake.updateEq).toHaveBeenCalledWith("id", "cfg-1");
   });
 
-  it("reports a refusal when RLS changed zero rows", async () => {
+  it("reports the write as not saved when it changed zero rows (deleted row / ended session)", async () => {
     const fake = fakeClient({ error: null, count: 0 });
 
     await expect(

@@ -93,7 +93,7 @@ Out of scope or deferred:
 
 | User type | Responsibilities | Key screens |
 | --- | --- | --- |
-| Sales Engineer | Create proposals, configure scenarios, scoped services, migration services, bid sheets | Dashboard, Proposals, Proposal tabs |
+| Sales Engineer | Create proposals, configure scenarios, scoped services, migration services, bid sheets; edit a colleague's proposal as their backup | Dashboard, Proposals, Proposal tabs |
 | Admin | Maintain lookup tables, users, and operational data | Admin section |
 | Leadership/Operations | Review pipeline value, stale proposals, time-to-close metrics, hours and revenue reports | Reports |
 
@@ -218,7 +218,7 @@ and lets Summary, Bid Sheet, reports, and exports reconcile to shared behavior.
 | Server actions for mutations | Co-locates mutation logic with app routes and enables typed validation | Actions must explicitly re-check auth because UI gates are not security |
 | Pure calculation modules | Pricing can be unit tested and reused across views | Requires discipline to avoid duplicating math in components |
 | Atomic Postgres RPCs for proposal bootstrap and status transition | Prevents half-created proposals and status/history drift | RPC migrations must be deployed before dependent code |
-| Global authenticated read for proposals | Supports Sales Engineer backup workflow | Write policies must be tighter to prevent unauthorized edits |
+| Global authenticated read **and edit** for proposals (Austin, 2026-11-19; migration `20261119220158_allow_any_se_to_edit_proposals`) | SEs back each other up: a backup SE can open and save a colleague's proposal on every tab | Edits are not attributed to who made them (no change tracking yet; status changes still record `changed_by`). Delete stays owner-or-admin, changing the owner is admin-only and correcting closed-won financials is manager-or-admin, enforced by RLS and the `trg_guard_proposal_ownership` trigger |
 | One Complexity Factor as contingency model | Makes CF affect client price without inflating internal cost | Requires careful explanation in UI because total hours include contingency |
 | ExcelJS dynamic import | Keeps XLSX dependency out of initial browser bundle | Export code lives client-side and must be tested through browser smoke tests |
 
@@ -234,9 +234,14 @@ The CI workflow runs on pull requests and pushes to `main`:
 | Migrations drift | Uses `SUPABASE_DB_URL` to compare repo migration history to the target database |
 
 Application code deploys through the GitHub/Vercel path. Supabase schema
-changes do not automatically deploy with Vercel. Schema migrations must be
-applied to the target Supabase project before smoke testing code that depends
-on them.
+changes do not deploy with Vercel: the Supabase GitHub integration applies new
+files in `supabase/migrations` when a PR merges (`staging` -> staging project,
+`main` -> production project, about 30-60 seconds after the merge, shown as a
+"Supabase Preview" check on the merge commit). Code that depends on a
+migration is smoke tested only after that check passes. The drift job compares
+against the production ledger, so it fails on a schema PR into `staging` and on
+its promotion PR until production has the migration. The full runbook,
+including the CLI fallback, is `docs/deploy-and-migrations.md`.
 
 ## Data design
 
@@ -379,8 +384,11 @@ Important columns:
 
 #### `customers`
 
-Stores customer identity and address information. Customers are shared across
-the authenticated team. Customer edits are audited through change-log triggers.
+Stores customer identity and address information. Every signed-in user can
+read every customer and create new ones, but only the user who created a
+customer, or an admin, can change it. Deleting also requires that no proposal
+references the customer, unless the user is an admin. Customer edits are
+audited through change-log triggers.
 
 Important columns:
 
@@ -388,7 +396,7 @@ Important columns:
 | --- | --- |
 | `company_name` | Primary customer display name |
 | `address_line1`, `address_line2`, `city`, `state`, `zip` | Bid Sheet and export address |
-| `created_by` | User that created the customer row, used by RLS for some write rules |
+| `created_by` | User that created the customer row; RLS lets only this user or an admin update or delete it |
 
 #### `proposals`
 
@@ -400,7 +408,7 @@ Important columns:
 | --- | --- |
 | `name` | Proposal name |
 | `customer_id` | Optional selected customer |
-| `created_by` | Owner used for write authorization |
+| `created_by` | Owner. Only the owner or an admin can delete the proposal, and only an admin can change this column (trigger `trg_guard_proposal_ownership`). Editing the proposal is open to every signed-in user |
 | `status` | Current lifecycle status |
 | `notes` | Proposal notes |
 | `scoped_complexity_factor` | Complexity Factor for Scoped Services |
@@ -750,6 +758,7 @@ If code is deployed before migrations, Supabase schema-cache errors will occur.
 | Missing proposal child rows | Page renders unavailable/error card rather than self-healing silently |
 | Invalid form input | Zod returns user-readable validation message |
 | Supabase mutation error | Server action returns `ok: false` with Supabase error message |
+| Proposal write that changed zero rows | The proposal or row was deleted (for example in another tab) or the session ended; the action returns `ok: false` with `PROPOSAL_CHANGE_NOT_SAVED` from `src/lib/supabase/affected-rows.ts` ("This change wasn't saved. The proposal may have been deleted, or you may have been signed out. Reload the page and try again.") |
 | Export generation | Browser dynamic import creates XLSX; user smoke testing verifies downloaded workbook |
 
 ### Security and authentication design
@@ -765,6 +774,30 @@ Authentication is provided by Supabase Auth. Authorization is split into:
 Client-side admin checks are not trusted as security. The code comments
 explicitly treat `useAuth().isAdmin` and `useRequireAdmin()` as UI-only helpers.
 The trusted boundary is server-side user verification plus RLS.
+
+#### Proposal permissions
+
+SEs act as backups for each other (Austin, 2026-11-19; migration
+`20261119220158_allow_any_se_to_edit_proposals`), so editing a proposal is
+shared the same way reading it is:
+
+| Action | Who |
+| --- | --- |
+| Read any proposal and its tabs | any signed-in user |
+| Edit any tab (scenario grid, complexity factors, bid sheet, scoped services lines and Clear Tab, migration config and rows and Clear Tab) | any signed-in user |
+| Rename, change status, close won/lost (sold price, LoE value and date) | any signed-in user |
+| Correct closed-won financials (`correctClosedProposalFinancials`) | manager or admin (database guard on the correction stamp) |
+| Delete a proposal | owner or admin (`deleteProposal` checks before writing the change-log row; RLS enforces it) |
+| Change who owns a proposal (`created_by`) | admin only (trigger `trg_guard_proposal_ownership`, error 42501) |
+| Create or delete the structural rows (`scenarios`, `scenario_lines`, `bid_sheets`, `migration_config`) | owner or admin; the app only does this in `create_proposal_bundle` and the proposal-delete cascade |
+| Move a row to a different proposal (change `proposal_id`, or a scenario line's `scenario_id`) | nobody through the app or API (triggers `trg_guard_*_parent`, error 42501); otherwise a move followed by a delete would bypass the owner-or-admin delete rule |
+
+Edits are not attributed to the user who made them: there is no change
+tracking yet. Status changes still record who made them
+(`proposal_status_history.changed_by`), and deletes and closed-won corrections
+write `change_log` rows. A signed-in SE who is not the owner (and not an admin)
+sees a muted note in the proposal header saying they are editing the owner's
+proposal as their backup, and the Delete button is hidden for them.
 
 ### Message and data formats
 
@@ -890,10 +923,13 @@ proposal status changes but the history row fails.
 Proposal deletion uses:
 
 - Auth check.
+- Ownership check: only the owner or an admin may delete. It runs before the
+  typed-confirmation check and the change-log insert, so a refused delete
+  leaves no false DELETE audit row. The button is hidden for everyone else.
 - Typed confirmation phrase.
 - Optional justification.
 - Change log insert.
-- Delete with RLS enforcing ownership/admin rules.
+- Delete with RLS enforcing the same owner-or-admin rule.
 - Cascading child deletes through foreign keys.
 
 ### Scenario grid component
@@ -1054,8 +1090,9 @@ Editable admin-backed resources:
 Security:
 
 - Rate Cards and Service Hours require admin access.
-- Customers are editable by authenticated users per the current collaborative
-  customer-management model.
+- Customers can be created by any signed-in user, but only the user who
+  created a customer, or an admin, can change or delete it (RLS). A refused
+  customer edit returns `CUSTOMER_EDIT_NOT_PERMITTED`.
 - Admin server actions still re-check permissions.
 
 ## User interface design
@@ -1441,7 +1478,7 @@ Recommended future improvements:
 | The app is deployed as a Next.js 16 application | Code and README pin Next.js 16.2.3 |
 | Supabase is the database and auth provider | All data access and auth helpers use Supabase |
 | `src/types/database.ts` is regenerated after schema changes | TypeScript database typing depends on it |
-| Migrations are applied separately from app deployment | Vercel deploy does not run Supabase migrations |
+| Migrations are applied separately from app deployment | Vercel deploy does not run Supabase migrations; the Supabase GitHub integration applies new migration files when a PR merges |
 | Rate card lookup keys are stable | Pricing logic depends on exact lookup keys |
 | Service hour lookup keys are stable | Scenario grid uses `ServiceName|ScopeValue` behavior |
 | Proposal child rows exist after creation | `create_proposal_bundle` guarantees this for new proposals |
@@ -1477,11 +1514,11 @@ Recommended future improvements:
 
 | Constraint | Design impact |
 | --- | --- |
-| Schema changes are not automatically deployed | Schema PRs need explicit DB deployment and smoke testing |
+| Schema changes deploy on merge (Supabase GitHub integration), not with Vercel | Schema PRs need an explicit go-ahead before merge and a smoke test after the integration applies them |
 | RLS applies to direct Supabase calls | Server and client queries must be written with policies in mind |
 | Pricing correctness is business-critical | Missing required pricing data must block calculations |
-| Sales Engineers need backup visibility | Authenticated users can read proposals broadly |
-| Only owner/admin should edit proposal-owned data | Write RLS policies remain narrower than read policies |
+| Sales Engineers back each other up | Any signed-in user can read and edit every proposal and its tabs |
+| Deleting a proposal, changing its owner and correcting closed-won financials stay restricted | Delete is owner-or-admin, owner change admin-only, closed-won correction manager-or-admin (RLS plus the `trg_guard_proposal_ownership` trigger) |
 | BA role is a future placeholder | BA columns and helpers remain but rows may be zero/hidden |
 
 ### Known design assumptions
@@ -1506,7 +1543,8 @@ Recommended future improvements:
 | Workbook export coverage | Some export behavior is smoke-tested manually | Add direct tests around Bid Sheet workbook row styles and values |
 | Auth role freshness | Client JWT role can be stale until refresh | Continue treating server/RLS as the security boundary |
 | Legacy snapshot columns | Some bid sheet scenario snapshot columns remain historical | Consider migration cleanup if no consumers remain |
-| Migration deployment | Manual/CLI workflow | Consider a formal deployment runbook or automated gated migration workflow |
+| Migration deployment | Supabase GitHub integration applies new migrations on merge (`staging` -> staging, `main` -> production); CLI fallback in `docs/deploy-and-migrations.md`. The drift check compares against production only, so schema PRs into `staging` and their promotion PRs fail it until production has the migration | Compare each branch against its own project's ledger |
+| Edit attribution | Any signed-in user can edit any proposal and edits are not recorded (status changes still record `changed_by`) | Add change tracking ("who edited what"), deferred by Austin on 2026-11-19 |
 
 ## Glossary of terms
 

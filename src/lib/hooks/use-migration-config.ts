@@ -147,10 +147,11 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     linesRef.current = nextLines;
   }, []);
 
-  // RLS refuses a non-owner's migration write with no error and zero rows, so
-  // the edited values (and the totals computed from them) were never stored.
-  // Put the stored values back on screen; the save error stays visible. If the
-  // reload itself fails, the error already says the change wasn't saved.
+  // A migration write that matched no row (the row or proposal was deleted,
+  // or the session ended) returns no error and zero rows, so the edited values
+  // (and the totals computed from them) were never stored. Put the stored
+  // values back on screen; the save error stays visible. If the reload itself
+  // fails, the error already says the change wasn't saved.
   const restorePersistedState = useCallback(async () => {
     const result = await loadMigrationState<DbConfig, DbLine>(supabase, proposalId);
     if (!result.ok) {
@@ -191,8 +192,8 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         );
         const totalCost = totals?.clientPrice ?? 0;
 
-        // writeMigrationConfig fails the save when RLS refuses it (zero rows,
-        // no error) instead of reporting "All migration changes are saved."
+        // writeMigrationConfig fails the save when it changes zero rows (no
+        // error) instead of reporting "All migration changes are saved."
         await writeMigrationConfig(supabase, updated.id, {
           num_projects: updated.num_projects,
           hrs_per_import: updated.hrs_per_import,

@@ -91,7 +91,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
-import { PROPOSAL_ROW_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import { PROPOSAL_CHANGE_NOT_SAVED } from "@/lib/supabase/affected-rows";
 import {
   closeProposalLost,
   closeProposalWon,
@@ -253,7 +253,7 @@ describe("proposal actions", () => {
       rpcMock.mockResolvedValue({
         data: null,
         error: {
-          message: "Proposal not found or you do not have permission to edit it.",
+          message: "connection reset",
         },
       });
 
@@ -261,11 +261,26 @@ describe("proposal actions", () => {
 
       expect(result).toEqual({
         ok: false,
-        error: "Proposal not found or you do not have permission to edit it.",
+        error: "connection reset",
       });
+      expect(revalidatePathMock).not.toHaveBeenCalled();
     });
 
-    it("maps row-level security failures to the permission message", async () => {
+    it("maps the RPC's not-found error to the not-saved message (the proposal was deleted)", async () => {
+      rpcMock.mockResolvedValue({
+        data: null,
+        error: {
+          message: "Proposal not found or you do not have permission to edit it.",
+        },
+      });
+
+      const result = await updateProposalStatus("proposal-1", "Scoping");
+
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("maps row-level security failures to the not-saved message", async () => {
       rpcMock.mockResolvedValue({
         data: null,
         error: {
@@ -276,7 +291,7 @@ describe("proposal actions", () => {
 
       const result = await updateProposalStatus("proposal-1", "Scoping");
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
 
@@ -370,7 +385,7 @@ describe("proposal actions", () => {
       });
     });
 
-    it("stops Closed Won before the status transition when RLS refuses the update", async () => {
+    it("stops Closed Won before the status transition when the update matches no row (deleted row / ended session)", async () => {
       proposalsEqByIdMock.mockResolvedValue({ error: null, count: 0 });
 
       const result = await closeProposalWon("proposal-1", {
@@ -381,7 +396,7 @@ describe("proposal actions", () => {
         varianceNote: "",
       });
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(rpcMock).not.toHaveBeenCalled();
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
@@ -403,7 +418,7 @@ describe("proposal actions", () => {
         varianceNote: "",
       });
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
 
@@ -431,7 +446,7 @@ describe("proposal actions", () => {
       });
     });
 
-    it("stops Closed Lost before the status transition when RLS refuses the update", async () => {
+    it("stops Closed Lost before the status transition when the update matches no row (deleted row / ended session)", async () => {
       proposalsEqByIdMock.mockResolvedValue({ error: null, count: 0 });
 
       const result = await closeProposalLost("proposal-1", {
@@ -439,7 +454,7 @@ describe("proposal actions", () => {
         closedLostNote: "Customer chose a cheaper vendor.",
       });
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(rpcMock).not.toHaveBeenCalled();
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
@@ -506,7 +521,7 @@ describe("proposal actions", () => {
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals/proposal-1");
     });
 
-    it("does not log or revalidate a correction RLS refused", async () => {
+    it("does not log or revalidate a correction that matched no row (deleted row / ended session)", async () => {
       proposalsEqByIdMock.mockResolvedValue({ error: null, count: 0 });
 
       const result = await correctClosedProposalFinancials("proposal-1", {
@@ -518,7 +533,7 @@ describe("proposal actions", () => {
         correctionNote: "Fixing closeout typo.",
       });
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(changeLogInsertMock).not.toHaveBeenCalled();
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });

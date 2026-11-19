@@ -13,7 +13,7 @@ import { fetchProposalSubtotal } from "@/lib/proposals/proposal-subtotal";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import {
   checkAffectedRows,
-  PROPOSAL_EDIT_NOT_PERMITTED,
+  PROPOSAL_CHANGE_NOT_SAVED,
 } from "@/lib/supabase/affected-rows";
 import type { Database } from "@/types/database";
 import { z } from "zod";
@@ -103,15 +103,16 @@ async function withBidSheetMutation(
     return { ok: false, error: built.error };
   }
 
-  // RLS lets only the proposal owner or an admin write bid_sheets; a refused
-  // update returns no error and zero rows, so count the rows actually changed.
+  // Any signed-in user may update bid_sheets. An update that matches no row
+  // (the proposal was deleted, or the session ended) returns no error and zero
+  // rows, so count the rows actually changed.
   const { error, count } = await supabase
     .from("bid_sheets")
     .update(built.fields, { count: "exact" })
     .eq("id", bidSheetResult.row.id);
   const written = checkAffectedRows(
     { error, count },
-    PROPOSAL_EDIT_NOT_PERMITTED
+    PROPOSAL_CHANGE_NOT_SAVED
   );
   if (!written.ok) {
     return written;
