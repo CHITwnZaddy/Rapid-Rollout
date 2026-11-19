@@ -50,10 +50,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
-import {
-  PROPOSAL_EDIT_NOT_PERMITTED,
-  PROPOSAL_ROW_NOT_PERMITTED,
-} from "@/lib/supabase/affected-rows";
+import { PROPOSAL_CHANGE_NOT_SAVED } from "@/lib/supabase/affected-rows";
 import {
   updateScenarioComplexityFactor,
   updateScopedComplexityFactor,
@@ -137,7 +134,7 @@ describe("complexity factor actions", () => {
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals");
     });
 
-    it("returns the permission error when RLS refuses the update (zero rows)", async () => {
+    it("reports the change as not saved when the update matches no row (deleted row / ended session)", async () => {
       scenariosEqByIdMock.mockResolvedValue({ error: null, count: 0 });
 
       const result = await updateScenarioComplexityFactor(
@@ -148,7 +145,7 @@ describe("complexity factor actions", () => {
 
       expect(result).toEqual({
         ok: false,
-        error: PROPOSAL_EDIT_NOT_PERMITTED,
+        error: PROPOSAL_CHANGE_NOT_SAVED,
       });
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
@@ -210,14 +207,14 @@ describe("complexity factor actions", () => {
       expect(revalidatePathMock).toHaveBeenCalledWith("/proposals");
     });
 
-    it("returns the permission error when RLS refuses the update (zero rows)", async () => {
+    it("reports the change as not saved when the update matches no row (deleted row / ended session)", async () => {
       proposalsEqByIdMock.mockResolvedValue({ error: null, count: 0 });
 
       const result = await updateScopedComplexityFactor("proposal-1", 1.15);
 
       expect(result).toEqual({
         ok: false,
-        error: PROPOSAL_ROW_NOT_PERMITTED,
+        error: PROPOSAL_CHANGE_NOT_SAVED,
       });
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });

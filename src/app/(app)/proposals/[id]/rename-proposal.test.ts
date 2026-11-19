@@ -75,7 +75,9 @@ describe("renameProposal", () => {
     expect(updateMock).not.toHaveBeenCalled();
   });
 
-  it("returns a permission error when RLS blocks the update (zero rows)", async () => {
+  // Any signed-in user may rename any proposal, so zero rows updated means
+  // the proposal is gone (deleted, e.g. in another tab), not a refusal.
+  it("returns a not-found error when the update matches zero rows (proposal deleted)", async () => {
     authedUser();
     eqMock.mockResolvedValue({ error: null, count: 0 });
 
@@ -83,7 +85,7 @@ describe("renameProposal", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "Proposal not found or you do not have permission to rename it.",
+      error: "Proposal not found. It may have been deleted. Reload the page and try again.",
     });
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
