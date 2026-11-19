@@ -3,6 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
+import {
+  checkAffectedRows,
+  PROPOSAL_EDIT_NOT_PERMITTED,
+} from "@/lib/supabase/affected-rows";
 
 export type UpdateComplexityFactorResult =
   | { ok: true }
@@ -29,15 +33,20 @@ export async function updateScenarioComplexityFactor(
   const supabase = await createClient();
   const rounded = Math.round(value * 100) / 100;
 
-  // RLS on scenarios restricts UPDATE to rows whose parent proposal
-  // has created_by = auth.uid(). The action-level auth check keeps
-  // anonymous callers out before RLS runs.
-  const { error } = await supabase
+  // RLS on scenarios restricts UPDATE to the parent proposal's owner or an
+  // admin. The action-level auth check keeps anonymous callers out before
+  // RLS runs. A refused update returns no error and zero rows, so count the
+  // rows actually changed.
+  const { error, count } = await supabase
     .from("scenarios")
-    .update({ complexity_factor: rounded })
+    .update({ complexity_factor: rounded }, { count: "exact" })
     .eq("id", scenarioId);
 
-  if (error) return { ok: false, error: error.message };
+  const written = checkAffectedRows(
+    { error, count },
+    PROPOSAL_EDIT_NOT_PERMITTED
+  );
+  if (!written.ok) return written;
 
   revalidatePath(`/proposals/${proposalId}`);
   revalidatePath("/proposals");
@@ -57,13 +66,19 @@ export async function updateScopedComplexityFactor(
   const supabase = await createClient();
   const rounded = Math.round(value * 100) / 100;
 
-  // RLS on proposals enforces created_by ownership.
-  const { error } = await supabase
+  // RLS on proposals restricts UPDATE to the owner, a manager or an admin.
+  // A refused update returns no error and zero rows, so count the rows
+  // actually changed.
+  const { error, count } = await supabase
     .from("proposals")
-    .update({ scoped_complexity_factor: rounded })
+    .update({ scoped_complexity_factor: rounded }, { count: "exact" })
     .eq("id", proposalId);
 
-  if (error) return { ok: false, error: error.message };
+  const written = checkAffectedRows(
+    { error, count },
+    PROPOSAL_EDIT_NOT_PERMITTED
+  );
+  if (!written.ok) return written;
 
   revalidatePath(`/proposals/${proposalId}`);
   revalidatePath("/proposals");

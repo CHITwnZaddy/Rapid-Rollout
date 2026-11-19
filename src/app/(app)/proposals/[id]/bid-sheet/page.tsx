@@ -357,7 +357,10 @@ export default function BidSheetPage() {
     setSavingDiscountPercent(false);
 
     if (!result.ok) {
+      // Nothing was stored (e.g. RLS refused the write): show the persisted
+      // value again so the field and Total never reflect an unsaved discount.
       toast.error(`Failed to save discount %: ${result.error}`);
+      setDiscountPercentDraft(String(bidSheet.discount_percent ?? 0));
       return;
     }
 
@@ -387,6 +390,7 @@ export default function BidSheetPage() {
 
     if (!result.ok) {
       toast.error(`Failed to save credit: ${result.error}`);
+      setDiscountDollarsDraft(String(bidSheet.discount_dollars ?? 0));
       return;
     }
 
@@ -403,6 +407,7 @@ export default function BidSheetPage() {
 
     if (!result.ok) {
       toast.error(`Failed to save notes: ${result.error}`);
+      setNotesDraft(bidSheet.notes ?? "");
       return;
     }
 
