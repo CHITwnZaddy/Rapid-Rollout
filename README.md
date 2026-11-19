@@ -29,9 +29,11 @@ cp .env.local.example .env.local
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY
 #   SUPABASE_SERVICE_ROLE_KEY  (seed script only — never commit)
 
-# 3. Database
+# 3. Database (your own local/dev project only)
 # Apply all migrations in supabase/migrations/ in order (001 → 00N)
-# via the Supabase SQL editor or `supabase db push` if you use the CLI.
+# with `supabase db push` if you use the CLI.
+# Staging and production get migrations automatically when a PR merges;
+# see docs/deploy-and-migrations.md (never paste SQL into their SQL editor).
 
 # 4. Seed lookup tables (rate cards, service hours) from the Excel workbook
 npx tsx scripts/seed-lookup-data.ts --workbook /path/to/workbook.xlsx --dry-run
@@ -81,7 +83,7 @@ scripts/
 
 - **Calculation engines** (`src/lib/calculations/engine.ts`, `migration-engine.ts`) are pure functions with full vitest coverage. Prefer extending them over adding math to components.
 - **Fail-closed pricing.** Rate cards MUST hydrate from Supabase before any pricing UI renders. Missing rows → error card, not hardcoded defaults.
-- **RLS.** Global-read/owner-write on proposals (SEs back each other up). Customers are shared-write. Audit log has per-row `WITH CHECK (changed_by = auth.uid())` + triggers.
+- **RLS.** Any signed-in user can read **and edit** any proposal and all of its tabs (scenarios, complexity factors, bid sheet, scoped services, migration), and can rename it, change its status or close it out: SEs back each other up. Deleting a proposal is owner-or-admin, changing who owns it (`created_by`) is admin-only, and correcting closed-won financials is manager-or-admin. Edits are not attributed to the person who made them (no change tracking yet); status changes still record who made them in `proposal_status_history`. Customers are readable by everyone, but a customer can only be changed by the person who created it or an admin. Audit log has per-row `WITH CHECK (changed_by = auth.uid())` + triggers.
 - **Route groups.** `(app)` vs `(auth)` cleanly split authenticated and public pages with their own layouts.
 
 ## Contributing
