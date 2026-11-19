@@ -106,7 +106,7 @@ describe("bid sheet actions", () => {
       },
       error: null,
     });
-    // Counted write: one bid_sheets row changed (the permitted-caller case).
+    // Counted write: one bid_sheets row changed (the normal saved case).
     bidSheetUpdateEqMock.mockResolvedValue({
       error: null,
       count: 1,
