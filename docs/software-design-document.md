@@ -790,6 +790,7 @@ shared the same way reading it is:
 | Delete a proposal | owner or admin (`deleteProposal` checks before writing the change-log row; RLS enforces it) |
 | Change who owns a proposal (`created_by`) | admin only (trigger `trg_guard_proposal_ownership`, error 42501) |
 | Create or delete the structural rows (`scenarios`, `scenario_lines`, `bid_sheets`, `migration_config`) | owner or admin; the app only does this in `create_proposal_bundle` and the proposal-delete cascade |
+| Move a row to a different proposal (change `proposal_id`, or a scenario line's `scenario_id`) | nobody through the app or API (triggers `trg_guard_*_parent`, error 42501); otherwise a move followed by a delete would bypass the owner-or-admin delete rule |
 
 Edits are not attributed to the user who made them: there is no change
 tracking yet. Status changes still record who made them

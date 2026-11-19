@@ -48,9 +48,20 @@
 --     correction) can only be changed by a manager or an admin, matching
 --     correctClosedProposalFinancials(), so an SE can't forge who corrected
 --     closed-won numbers.
+--   - The correction stamp is also checked when a proposal is created, so it
+--     can't be pre-filled with a manager's id on INSERT.
 --   The guard applies to the API roles (anon, authenticated) only;
 --   service_role and postgres (server-side admin client, dashboard,
 --   migrations) are not restricted.
+--
+-- New parent-key guard on the six child tables (guard_proposal_child_parent):
+--   RLS can't compare a row's old and new values, so an UPDATE policy that only
+--   checks "the parent proposal exists" would also let a user move a row to a
+--   different proposal by changing its proposal_id (or a scenario line's
+--   scenario_id). Moving a scenario, bid sheet or migration settings row onto a
+--   proposal you own and then deleting it there would bypass the owner-or-admin
+--   DELETE rule. A BEFORE UPDATE trigger therefore refuses any change to the
+--   parent key from the API roles. The app never changes these keys.
 --
 -- Policies are replaced with DROP POLICY IF EXISTS + CREATE POLICY inside one
 -- transaction, so no session ever sees a table without its policy and the file
@@ -250,6 +261,16 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  IF TG_OP = 'INSERT' THEN
+    IF (NEW.closed_financials_corrected_at IS NOT NULL
+        OR NEW.closed_financials_corrected_by IS NOT NULL)
+       AND NOT (SELECT public.is_manager_or_admin()) THEN
+      RAISE EXCEPTION 'Only a manager or an admin can correct closed-won financials.'
+        USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+  END IF;
+
   IF NEW.created_by IS DISTINCT FROM OLD.created_by
      AND NOT (SELECT public.auth_is_admin()) THEN
     RAISE EXCEPTION 'Only an admin can change who owns a proposal.'
@@ -282,6 +303,72 @@ CREATE OR REPLACE TRIGGER trg_guard_proposal_ownership
     OR OLD.closed_financials_corrected_by IS DISTINCT FROM NEW.closed_financials_corrected_by
   )
   EXECUTE FUNCTION public.guard_proposal_ownership();
+
+CREATE OR REPLACE TRIGGER trg_guard_proposal_ownership_insert
+  BEFORE INSERT ON public.proposals
+  FOR EACH ROW
+  WHEN (
+    NEW.closed_financials_corrected_at IS NOT NULL
+    OR NEW.closed_financials_corrected_by IS NOT NULL
+  )
+  EXECUTE FUNCTION public.guard_proposal_ownership();
+
+-- 9b. Parent-key guard on the six child tables. The WHEN clause on each
+--     trigger limits it to updates that actually change the parent key; the
+--     function then refuses them for the API roles (admins included: no app
+--     path moves rows between proposals, and server-side roles are exempt).
+CREATE OR REPLACE FUNCTION public.guard_proposal_child_parent()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  IF current_user IN ('anon', 'authenticated') THEN
+    RAISE EXCEPTION 'A proposal''s rows can''t be moved to another proposal.'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.guard_proposal_child_parent() FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE TRIGGER trg_guard_scenarios_parent
+  BEFORE UPDATE OF proposal_id ON public.scenarios
+  FOR EACH ROW
+  WHEN (OLD.proposal_id IS DISTINCT FROM NEW.proposal_id)
+  EXECUTE FUNCTION public.guard_proposal_child_parent();
+
+CREATE OR REPLACE TRIGGER trg_guard_scenario_lines_parent
+  BEFORE UPDATE OF scenario_id ON public.scenario_lines
+  FOR EACH ROW
+  WHEN (OLD.scenario_id IS DISTINCT FROM NEW.scenario_id)
+  EXECUTE FUNCTION public.guard_proposal_child_parent();
+
+CREATE OR REPLACE TRIGGER trg_guard_bid_sheets_parent
+  BEFORE UPDATE OF proposal_id ON public.bid_sheets
+  FOR EACH ROW
+  WHEN (OLD.proposal_id IS DISTINCT FROM NEW.proposal_id)
+  EXECUTE FUNCTION public.guard_proposal_child_parent();
+
+CREATE OR REPLACE TRIGGER trg_guard_scoped_services_parent
+  BEFORE UPDATE OF proposal_id ON public.scoped_services
+  FOR EACH ROW
+  WHEN (OLD.proposal_id IS DISTINCT FROM NEW.proposal_id)
+  EXECUTE FUNCTION public.guard_proposal_child_parent();
+
+CREATE OR REPLACE TRIGGER trg_guard_migration_config_parent
+  BEFORE UPDATE OF proposal_id ON public.migration_config
+  FOR EACH ROW
+  WHEN (OLD.proposal_id IS DISTINCT FROM NEW.proposal_id)
+  EXECUTE FUNCTION public.guard_proposal_child_parent();
+
+CREATE OR REPLACE TRIGGER trg_guard_migration_detail_lines_parent
+  BEFORE UPDATE OF proposal_id ON public.migration_detail_lines
+  FOR EACH ROW
+  WHEN (OLD.proposal_id IS DISTINCT FROM NEW.proposal_id)
+  EXECUTE FUNCTION public.guard_proposal_child_parent();
 
 -- 10. save_scenario_grid: drop the hard-coded owner/admin predicate (and the
 --     proposals join it needed). Everything else is the live definition,
@@ -483,6 +570,29 @@ BEGIN
 
   IF v_wrong IS NOT NULL THEN
     RAISE EXCEPTION 'Unexpected policy count after migration: %', v_wrong;
+  END IF;
+
+  SELECT string_agg(format('%s.%s', e.tbl, e.trg), ', ')
+    INTO v_missing
+  FROM (VALUES
+    ('proposals', 'trg_guard_proposal_ownership'),
+    ('proposals', 'trg_guard_proposal_ownership_insert'),
+    ('scenarios', 'trg_guard_scenarios_parent'),
+    ('scenario_lines', 'trg_guard_scenario_lines_parent'),
+    ('bid_sheets', 'trg_guard_bid_sheets_parent'),
+    ('scoped_services', 'trg_guard_scoped_services_parent'),
+    ('migration_config', 'trg_guard_migration_config_parent'),
+    ('migration_detail_lines', 'trg_guard_migration_detail_lines_parent')
+  ) AS e(tbl, trg)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_trigger t
+    WHERE t.tgrelid = format('public.%I', e.tbl)::regclass
+      AND t.tgname = e.trg
+      AND NOT t.tgisinternal
+  );
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION 'Guard triggers are missing: %', v_missing;
   END IF;
 END;
 $$;

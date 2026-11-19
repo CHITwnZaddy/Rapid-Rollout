@@ -80,7 +80,8 @@ automatically when a PR merges (verified on PRs #137 and #138):
 The apply shows up as a **"Supabase Preview"** check on the merge commit. Wait
 for it to pass before smoke testing. It records each migration in the target
 project's ledger (`supabase_migrations.schema_migrations`) under the file's own
-version and name, which is what the drift check compares against.
+version and name. (The "Migrations drift" check compares names only; the
+"Supabase Preview" check also cares about the version.)
 
 Nobody needs to run SQL by hand on this path.
 
@@ -127,11 +128,13 @@ npm run db:status         # supabase migration list --linked
 ### Do not
 
 - **Do not paste migration SQL into the Supabase SQL Editor** on staging or
-  production. It records no version in the ledger, so the drift check fails
-  and the integration may try to apply the file again.
+  production. It records nothing in the ledger, so the drift check fails and
+  the integration may try to apply the file again.
 - **Do not use the MCP `apply_migration` tool** on staging or production. It
-  records the migration under a different version from the file's, which
-  causes the same drift.
+  records the migration under the time it ran, not the file's version. The
+  name-only drift check does not notice, but the version-aware "Supabase
+  Preview" check can fail later, possibly on an unrelated PR, and the ledger
+  then has to be relabelled by hand.
 
 ## Verification Checklist
 

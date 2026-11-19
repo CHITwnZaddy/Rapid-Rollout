@@ -143,7 +143,7 @@ export async function deleteProposal(
   if (confirmationText.trim() !== expectedPhrase) {
     return {
       ok: false,
-      error: `Confirmation text did not match. Type "${expectedPhrase}" exactly to delete.`,
+      error: `Confirmation text did not match. Type "${expectedPhrase}" exactly to delete. (If the proposal was just renamed, reload the page first.)`,
     };
   }
 

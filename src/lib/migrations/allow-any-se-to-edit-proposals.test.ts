@@ -504,9 +504,20 @@ describe("allow_any_se_to_edit_proposals migration", () => {
       expect(guard.body).toContain(
         "IF (NEW.closed_financials_corrected_at IS DISTINCT FROM OLD.closed_financials_corrected_at OR NEW.closed_financials_corrected_by IS DISTINCT FROM OLD.closed_financials_corrected_by) AND NOT (SELECT public.is_manager_or_admin()) THEN RAISE EXCEPTION 'Only a manager or an admin can correct closed-won financials.' USING ERRCODE = '42501'; END IF;"
       );
-      expect(guard.body.match(/RAISE EXCEPTION/g)).toHaveLength(2);
-      expect(guard.body.match(/USING ERRCODE = '42501';/g)).toHaveLength(2);
+      expect(guard.body.match(/RAISE EXCEPTION/g)).toHaveLength(3);
+      expect(guard.body.match(/USING ERRCODE = '42501';/g)).toHaveLength(3);
       expect(guard.body.endsWith("RETURN NEW; END;")).toBe(true);
+    });
+
+    it("also refuses a correction stamp pre-filled on INSERT unless a manager or admin creates the proposal", () => {
+      expect(guard.body).toContain(
+        "IF TG_OP = 'INSERT' THEN IF (NEW.closed_financials_corrected_at IS NOT NULL OR NEW.closed_financials_corrected_by IS NOT NULL) AND NOT (SELECT public.is_manager_or_admin()) THEN RAISE EXCEPTION 'Only a manager or an admin can correct closed-won financials.' USING ERRCODE = '42501'; END IF; RETURN NEW; END IF;"
+      );
+      // The INSERT branch returns before any reference to OLD.
+      expect(guard.body.indexOf("TG_OP = 'INSERT'")).toBeLessThan(guard.body.indexOf("OLD."));
+      expect(squash(sql)).toContain(
+        "CREATE OR REPLACE TRIGGER trg_guard_proposal_ownership_insert BEFORE INSERT ON public.proposals FOR EACH ROW WHEN ( NEW.closed_financials_corrected_at IS NOT NULL OR NEW.closed_financials_corrected_by IS NOT NULL ) EXECUTE FUNCTION public.guard_proposal_ownership();"
+      );
     });
 
     it("calls helpers the authenticated role can execute", () => {
@@ -548,6 +559,45 @@ describe("allow_any_se_to_edit_proposals migration", () => {
       for (const column of columns.slice(1)) {
         expect(earlierSql).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
       }
+    });
+  });
+
+  describe("parent-key guard on the child tables", () => {
+    // RLS can't compare old and new rows, so without this guard an UPDATE that
+    // only checks "the parent exists" would let a user move a structural row
+    // onto a proposal they own and delete it there.
+    const guard = splitFunction(
+      dollarQuotedStatement(sql, "CREATE OR REPLACE FUNCTION public.guard_proposal_child_parent()")
+    );
+    const PARENT_KEYS: Array<[string, string]> = [
+      ["scenarios", "proposal_id"],
+      ["scenario_lines", "scenario_id"],
+      ["bid_sheets", "proposal_id"],
+      ["scoped_services", "proposal_id"],
+      ["migration_config", "proposal_id"],
+      ["migration_detail_lines", "proposal_id"],
+    ];
+
+    it("is a SECURITY INVOKER trigger function with an empty search_path that raises 42501 for the API roles", () => {
+      expect(guard.header).toBe(
+        "CREATE OR REPLACE FUNCTION public.guard_proposal_child_parent() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''"
+      );
+      expect(guard.body).toContain(
+        "IF current_user IN ('anon', 'authenticated') THEN RAISE EXCEPTION 'A proposal''s rows can''t be moved to another proposal.' USING ERRCODE = '42501'; END IF; RETURN NEW;"
+      );
+    });
+
+    it("is revoked from PUBLIC, anon and authenticated and never granted", () => {
+      expect(sql).toContain(
+        "REVOKE ALL ON FUNCTION public.guard_proposal_child_parent() FROM PUBLIC, anon, authenticated;"
+      );
+      expect(sql).not.toMatch(/GRANT[^;]*guard_proposal_child_parent/i);
+    });
+
+    it.each(PARENT_KEYS)("guards %s.%s with a BEFORE UPDATE OF trigger and a matching WHEN clause", (table, column) => {
+      expect(squash(sql)).toContain(
+        `CREATE OR REPLACE TRIGGER trg_guard_${table}_parent BEFORE UPDATE OF ${column} ON public.${table} FOR EACH ROW WHEN (OLD.${column} IS DISTINCT FROM NEW.${column}) EXECUTE FUNCTION public.guard_proposal_child_parent();`
+      );
     });
   });
 
@@ -622,6 +672,22 @@ describe("allow_any_se_to_edit_proposals migration", () => {
       expect(doAt).toBeGreaterThan(sql.indexOf("TRIGGER trg_guard_proposal_ownership"));
       expect(doAt).toBeLessThan(sql.lastIndexOf("COMMIT;"));
       expect(selfCheck.endsWith("END; $$;")).toBe(true);
+    });
+
+    it("fails if a guard trigger is missing", () => {
+      for (const trigger of [
+        "('proposals', 'trg_guard_proposal_ownership')",
+        "('proposals', 'trg_guard_proposal_ownership_insert')",
+        "('scenarios', 'trg_guard_scenarios_parent')",
+        "('scenario_lines', 'trg_guard_scenario_lines_parent')",
+        "('bid_sheets', 'trg_guard_bid_sheets_parent')",
+        "('scoped_services', 'trg_guard_scoped_services_parent')",
+        "('migration_config', 'trg_guard_migration_config_parent')",
+        "('migration_detail_lines', 'trg_guard_migration_detail_lines_parent')",
+      ]) {
+        expect(selfCheck).toContain(trigger);
+      }
+      expect(selfCheck).toContain("RAISE EXCEPTION 'Guard triggers are missing: %', v_missing;");
     });
 
     it("fails if an owner-only write policy survived", () => {

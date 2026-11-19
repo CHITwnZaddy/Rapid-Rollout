@@ -143,6 +143,10 @@ export function DeleteProposalButton({
     if (!result.ok) {
       setError(result.error);
       setLoading(false);
+      // A backup SE may have renamed the proposal since this page loaded, so
+      // the server's confirmation phrase can differ from ours. Refresh so the
+      // layout passes the current name and the dialog asks for the right one.
+      router.refresh();
       return;
     }
 
