@@ -65,7 +65,7 @@ vi.mock("@/lib/migration/compute-totals-from-state", async () => {
 });
 
 import { AuthError } from "@/lib/auth/require-admin";
-import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import { PROPOSAL_CHANGE_NOT_SAVED } from "@/lib/supabase/affected-rows";
 import {
   addMigrationDetailLine,
   removeMigrationDetailLine,
@@ -113,8 +113,9 @@ describe("migration actions", () => {
   let lineInserts: Array<Record<string, unknown>>;
   let lineUpdates: Array<{ id: string; payload: Record<string, unknown> }>;
   let lineDeletes: string[];
-  // Tables whose UPDATE/DELETE RLS silently filters, as it does for a caller
-  // who is not the proposal's owner or an admin: no error, zero rows.
+  // Tables whose writes don't take effect, as when the proposal or row was
+  // deleted (e.g. in another tab) or the session ended: UPDATE/DELETE return
+  // no error and zero rows, INSERT gets an RLS error.
   let refusedTables: Set<string>;
 
   // Supabase only fills `count` when the write asked for { count: "exact" }.
@@ -232,8 +233,8 @@ describe("migration actions", () => {
             },
           };
         }
-        // SECURITY INVOKER: the SELECT above sees the row, but RLS filters the
-        // DELETE and resequence for a non-owner, so the RPC returns cleanly.
+        // A delete that doesn't take effect: the SELECT above sees the row, but
+        // the DELETE and resequence match no row, so the RPC returns cleanly.
         if (refusedTables.has("migration_detail_lines")) {
           return { error: null };
         }
@@ -305,7 +306,8 @@ describe("migration actions", () => {
             payload: Record<string, unknown> | Record<string, unknown>[]
           ) => {
             if (refusedTables.has("migration_detail_lines")) {
-              // RLS refuses inserts with an error, unlike updates/deletes.
+              // An insert RLS rejects (proposal missing or signed out) raises
+              // an error, unlike updates/deletes.
               return {
                 error: {
                   code: "42501",
@@ -405,12 +407,12 @@ describe("migration actions", () => {
     expect(lineInserts).toEqual([]);
   });
 
-  it("reports a refused add with the shared permission message", async () => {
+  it("reports an add RLS rejected (proposal missing or signed out) with the shared not-saved message", async () => {
     refusedTables.add("migration_detail_lines");
 
     const result = await addMigrationDetailLine(proposalId, "workflow");
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(lineInserts).toEqual([]);
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
@@ -558,39 +560,41 @@ describe("migration actions", () => {
     ]);
   });
 
-  it("reports a refused computed-total update after adding a row and does not revalidate", async () => {
-    // RLS filters the migration_config UPDATE: no error, zero rows.
+  it("reports a computed-total update that matched no row after adding a row as not saved and does not revalidate", async () => {
+    // The migration_config UPDATE matches no row (deleted row / ended
+    // session): no error, zero rows.
     refusedTables.add("migration_config");
 
     const result = await addMigrationDetailLine(proposalId, "workflow");
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(configUpdates).toHaveLength(1);
     expect(configRow?.computed_total_cost).toBe(0);
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
-  it("reports a remove the RPC's RLS-filtered DELETE refused, without recomputing totals or revalidating", async () => {
-    // A non-owner: the SECURITY INVOKER RPC finds the row but its DELETE (and
-    // any follow-up config update) affects zero rows without an error.
+  it("reports a remove whose RPC DELETE didn't take effect as not saved, without recomputing totals or revalidating", async () => {
+    // The SECURITY INVOKER RPC finds the row but its DELETE (and any
+    // follow-up config update) affects zero rows without an error.
     refusedTables.add("migration_detail_lines");
     refusedTables.add("migration_config");
     const lineId = "33333333-3333-4333-8333-333333333331";
 
     const result = await removeMigrationDetailLine(proposalId, lineId);
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(rpcMock).toHaveBeenCalledWith("delete_migration_detail_line", {
       p_proposal_id: proposalId,
       p_line_id: lineId,
     });
     expect(lineRows.some((line) => line.id === lineId)).toBe(true);
-    // The refusal is caught from the reloaded rows, before any total write.
+    // The unsaved delete is caught from the reloaded rows, before any total
+    // write.
     expect(configUpdates).toEqual([]);
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
-  it("reports a refused computed-total update after removing a row and does not revalidate", async () => {
+  it("reports a computed-total update that matched no row after removing a row as not saved and does not revalidate", async () => {
     refusedTables.add("migration_config");
 
     const result = await removeMigrationDetailLine(
@@ -598,7 +602,7 @@ describe("migration actions", () => {
       "33333333-3333-4333-8333-333333333331"
     );
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(configUpdates).toHaveLength(1);
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
@@ -649,16 +653,16 @@ describe("migration actions", () => {
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
-  it("reports a refused Clear Tab as not permitted while the config row exists", async () => {
-    // What RLS does to a non-owner: the RPC's UPDATE matches no row, so it
-    // raises its "missing row" error even though the row is there.
+  it("reports a Clear Tab that didn't take effect as not saved while the config row exists", async () => {
+    // The RPC's UPDATE matched no row, so it raises its "missing row" error,
+    // yet the row is still there: the clear didn't take effect.
     rpcMock.mockResolvedValue({
       error: { message: `Missing migration_config row for proposal ${proposalId}` },
     });
 
     const result = await resetMigrationServices(proposalId);
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 

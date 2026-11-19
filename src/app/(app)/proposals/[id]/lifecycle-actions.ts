@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { PROPOSAL_STATUSES, type ProposalStatus } from "@/lib/constants/statuses";
 import { isClosedProposalStatus } from "@/lib/proposals/status";
 import {
-  PROPOSAL_ROW_NOT_PERMITTED,
+  PROPOSAL_CHANGE_NOT_SAVED,
   checkAffectedRows,
 } from "@/lib/supabase/affected-rows";
 import {
@@ -54,6 +54,10 @@ export async function updateProposalStatus(
   return transitionProposalStatus(proposalId, newStatus as ProposalStatus);
 }
 
+// Raised by transition_proposal_status() when its row lock finds no proposal.
+const TRANSITION_PROPOSAL_NOT_FOUND =
+  "Proposal not found or you do not have permission to edit it.";
+
 async function transitionProposalStatus(
   proposalId: string,
   newStatus: ProposalStatus
@@ -71,11 +75,20 @@ async function transitionProposalStatus(
   );
 
   if (error) {
-    // The RPC is SECURITY INVOKER: a caller who may read the proposal but not
-    // write its status history hits the history table's RLS policy. Show the
-    // shared permission message instead of the raw Postgres text.
-    if (error.message.includes("row-level security")) {
-      return { ok: false, error: PROPOSAL_ROW_NOT_PERMITTED };
+    // Any signed-in user may change a proposal's status, so neither of these
+    // errors means "not permitted":
+    //  - The RPC's not-found text ("...or you do not have permission to edit
+    //    it") can only mean the proposal is gone (deleted, e.g. in another
+    //    tab).
+    //  - The RPC is SECURITY INVOKER, so its history insert goes through RLS.
+    //    That policy only needs a signed-in caller and an existing proposal;
+    //    this branch is a backstop for a deleted proposal or an ended session.
+    // Show the shared not-saved message instead of the raw Postgres text.
+    if (
+      error.message.includes(TRANSITION_PROPOSAL_NOT_FOUND) ||
+      error.message.includes("row-level security")
+    ) {
+      return { ok: false, error: PROPOSAL_CHANGE_NOT_SAVED };
     }
     return { ok: false, error: error.message };
   }
@@ -99,8 +112,10 @@ export async function closeProposalWon(
   if (!auth.ok) return auth;
 
   const supabase = await createClient();
-  // RLS filters a refused UPDATE to zero rows instead of erroring, so count
-  // the affected rows and stop before the status transition runs.
+  // Any signed-in user may update proposals. An UPDATE that matches no row
+  // (the proposal was deleted, or the session ended) returns no error and
+  // zero rows, so count the affected rows and stop before the status
+  // transition runs.
   const updated = await supabase
     .from("proposals")
     .update(
@@ -117,7 +132,7 @@ export async function closeProposalWon(
     )
     .eq("id", proposalId);
 
-  const updateCheck = checkAffectedRows(updated, PROPOSAL_ROW_NOT_PERMITTED);
+  const updateCheck = checkAffectedRows(updated, PROPOSAL_CHANGE_NOT_SAVED);
   if (!updateCheck.ok) return updateCheck;
 
   const transitioned = await transitionProposalStatus(proposalId, "Closed Won");
@@ -152,7 +167,7 @@ export async function closeProposalLost(
     )
     .eq("id", proposalId);
 
-  const updateCheck = checkAffectedRows(updated, PROPOSAL_ROW_NOT_PERMITTED);
+  const updateCheck = checkAffectedRows(updated, PROPOSAL_CHANGE_NOT_SAVED);
   if (!updateCheck.ok) return updateCheck;
 
   const transitioned = await transitionProposalStatus(proposalId, "Closed Lost");
@@ -195,7 +210,7 @@ export async function correctClosedProposalFinancials(
     )
     .eq("id", proposalId);
 
-  const updateCheck = checkAffectedRows(updated, PROPOSAL_ROW_NOT_PERMITTED);
+  const updateCheck = checkAffectedRows(updated, PROPOSAL_CHANGE_NOT_SAVED);
   if (!updateCheck.ok) return updateCheck;
 
   const { error: logError } = await supabase.from("change_log").insert({

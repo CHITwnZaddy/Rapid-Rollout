@@ -16,8 +16,15 @@
  * On success the user is redirected to /proposals.
  * On failure an inline error message is shown inside the dialog.
  *
+ * Who sees it: delete is owner-or-admin. Any signed-in user can edit a
+ * proposal (SEs back each other up), but the proposal layout only renders
+ * this button for the proposal's owner or an admin (it fails open if the
+ * user lookup fails), and deleteProposal re-checks ownership on the server.
+ *
  * The server action handles:
  *   - assertAuthenticated() session check
+ *   - Owner-or-admin check (before the audit write, so a refused delete
+ *     never leaves a change_log row)
  *   - Typed-confirmation match against the live proposal.name
  *   - Audit log write to change_log before deletion
  *   - The actual delete (child rows cascade)
