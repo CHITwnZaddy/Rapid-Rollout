@@ -50,7 +50,7 @@ The codebase references special lookup keys for burden and travel pricing (examp
 
 | Report | Constant | Behavior |
 |--------|----------|----------|
-| Stale proposals | 21 days | Row flagged when days in current status exceeds threshold |
+| Stale proposals | Per status, editable in Admin > Stale Thresholds (active rows only) | Row flagged when days in current status (America/Chicago calendar days) is greater than its status threshold |
 | Time to close | 30 days | Row flagged red when days from sent → closed exceeds threshold |
 
 ## User roles (admin UI)

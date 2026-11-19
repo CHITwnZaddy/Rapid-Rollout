@@ -16,6 +16,11 @@ import {
   TRAVEL_RATE_KEY,
 } from "@/lib/rate-card-keys";
 import { PROPOSAL_STATUSES } from "@/lib/constants/statuses";
+import { businessDayBoundsUtc, isValidDateInput } from "@/lib/dates/business-day";
+import {
+  isStaleTrackedStatus,
+  type StaleTrackedStatus,
+} from "@/lib/proposals/status";
 
 // Shared report fetchers. Every report page needs a customer lookup,
 // and four of them need status history. Centralizing the query shape
@@ -37,6 +42,15 @@ const REQUIRED_MIGRATION_RATE_KEYS = [
   INTERNAL_COST_RATE_KEY,
 ];
 
+/** Proposal columns a report can filter by date. */
+export type DateRangeColumn = "created_at" | "updated_at" | "loe_signed_date";
+
+// Columns stored as Postgres DATE (no time of day). They take bare YYYY-MM-DD
+// bounds; every other date column is a timestamptz.
+const DATE_ONLY_COLUMNS: ReadonlySet<DateRangeColumn> = new Set([
+  "loe_signed_date",
+]);
+
 export type ReportProposalRow = {
   id: string;
   name: string;
@@ -56,7 +70,7 @@ export type ReportProposalFilters = {
   ownerScope?: "mine" | "team" | "specific";
   currentUserId?: string;
   selectedOwnerId?: string;
-  dateColumn?: "created_at" | "updated_at";
+  dateColumn?: DateRangeColumn;
   dateFrom?: string;
   dateTo?: string;
   excludeStatuses?: string[];
@@ -194,17 +208,43 @@ function resolveOwnerId(
   return null;
 }
 
-function applyDateRange<TQuery extends { gte: (column: string, value: string) => TQuery; lte: (column: string, value: string) => TQuery }>(
+// Filters by an inclusive range of calendar days (YYYY-MM-DD). Empty or
+// missing bounds are skipped; a malformed bound throws
+// "Invalid date filter: <value>".
+//
+// DATE columns compare bare dates, inclusive at both ends.
+//
+// timestamptz columns use half-open America/Chicago days sent as UTC ISO (Z)
+// strings: [start of dateFrom, start of the day after dateTo). Postgres
+// (TimeZone=UTC) reads a bare date as 00:00 UTC, so the old `.lte(bare date)`
+// dropped the whole last day and the range was cut on the UTC day, not the
+// business day.
+function applyDateRange<
+  TQuery extends {
+    gte(column: string, value: string): TQuery;
+    lt(column: string, value: string): TQuery;
+    lte(column: string, value: string): TQuery;
+  },
+>(
   query: TQuery,
-  filters: Pick<ReportProposalFilters, "dateColumn" | "dateFrom" | "dateTo">
+  filters: { dateColumn?: DateRangeColumn; dateFrom?: string; dateTo?: string }
 ): TQuery {
-  const dateColumn = filters.dateColumn ?? "created_at";
-  if (filters.dateFrom) {
-    query = query.gte(dateColumn, filters.dateFrom);
+  const col = filters.dateColumn ?? "created_at";
+
+  if (DATE_ONLY_COLUMNS.has(col)) {
+    for (const value of [filters.dateFrom, filters.dateTo]) {
+      if (value && !isValidDateInput(value)) {
+        throw new Error(`Invalid date filter: ${value}`);
+      }
+    }
+    if (filters.dateFrom) query = query.gte(col, filters.dateFrom);
+    if (filters.dateTo) query = query.lte(col, filters.dateTo);
+    return query;
   }
-  if (filters.dateTo) {
-    query = query.lte(dateColumn, filters.dateTo);
-  }
+
+  const { gte, lt } = businessDayBoundsUtc(filters.dateFrom, filters.dateTo);
+  if (gte) query = query.gte(col, gte);
+  if (lt) query = query.lt(col, lt);
   return query;
 }
 
@@ -382,6 +422,27 @@ const customerRowsSchema = z.array(
   z.object({ id: z.string(), company_name: z.string() })
 );
 
+// Money columns come back from PostgREST as numeric strings; coerce them to
+// numbers here so callers can sum them directly.
+const nullableNumber = numericish.transform((v) =>
+  v == null ? null : Number(v)
+);
+
+const closedWonFinancialRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    status: z.string(),
+    created_by: z.string().nullable(),
+    sold_price: nullableNumber,
+    loe_value: nullableNumber,
+    loe_signed_date: z.string().nullable(),
+  })
+);
+
+const staleThresholdRowsSchema = z.array(
+  z.object({ status: z.string(), threshold_days: z.number() })
+);
+
 // Combines the existing error/null guard with Zod validation: throws the same
 // "Could not load ..." error on a query failure, and a clear shape error if the
 // rows don't match the expected schema.
@@ -478,6 +539,92 @@ export async function fetchRevenueReportBaseRows(
     result,
     "revenue report base"
   );
+}
+
+export type ClosedWonFinancialRow = {
+  id: string;
+  status: string;
+  created_by: string | null;
+  sold_price: number | null;
+  loe_value: number | null;
+  loe_signed_date: string | null;
+};
+
+/**
+ * Closed Won proposals whose LoE signed date falls in the inclusive
+ * [dateFrom, dateTo] range, newest signature first.
+ *
+ * Reads the proposals table (not proposal_revenue_report_base, which has no
+ * sold price, LoE value or LoE signed date) and filters on loe_signed_date, so
+ * a deal created in an earlier year still counts in the year it was signed.
+ * Rows with no LoE signed date never match a date bound. Closed Lost is not
+ * fetched: its loe_signed_date is cleared when the proposal is closed.
+ */
+export async function fetchClosedWonFinancials(
+  client: SupabaseClient,
+  filters: Pick<
+    ReportProposalFilters,
+    | "ownerId"
+    | "ownerScope"
+    | "currentUserId"
+    | "selectedOwnerId"
+    | "dateFrom"
+    | "dateTo"
+  >
+): Promise<ClosedWonFinancialRow[]> {
+  let query = client
+    .from("proposals")
+    .select("id, status, created_by, sold_price, loe_value, loe_signed_date")
+    .eq("status", "Closed Won");
+
+  const ownerId = resolveOwnerId(filters);
+  if (ownerId) {
+    query = query.eq("created_by", ownerId);
+  }
+  query = applyDateRange(query, {
+    dateColumn: "loe_signed_date",
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+  });
+  query = query.order("loe_signed_date", { ascending: false });
+
+  return parseReportRows(
+    closedWonFinancialRowsSchema,
+    await query,
+    "closed-won financials"
+  );
+}
+
+/**
+ * Active stale thresholds (days) keyed by tracked pipeline status. Shared by
+ * the dashboard and the Stale Proposals report so both classify a proposal the
+ * same way.
+ *
+ * Filters on is_active explicitly: RLS also lets managers and admins read
+ * inactive rows, so without the filter the result would differ by role.
+ * Statuses that are not stale-tracked are dropped (the table has no CHECK on
+ * status).
+ */
+export async function fetchStaleThresholds(
+  client: SupabaseClient
+): Promise<Partial<Record<StaleTrackedStatus, number>>> {
+  const result = await client
+    .from("proposal_stale_thresholds")
+    .select("status, threshold_days")
+    .eq("is_active", true);
+  const rows = parseReportRows(
+    staleThresholdRowsSchema,
+    result,
+    "stale thresholds"
+  );
+
+  const thresholds: Partial<Record<StaleTrackedStatus, number>> = {};
+  for (const row of rows) {
+    if (isStaleTrackedStatus(row.status)) {
+      thresholds[row.status] = row.threshold_days;
+    }
+  }
+  return thresholds;
 }
 
 export async function fetchMigrationCostInputs(

@@ -7,6 +7,7 @@ import {
   type StaleTrackedStatus,
 } from "@/lib/proposals/status";
 import { roundMoney } from "@/lib/calculations/rounding";
+import { businessCalendarDaysBetween } from "@/lib/dates/business-day";
 
 export type SalesOpsDashboardProposal = {
   id: string;
@@ -42,10 +43,17 @@ export type QuotaProgress = {
   remainingToTarget: number;
 };
 
-export type StaleCountInput = {
-  now: Date;
-  thresholds: Partial<Record<StaleTrackedStatus, number>>;
-};
+export type StaleThresholds = Partial<Record<StaleTrackedStatus, number>>;
+export type StaleCountInput = { now: Date; thresholds: StaleThresholds };
+
+/** A closed deal's financial fields: no pipeline value or status timestamp. */
+export type ClosedFinancialsRow = Pick<
+  SalesOpsDashboardProposal,
+  "id" | "status" | "ownerId" | "soldPrice" | "loeValue" | "loeSignedDate"
+>;
+
+/** An inclusive window of YYYY-MM-DD dates. */
+type DateWindow = { dateFrom: string; dateTo: string };
 
 export type VarianceRollups = {
   underCount: number;
@@ -61,11 +69,40 @@ function isWithinDateRange(dateValue: string | null, dateFrom: string, dateTo: s
   return dateValue >= dateFrom && dateValue <= dateTo;
 }
 
-function daysBetween(start: string, end: Date): number {
-  const startDate = new Date(start);
-  if (Number.isNaN(startDate.getTime())) return 0;
-  const ms = end.getTime() - startDate.getTime();
-  return Math.floor(ms / 86_400_000);
+/**
+ * The active stale threshold (in days) for a status, or null when the status
+ * is not stale-tracked or has no positive threshold.
+ */
+export function staleThresholdFor(
+  status: string,
+  thresholds: StaleThresholds
+): number | null {
+  if (!isStaleTrackedStatus(status)) return null;
+  const days = thresholds[status];
+  return days && days > 0 ? days : null;
+}
+
+/**
+ * "stale" when a proposal has been in its status for MORE than the status's
+ * threshold (strict >, as the dashboard has always used), "fresh" otherwise.
+ * null when there is no threshold for the status or no day count.
+ */
+export function classifyStaleness(
+  status: string,
+  daysInStatus: number | null,
+  thresholds: StaleThresholds
+): "stale" | "fresh" | null {
+  const threshold = staleThresholdFor(status, thresholds);
+  if (threshold == null || daysInStatus == null) return null;
+  return daysInStatus > threshold ? "stale" : "fresh";
+}
+
+export function isStale(
+  status: string,
+  daysInStatus: number | null,
+  thresholds: StaleThresholds
+): boolean {
+  return classifyStaleness(status, daysInStatus, thresholds) === "stale";
 }
 
 export function calculateOpenProposalValue(
@@ -104,15 +141,16 @@ export function calculateStaleCount(
   proposals: SalesOpsDashboardProposal[],
   input: StaleCountInput
 ): number {
-  return proposals.filter((proposal) => {
-    if (!isStaleTrackedStatus(proposal.status)) return false;
-    if (!proposal.statusChangedAt) return false;
-
-    const thresholdDays = input.thresholds[proposal.status];
-    if (!thresholdDays) return false;
-
-    return daysBetween(proposal.statusChangedAt, input.now) > thresholdDays;
-  }).length;
+  // Days in status are Chicago calendar days, so DST changes do not skew them.
+  return proposals.filter(
+    (proposal) =>
+      proposal.statusChangedAt != null &&
+      isStale(
+        proposal.status,
+        businessCalendarDaysBetween(proposal.statusChangedAt, input.now),
+        input.thresholds
+      )
+  ).length;
 }
 
 export function calculateOnHoldCount(
@@ -121,18 +159,36 @@ export function calculateOnHoldCount(
   return proposals.filter((proposal) => proposal.status === "On Hold").length;
 }
 
-export function calculateQuotaProgress(
-  proposals: SalesOpsDashboardProposal[],
-  input: QuotaProgressInput
-): QuotaProgress {
-  const closedSoldPrice = roundMoney(
+/**
+ * Sum of sold price for Closed Won deals whose LoE signed date falls inside the
+ * inclusive window. A null sold price counts as 0; a null LoE signed date is
+ * excluded.
+ */
+export function calculateClosedWonTotal(
+  proposals: ReadonlyArray<
+    Pick<SalesOpsDashboardProposal, "status" | "soldPrice" | "loeSignedDate">
+  >,
+  window: DateWindow
+): number {
+  return roundMoney(
     proposals
       .filter((proposal) => proposal.status === "Closed Won")
       .filter((proposal) =>
-        isWithinDateRange(proposal.loeSignedDate, input.dateFrom, input.dateTo)
+        isWithinDateRange(proposal.loeSignedDate, window.dateFrom, window.dateTo)
       )
       .reduce((sum, proposal) => sum + (proposal.soldPrice ?? 0), 0)
   );
+}
+
+export function calculateQuotaProgress(
+  proposals: ReadonlyArray<
+    Pick<SalesOpsDashboardProposal, "status" | "soldPrice" | "loeSignedDate">
+  >,
+  input: QuotaProgressInput
+): QuotaProgress {
+  // Filters Closed Won by LoE signed date itself, even when the caller already
+  // fetched only those rows (defence in depth).
+  const closedSoldPrice = calculateClosedWonTotal(proposals, input);
 
   return {
     targetAmount: input.targetAmount,
@@ -145,11 +201,23 @@ export function calculateQuotaProgress(
   };
 }
 
+/**
+ * Rolls up LoE value minus sold price across closed deals. With a window, only
+ * deals whose LoE signed date falls inside it (inclusive) count.
+ */
 export function calculateVarianceRollups(
-  proposals: SalesOpsDashboardProposal[]
+  proposals: ReadonlyArray<
+    Pick<SalesOpsDashboardProposal, "status" | "soldPrice" | "loeValue" | "loeSignedDate">
+  >,
+  window?: DateWindow
 ): VarianceRollups {
   return proposals
     .filter((proposal) => isClosedProposalStatus(proposal.status))
+    .filter(
+      (proposal) =>
+        !window ||
+        isWithinDateRange(proposal.loeSignedDate, window.dateFrom, window.dateTo)
+    )
     .reduce<VarianceRollups>(
       (rollup, proposal) => {
         if (proposal.soldPrice == null || proposal.loeValue == null) {

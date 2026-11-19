@@ -14,11 +14,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   fetchReportProposals,
+  fetchStaleThresholds,
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
+import {
+  buildStaleReportRows,
+  describeStaleThresholds,
+  type StaleBucketFilter,
+  type StaleReportRow,
+} from "@/lib/reports/stale-proposals";
+import type { StaleThresholds } from "@/lib/dashboard/sales-ops";
 import { formatDateShort } from "@/lib/reports/format";
 import {
-  PROPOSAL_STATUSES,
   PROPOSAL_STATUS_VARIANT,
   type ProposalStatus,
 } from "@/lib/constants/statuses";
@@ -36,21 +43,7 @@ import {
 } from "@/lib/hooks/use-report-state";
 
 type OwnerFilter = "team" | "mine";
-type StaleBucket = "all" | "stale" | "fresh";
-
-type ReportRow = {
-  id: string;
-  proposalName: string;
-  customerName: string;
-  status: string;
-  daysInStatus: number | null;
-  lastActivity: string | null;
-  threshold: "stale" | "fresh" | null;
-  [key: string]: string | number | null;
-};
-
-// Anything sitting more than this in its current status is "stale".
-const STALE_THRESHOLD_DAYS = 21;
+type StaleBucket = StaleBucketFilter;
 
 // In-flight statuses only — closed deals are intentionally excluded from
 // "stale" because a closed proposal sitting for 30 days is by design.
@@ -71,6 +64,7 @@ const REPORT_CONFIG: ReportConfig = {
     { key: "customerName", header: "Customer", width: 26, format: "text" },
     { key: "status", header: "Current Status", width: 20, format: "text" },
     { key: "daysInStatus", header: "Days in Status", width: 16, format: "integer" },
+    { key: "thresholdDays", header: "Threshold (days)", width: 16, format: "integer" },
     { key: "lastActivity", header: "Last Activity", width: 14, format: "date" },
   ],
 };
@@ -85,6 +79,9 @@ export default function StaleProposalsReport() {
   } = useReportFilterData();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();
+  // range/dateFrom/dateTo in the URL are intentionally ignored: stale is a
+  // current-snapshot metric (decision D2), matching the dashboard's Needs
+  // follow-up.
   const { scopePreset, bucketPreset, statusPreset, fromDashboard } = useMemo(() => {
     const params = new URLSearchParams(searchParamString);
     return {
@@ -101,7 +98,8 @@ export default function StaleProposalsReport() {
   );
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>(scopePreset);
   const [staleBucket, setStaleBucket] = useState<StaleBucket>(bucketPreset);
-  const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
+  const [thresholds, setThresholds] = useState<StaleThresholds | null>(null);
+  const { rows, loading, hasRun, error, run } = useReportState<StaleReportRow>(
     "Stale Proposals report failed to load."
   );
   const resultsError = filterError ?? error;
@@ -109,59 +107,37 @@ export default function StaleProposalsReport() {
   const runReport = useCallback(async () => {
     if (filtersLoading || filterError) return;
     await run(async () => {
-      const proposals = await fetchReportProposals(supabase, {
-        customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
-        statuses:
-          selectedStatus === "All" ? IN_FLIGHT_STATUSES : [selectedStatus],
-        ownerScope: ownerFilter,
-        currentUserId: currentUserId ?? undefined,
-        includeCreatedBy: true,
-      });
+      const now = new Date();
+      // Thresholds are fetched on every Run so admin edits show up without a
+      // page reload.
+      const [proposals, loadedThresholds] = await Promise.all([
+        fetchReportProposals(supabase, {
+          customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
+          statuses:
+            selectedStatus === "All" ? IN_FLIGHT_STATUSES : [selectedStatus],
+          ownerScope: ownerFilter,
+          currentUserId: currentUserId ?? undefined,
+          includeCreatedBy: true,
+          includeCreatedAt: true,
+        }),
+        fetchStaleThresholds(supabase),
+      ]);
+      setThresholds(loadedThresholds);
       if (proposals.length === 0) return [];
 
-      const proposalIds = proposals.map((p) => p.id);
-      const metricsMap = await fetchStatusHistoryMap(supabase, proposalIds);
-      const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
-
-      return proposals
-        .map((p): ReportRow => {
-          const m = metricsMap.get(p.id);
-          const days = m?.daysInCurrentStatus ?? null;
-          const threshold: ReportRow["threshold"] =
-            days == null
-              ? null
-              : days >= STALE_THRESHOLD_DAYS
-                ? "stale"
-                : "fresh";
-          return {
-            id: p.id,
-            proposalName: p.name,
-            customerName: customerMap.get(p.customer_id ?? "") ?? "—",
-            status: p.status,
-            daysInStatus: days,
-            lastActivity: m?.lastChangedAt ?? null,
-            threshold,
-          };
-        })
-        .filter((row) => {
-          if (staleBucket === "stale") return row.threshold === "stale";
-          if (staleBucket === "fresh") return row.threshold === "fresh";
-          return true;
-        })
-        // Group by status in the canonical PROPOSAL_STATUSES order, then
-        // sort by Proposal Name A→Z within each group.
-        .sort((a, b) => {
-          const ai = PROPOSAL_STATUSES.indexOf(
-            a.status as (typeof PROPOSAL_STATUSES)[number]
-          );
-          const bi = PROPOSAL_STATUSES.indexOf(
-            b.status as (typeof PROPOSAL_STATUSES)[number]
-          );
-          const aIdx = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-          const bIdx = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
-          if (aIdx !== bIdx) return aIdx - bIdx;
-          return a.proposalName.localeCompare(b.proposalName);
-        });
+      const metricsMap = await fetchStatusHistoryMap(
+        supabase,
+        proposals.map((p) => p.id),
+        now
+      );
+      return buildStaleReportRows({
+        proposals,
+        metrics: metricsMap,
+        customerNames: new Map(customers.map((c) => [c.id, c.company_name])),
+        thresholds: loadedThresholds,
+        bucket: staleBucket,
+        now,
+      });
     });
   }, [
     run,
@@ -199,13 +175,21 @@ export default function StaleProposalsReport() {
     await exportReportXLSX(
       REPORT_CONFIG,
       rows,
-      `${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "Team proposals"} · ${staleBucket}  |  Stale when Days in Status >= ${STALE_THRESHOLD_DAYS}`
+      `${customerLabel} · ${selectedStatus} · ${ownerFilter === "mine" ? "My proposals" : "Team proposals"} · ${staleBucket}  |  Stale when Days in Status > that status's threshold (${describeStaleThresholds(thresholds ?? {})})`
     );
-  }, [rows, selectedCustomer, selectedStatus, ownerFilter, staleBucket, customers]);
+  }, [
+    rows,
+    selectedCustomer,
+    selectedStatus,
+    ownerFilter,
+    staleBucket,
+    customers,
+    thresholds,
+  ]);
 
   // Rows come in PROPOSAL_STATUSES order already. Map preserves insertion
   // order, so the render order matches the status constant.
-  const groupedStale = rows.reduce<Map<string, ReportRow[]>>((map, r) => {
+  const groupedStale = rows.reduce<Map<string, StaleReportRow[]>>((map, r) => {
     if (!map.has(r.status)) map.set(r.status, []);
     map.get(r.status)!.push(r);
     return map;
@@ -297,18 +281,23 @@ export default function StaleProposalsReport() {
       {(filterError || hasRun) && (
         <ReportResultsCard
           count={filterError ? 0 : rows.length}
-          titleSuffix={`Amber stale labels indicate proposals that have been in the same status for ${STALE_THRESHOLD_DAYS} days or more.`}
+          titleSuffix={
+            thresholds
+              ? `Amber = longer in the current status than that status's threshold (${describeStaleThresholds(thresholds)}). Edit thresholds in Admin > Stale Thresholds.`
+              : undefined
+          }
           emptyMessage="No in-flight proposals match these filters."
           errorMessage={resultsError}
         >
           <div className="overflow-x-auto rounded-md border">
-            <Table className="min-w-[760px]">
+            <Table className="min-w-[860px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Proposal Name</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Current Status</TableHead>
                   <TableHead className="text-center">Days in Status</TableHead>
+                  <TableHead className="text-center">Threshold</TableHead>
                   <TableHead>Last Activity</TableHead>
                 </TableRow>
               </TableHeader>
@@ -316,7 +305,7 @@ export default function StaleProposalsReport() {
                 {Array.from(groupedStale.entries()).map(([status, group]) => (
                   <Fragment key={`group-${status}`}>
                     <TableRow className="bg-muted/40">
-                      <TableCell colSpan={5} className="font-semibold">
+                      <TableCell colSpan={6} className="font-semibold">
                         {status} ({group.length})
                       </TableCell>
                     </TableRow>
@@ -359,6 +348,11 @@ export default function StaleProposalsReport() {
                           {r.threshold === "fresh" && (
                             <Badge variant="sage">Fresh</Badge>
                           )}
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums text-xs">
+                          {r.thresholdDays != null
+                            ? `> ${r.thresholdDays} days`
+                            : "No threshold"}
                         </TableCell>
                         <TableCell className="tabular-nums text-xs">
                           {formatDateShort(r.lastActivity)}
