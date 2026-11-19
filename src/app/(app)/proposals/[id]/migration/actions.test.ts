@@ -65,6 +65,7 @@ vi.mock("@/lib/migration/compute-totals-from-state", async () => {
 });
 
 import { AuthError } from "@/lib/auth/require-admin";
+import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
 import {
   addMigrationDetailLine,
   removeMigrationDetailLine,
@@ -112,6 +113,13 @@ describe("migration actions", () => {
   let lineInserts: Array<Record<string, unknown>>;
   let lineUpdates: Array<{ id: string; payload: Record<string, unknown> }>;
   let lineDeletes: string[];
+  // Tables whose UPDATE/DELETE RLS silently filters, as it does for a caller
+  // who is not the proposal's owner or an admin: no error, zero rows.
+  let refusedTables: Set<string>;
+
+  // Supabase only fills `count` when the write asked for { count: "exact" }.
+  const writeCount = (options: { count?: string } | undefined, rows: number) =>
+    options?.count === "exact" ? rows : null;
 
   beforeEach(() => {
     configRow = {
@@ -182,6 +190,7 @@ describe("migration actions", () => {
     lineInserts = [];
     lineUpdates = [];
     lineDeletes = [];
+    refusedTables = new Set();
 
     authAssertMock.mockReset();
     computeTotalsMock.mockReset();
@@ -223,6 +232,11 @@ describe("migration actions", () => {
             },
           };
         }
+        // SECURITY INVOKER: the SELECT above sees the row, but RLS filters the
+        // DELETE and resequence for a non-owner, so the RPC returns cleanly.
+        if (refusedTables.has("migration_detail_lines")) {
+          return { error: null };
+        }
         const { section } = target;
         lineRows = lineRows.filter((line) => line.id !== lineId);
         const sectionLines = lineRows
@@ -256,18 +270,24 @@ describe("migration actions", () => {
               }),
             }),
           }),
-          update: (payload: Record<string, unknown>) => ({
+          update: (
+            payload: Record<string, unknown>,
+            options?: { count?: string }
+          ) => ({
             eq: async (_field: string, id: string) => {
               configUpdates.push({ id, payload });
               if (!configRow || configRow.id !== id) {
-                return { error: { message: "Config not found" } };
+                return { error: { message: "Config not found" }, count: null };
+              }
+              if (refusedTables.has("migration_config")) {
+                return { error: null, count: writeCount(options, 0) };
               }
 
               configRow = {
                 ...configRow,
                 ...payload,
               };
-              return { error: null };
+              return { error: null, count: writeCount(options, 1) };
             },
           }),
         };
@@ -284,6 +304,16 @@ describe("migration actions", () => {
           insert: async (
             payload: Record<string, unknown> | Record<string, unknown>[]
           ) => {
+            if (refusedTables.has("migration_detail_lines")) {
+              // RLS refuses inserts with an error, unlike updates/deletes.
+              return {
+                error: {
+                  code: "42501",
+                  message:
+                    'new row violates row-level security policy for table "migration_detail_lines"',
+                },
+              };
+            }
             const items = Array.isArray(payload) ? payload : [payload];
             for (const item of items) {
               lineInserts.push(item);
@@ -303,29 +333,42 @@ describe("migration actions", () => {
             }
             return { error: null };
           },
-          update: (payload: Record<string, unknown>) => ({
+          update: (
+            payload: Record<string, unknown>,
+            options?: { count?: string }
+          ) => ({
             eq: async (_field: string, id: string) => {
               lineUpdates.push({ id, payload });
               const lineIndex = lineRows.findIndex((line) => line.id === id);
               if (lineIndex === -1) {
-                return { error: { message: "Line not found" } };
+                return { error: { message: "Line not found" }, count: null };
+              }
+              if (refusedTables.has("migration_detail_lines")) {
+                return { error: null, count: writeCount(options, 0) };
               }
 
               lineRows[lineIndex] = {
                 ...lineRows[lineIndex],
                 ...payload,
               };
-              return { error: null };
+              return { error: null, count: writeCount(options, 1) };
             },
           }),
-          delete: () => ({
+          delete: (options?: { count?: string }) => ({
             eq: async (field: string, value: string) => {
               lineDeletes.push(value);
+              if (refusedTables.has("migration_detail_lines")) {
+                return { error: null, count: writeCount(options, 0) };
+              }
+              const before = lineRows.length;
               lineRows =
                 field === "proposal_id"
                   ? lineRows.filter((line) => line.proposal_id !== value)
                   : lineRows.filter((line) => line.id !== value);
-              return { error: null };
+              return {
+                error: null,
+                count: writeCount(options, before - lineRows.length),
+              };
             },
           }),
         };
@@ -360,6 +403,16 @@ describe("migration actions", () => {
         "Migration Services Unavailable. This proposal is missing its migration configuration row.",
     });
     expect(lineInserts).toEqual([]);
+  });
+
+  it("reports a refused add with the shared permission message", async () => {
+    refusedTables.add("migration_detail_lines");
+
+    const result = await addMigrationDetailLine(proposalId, "workflow");
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(lineInserts).toEqual([]);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   it("adds a row at max row_order + 1, returns ordered lines, and persists computed_total_cost", async () => {
@@ -505,6 +558,51 @@ describe("migration actions", () => {
     ]);
   });
 
+  it("reports a refused computed-total update after adding a row and does not revalidate", async () => {
+    // RLS filters the migration_config UPDATE: no error, zero rows.
+    refusedTables.add("migration_config");
+
+    const result = await addMigrationDetailLine(proposalId, "workflow");
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(configUpdates).toHaveLength(1);
+    expect(configRow?.computed_total_cost).toBe(0);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a remove the RPC's RLS-filtered DELETE refused, without recomputing totals or revalidating", async () => {
+    // A non-owner: the SECURITY INVOKER RPC finds the row but its DELETE (and
+    // any follow-up config update) affects zero rows without an error.
+    refusedTables.add("migration_detail_lines");
+    refusedTables.add("migration_config");
+    const lineId = "33333333-3333-4333-8333-333333333331";
+
+    const result = await removeMigrationDetailLine(proposalId, lineId);
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(rpcMock).toHaveBeenCalledWith("delete_migration_detail_line", {
+      p_proposal_id: proposalId,
+      p_line_id: lineId,
+    });
+    expect(lineRows.some((line) => line.id === lineId)).toBe(true);
+    // The refusal is caught from the reloaded rows, before any total write.
+    expect(configUpdates).toEqual([]);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused computed-total update after removing a row and does not revalidate", async () => {
+    refusedTables.add("migration_config");
+
+    const result = await removeMigrationDetailLine(
+      proposalId,
+      "33333333-3333-4333-8333-333333333331"
+    );
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(configUpdates).toHaveLength(1);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
   it("fails remove before mutating when required rates are missing", async () => {
     fetchRequiredRatesMock.mockResolvedValue({
       ok: false,
@@ -548,6 +646,35 @@ describe("migration actions", () => {
     const result = await resetMigrationServices(proposalId);
 
     expect(result).toEqual({ ok: false, error: "reset failed" });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused Clear Tab as not permitted while the config row exists", async () => {
+    // What RLS does to a non-owner: the RPC's UPDATE matches no row, so it
+    // raises its "missing row" error even though the row is there.
+    rpcMock.mockResolvedValue({
+      error: { message: `Missing migration_config row for proposal ${proposalId}` },
+    });
+
+    const result = await resetMigrationServices(proposalId);
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("explains a Clear Tab on a proposal with no migration settings without the raw id", async () => {
+    configRow = null;
+    rpcMock.mockResolvedValue({
+      error: { message: `Missing migration_config row for proposal ${proposalId}` },
+    });
+
+    const result = await resetMigrationServices(proposalId);
+
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "Migration settings for this proposal weren't found. Reload the page and try again.",
+    });
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 

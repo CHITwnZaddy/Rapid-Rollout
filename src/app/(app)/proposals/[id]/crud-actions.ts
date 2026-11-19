@@ -20,8 +20,8 @@ export type DeleteProposalResult =
  * Authorization is layered:
  *  - The action-level requireAuthenticatedResult keeps anonymous callers out
  *    before any query runs.
- *  - RLS ("Users can update own proposals or admin") restricts the UPDATE to
- *    the proposal owner or an admin. A blocked update matches zero rows
+ *  - RLS ("Users can update own proposals or manager") restricts the UPDATE
+ *    to the proposal owner, a manager or an admin. A blocked update matches zero rows
  *    rather than erroring, so we request an exact count and surface a clean
  *    permission error when nothing was updated.
  */

@@ -27,6 +27,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { submitUpdateStaleThreshold, updateStaleThreshold } from "./actions";
+import { ROW_NOT_SAVED } from "@/lib/supabase/affected-rows";
 
 const thresholdId = "11111111-1111-4111-8111-111111111111";
 
@@ -38,8 +39,15 @@ function form(values: Record<string, string>): FormData {
   return formData;
 }
 
-function mockUpdate() {
-  const statusEq = vi.fn(async () => ({ error: null }));
+// Supabase only fills `count` when the update asked for { count: "exact" };
+// RLS refuses a non-manager write with count 0 and no error.
+function mockUpdate(
+  result: { error: { message: string } | null; count: number | null } = {
+    error: null,
+    count: 1,
+  }
+) {
+  const statusEq = vi.fn(async () => result);
   const idEq = vi.fn(() => ({ eq: statusEq }));
   const update = vi.fn(() => ({ eq: idEq }));
   const from = vi.fn(() => ({ update }));
@@ -90,13 +98,49 @@ describe("stale threshold actions", () => {
 
     expect(result).toEqual({ ok: true });
     expect(from).toHaveBeenCalledWith("proposal_stale_thresholds");
-    expect(update).toHaveBeenCalledWith({
-      threshold_days: 21,
-      is_active: true,
-      updated_by: "manager-1",
-    });
+    expect(update).toHaveBeenCalledWith(
+      {
+        threshold_days: 21,
+        is_active: true,
+        updated_by: "manager-1",
+      },
+      { count: "exact" }
+    );
     expect(idEq).toHaveBeenCalledWith("id", thresholdId);
     expect(statusEq).toHaveBeenCalledWith("status", "Discovery");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/stale-thresholds");
+  });
+
+  it("reports an RLS-refused save (zero rows updated) instead of success", async () => {
+    mockUpdate({ error: null, count: 0 });
+
+    const result = await updateStaleThreshold(
+      form({
+        id: thresholdId,
+        status: "Discovery",
+        thresholdDays: "21",
+        isActive: "true",
+      })
+    );
+
+    expect(result).toEqual({ ok: false, error: ROW_NOT_SAVED });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a database error without revalidating", async () => {
+    mockUpdate({ error: { message: "connection reset" }, count: null });
+
+    const result = await updateStaleThreshold(
+      form({
+        id: thresholdId,
+        status: "Discovery",
+        thresholdDays: "21",
+        isActive: "true",
+      })
+    );
+
+    expect(result).toEqual({ ok: false, error: "connection reset" });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   it("allows admins to save thresholds", async () => {
@@ -178,5 +222,22 @@ describe("stale threshold actions", () => {
     );
 
     expect(result).toEqual({ ok: true });
+  });
+
+  it("submit wrapper surfaces an RLS-refused save to the form", async () => {
+    mockUpdate({ error: null, count: 0 });
+
+    const result = await submitUpdateStaleThreshold(
+      { ok: true },
+      form({
+        id: thresholdId,
+        status: "Discovery",
+        thresholdDays: "21",
+        isActive: "true",
+      })
+    );
+
+    expect(result).toEqual({ ok: false, error: ROW_NOT_SAVED });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });

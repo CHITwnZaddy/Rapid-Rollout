@@ -31,6 +31,7 @@ import {
   updateVarianceReason,
 } from "./actions";
 import { SEEDED_VARIANCE_REASON_CODES } from "@/lib/settings/sales-ops-constants";
+import { ROW_NOT_SAVED } from "@/lib/supabase/affected-rows";
 
 const reasonId = "11111111-1111-4111-8111-111111111111";
 
@@ -42,8 +43,15 @@ function form(values: Record<string, string>): FormData {
   return formData;
 }
 
-function mockUpdate() {
-  const codeEq = vi.fn(async () => ({ error: null }));
+// Supabase only fills `count` when the update asked for { count: "exact" };
+// RLS refuses a non-manager write with count 0 and no error.
+function mockUpdate(
+  result: { error: { message: string } | null; count: number | null } = {
+    error: null,
+    count: 1,
+  }
+) {
+  const codeEq = vi.fn(async () => result);
   const idEq = vi.fn(() => ({ eq: codeEq }));
   const update = vi.fn(() => ({ eq: idEq }));
   const from = vi.fn(() => ({ update }));
@@ -98,14 +106,54 @@ describe("variance reason actions", () => {
 
     expect(result).toEqual({ ok: true });
     expect(from).toHaveBeenCalledWith("proposal_variance_reasons");
-    expect(update).toHaveBeenCalledWith({
-      label: "AE discount",
-      description: "Discount before signature",
-      sort_order: 15,
-      is_active: false,
-    });
+    expect(update).toHaveBeenCalledWith(
+      {
+        label: "AE discount",
+        description: "Discount before signature",
+        sort_order: 15,
+        is_active: false,
+      },
+      { count: "exact" }
+    );
     expect(idEq).toHaveBeenCalledWith("id", reasonId);
     expect(codeEq).toHaveBeenCalledWith("code", "ae_discount");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/variance-reasons");
+  });
+
+  it("reports an RLS-refused edit (zero rows updated) instead of success", async () => {
+    mockUpdate({ error: null, count: 0 });
+
+    const result = await updateVarianceReason(
+      form({
+        id: reasonId,
+        code: "ae_discount",
+        label: "AE discount",
+        description: "Discount before signature",
+        sortOrder: "15",
+        isActive: "false",
+      })
+    );
+
+    expect(result).toEqual({ ok: false, error: ROW_NOT_SAVED });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a database error without revalidating", async () => {
+    mockUpdate({ error: { message: "connection reset" }, count: null });
+
+    const result = await updateVarianceReason(
+      form({
+        id: reasonId,
+        code: "ae_discount",
+        label: "AE discount",
+        description: "Discount before signature",
+        sortOrder: "15",
+        isActive: "false",
+      })
+    );
+
+    expect(result).toEqual({ ok: false, error: "connection reset" });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   it("allows admins to edit reasons", async () => {
@@ -183,5 +231,24 @@ describe("variance reason actions", () => {
     );
 
     expect(result).toEqual({ ok: true });
+  });
+
+  it("submit wrapper surfaces an RLS-refused edit to the form", async () => {
+    mockUpdate({ error: null, count: 0 });
+
+    const result = await submitUpdateVarianceReason(
+      { ok: true },
+      form({
+        id: reasonId,
+        code: "ae_discount",
+        label: "AE discount",
+        description: "Discount before signature",
+        sortOrder: "15",
+        isActive: "false",
+      })
+    );
+
+    expect(result).toEqual({ ok: false, error: ROW_NOT_SAVED });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });

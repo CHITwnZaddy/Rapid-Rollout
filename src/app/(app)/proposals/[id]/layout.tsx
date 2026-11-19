@@ -1,11 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import { InfoIcon } from "lucide-react";
 import { ProposalNav } from "@/components/proposals/proposal-nav";
 import { ProposalStatus } from "@/components/proposals/proposal-status";
 import { DeleteProposalButton } from "@/components/proposals/delete-proposal-button";
 import { EditableProposalName } from "@/components/proposals/editable-proposal-name";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import { ProposalHeaderSchema } from "@/lib/validation/proposal";
+import { getProposalEditability } from "@/lib/proposals/editability";
 
 export default async function ProposalLayout({
   children,
@@ -17,7 +19,7 @@ export default async function ProposalLayout({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [proposalResult, { data: varianceReasons }] = await Promise.all([
+  const [proposalResult, { data: varianceReasons }, currentUser] = await Promise.all([
     supabase
       .from("proposals")
       .select(
@@ -30,6 +32,12 @@ export default async function ProposalLayout({
       .select("code, label")
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
+    // Only drives the read-only notice below, so any auth failure resolves to
+    // null and the notice is simply not shown.
+    supabase.auth.getUser().then(
+      ({ data, error }) => (error ? null : data.user),
+      () => null
+    ),
   ]);
 
   // A missing row (single() errors) or an unexpected shape both mean there's
@@ -56,6 +64,17 @@ export default async function ProposalLayout({
     scopedBy = profile?.display_name ?? null;
   }
 
+  // Decision D4: every control stays enabled (SEs back each other up), but
+  // tell a non-owner up front that the database will refuse their saves.
+  const editability = currentUser
+    ? getProposalEditability({
+        userId: currentUser.id,
+        role: currentUser.app_metadata?.role,
+        createdBy: proposal.created_by,
+      })
+    : null;
+  const showReadOnlyNotice = editability !== null && !editability.canEditContent;
+
   return (
     <div>
       <div className="mb-1 flex items-start justify-between gap-4">
@@ -79,6 +98,31 @@ export default async function ProposalLayout({
           status={proposal.status}
         />
       </div>
+      {showReadOnlyNotice && (
+        <div
+          role="note"
+          className="mb-3 mt-2 flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
+        >
+          <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          {editability.canChangeStatus ? (
+            // Managers may write the proposals row itself (name, status,
+            // closeout figures, scoped complexity factor) but not its tabs.
+            <p>
+              This proposal belongs to {scopedBy ?? "another user"}. Only they
+              or an admin can save changes to its scenarios, bid sheet, scoped
+              service lines and migration details. As a manager, you can still
+              rename it, change its status and closeout figures, and set the
+              scoped complexity factor.
+            </p>
+          ) : (
+            <p>
+              This proposal belongs to {scopedBy ?? "another user"}. Only they
+              or an admin can save changes here; your edits won&apos;t be
+              saved.
+            </p>
+          )}
+        </div>
+      )}
       <ProposalNav proposalId={id} />
       <div className="mt-4">{children}</div>
     </div>

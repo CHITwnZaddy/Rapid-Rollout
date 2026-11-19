@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -22,10 +22,17 @@ export function ComplexityFactorInput({
 }: Props) {
   const [value, setValue] = useState(initialValue.toFixed(2));
   const [isPending, startTransition] = useTransition();
+  // Last value the server confirmed (or the parent passed down). A refused
+  // save restores the input to this, never to what the user typed, and the
+  // parent's onChange only ever receives a value that was actually stored.
+  const persistedRef = useRef(initialValue);
 
   // Sync when initialValue updates (e.g. parent finishes its async fetch
   // after the initial 1.00 default). Without this, the input displays
   // the first prop it ever saw and ignores later updates.
+  useEffect(() => {
+    persistedRef.current = initialValue;
+  }, [initialValue]);
   useEffect(() => {
     setValue(initialValue.toFixed(2));
   }, [initialValue]);
@@ -34,20 +41,21 @@ export function ComplexityFactorInput({
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0.5 || parsed > 9.99) {
       toast.error("Complexity factor must be between 0.50 and 9.99.");
-      setValue(initialValue.toFixed(2));
+      setValue(persistedRef.current.toFixed(2));
       return;
     }
-    if (parsed === initialValue) return;
+    if (parsed === persistedRef.current) return;
 
     startTransition(async () => {
       const result = await onSave(parsed);
       if (!result.ok) {
-        toast.error(`Failed to save: ${result.error}`);
-        setValue(initialValue.toFixed(2));
-      } else {
-        toast.success("Complexity factor saved.");
-        onChange?.(parsed);
+        toast.error(result.error);
+        setValue(persistedRef.current.toFixed(2));
+        return;
       }
+      persistedRef.current = parsed;
+      toast.success("Complexity factor saved.");
+      onChange?.(parsed);
     });
   };
 
