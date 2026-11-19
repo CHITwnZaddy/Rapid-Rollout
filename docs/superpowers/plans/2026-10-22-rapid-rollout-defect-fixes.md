@@ -12,25 +12,28 @@
 
 - Static gates are clean on `main` (tsc, eslint, 487 tests, `next build`). `main` and `staging` are content-identical. Both Supabase projects have all 39 migrations; RLS policies and function grants match the repo; security advisor reports zero findings.
 - Production has 8 auth users: 3 admins have signed in; **5 invited users never completed their invite** (April ×4, August ×1) and their invite tokens are long expired. All active users today are admins, which is why the "silent no-op write" class (Batch 2) has not been noticed yet: admins pass every RLS policy.
-- Live RLS facts the plan relies on: `proposals` UPDATE = owner or manager/admin; `proposals` DELETE = owner or admin; every proposal child table (`scenarios`, `scenario_lines`, `bid_sheets`, `scoped_services`, `migration_config`, `migration_detail_lines`) INSERT/UPDATE/DELETE = owner or **admin only** (not manager); `customers` UPDATE = creator or admin, DELETE = creator-with-no-proposals or admin. A Supabase `.update()/.delete()` whose rows are filtered by RLS returns **no error and zero rows**.
+- Live RLS facts the plan relies on (as of 2026-10-22; for the proposal tables these are superseded by migration `20261119220158_allow_any_se_to_edit_proposals`, see D4): `proposals` UPDATE = owner or manager/admin; `proposals` DELETE = owner or admin; every proposal child table (`scenarios`, `scenario_lines`, `bid_sheets`, `scoped_services`, `migration_config`, `migration_detail_lines`) INSERT/UPDATE/DELETE = owner or **admin only** (not manager); `customers` UPDATE = creator or admin, DELETE = creator-with-no-proposals or admin. A Supabase `.update()/.delete()` whose rows are filtered by RLS returns **no error and zero rows**.
 - Live FK facts: `proposal_status_history.changed_by`, `proposal_stale_thresholds.updated_by`, `proposals.closed_financials_corrected_by` reference `auth.users(id)` with `ON DELETE NO ACTION`; `proposals.created_by` has **no** FK; `profiles.id` cascades; `customers.created_by` is SET NULL.
 - Two things cannot be verified from the repo and are handled as a checklist (Ticket 5): the Supabase email templates and the "Require current password when changing password" Auth setting.
 
 ## Decisions needed from Austin (before the ticket that cites them)
 
-| # | Decision | Recommendation | Cited by | Austin's call (2026-10-22) |
+| # | Decision | Recommendation | Cited by | Austin's call (2026-10-22 unless dated) |
 | --- | --- | --- | --- | --- |
 | D1 | How "Remove user" should work: **soft delete** (no schema change; audit rows keep the actor id; email becomes reusable) vs **hard delete + FK migration** (`ON DELETE SET NULL` on three columns) | Soft delete | Ticket 4 | **Soft delete** |
 | D2 | Dashboard window semantics: should pipeline widgets (open value, stage charts, stale, on hold) show the **current snapshot regardless of creation date**, with the date window applying only to closed-won revenue / variance by LoE signed date? | Yes (snapshot for pipeline, LoE-signed window for revenue) | Ticket 9 | **Yes, as recommended** |
 | D3 | Closed Won: reject **blank** sold price / LoE value only (keep the current "zero or greater" rule), or require **> 0**? | Reject blank; allow 0 only with an explicit confirmation | Ticket 12 | **Reject blank; 0 only with explicit confirmation** |
-| D4 | Non-owner editing: hide/disable edit controls for SEs who did not create the proposal (admins keep full edit), or keep the UI open and rely on the new error messages? | Disable + banner | Ticket 7 | **Keep the controls enabled and keep the banner: SEs back each other up.** Open follow-up: the live RLS lets only the owner or an admin write the proposal child tables, so a backup SE's edits are rejected at the database today; Ticket 7 must either widen those policies to all authenticated users (SCHEMA ticket, pause for approval) or the banner must say the edit will be refused. |
+| D4 | Non-owner editing: hide/disable edit controls for SEs who did not create the proposal (admins keep full edit), or keep the UI open and rely on the new error messages? | Disable + banner | Ticket 7 | **Keep the controls enabled and keep the banner: SEs back each other up.** Follow-up raised on 2026-10-22: the live RLS lets only the owner or an admin write the proposal child tables, so a backup SE's edits are rejected at the database today; Ticket 7 must either widen those policies to all authenticated users (SCHEMA ticket, pause for approval) or the banner must say the edit will be refused. **Resolved (Austin, 2026-11-19): SEs must be able to save each other's proposals.** RLS widened by migration `20261119220158_allow_any_se_to_edit_proposals`: any signed-in user can edit every tab, rename, change status and close out; delete stays owner/admin; changing the owner (`created_by`) is admin-only; correcting closed-won financials stays manager/admin. Change tracking ("who edited what") is deferred. |
+| D5 | Which timezone defines "a day" for dashboard/report date presets, the inclusive end of a date range, and day counts (days in status, time to close)? | — | Ticket 10 | **(2026-11-19) Business timezone `America/Chicago`** for presets, inclusive date-range ends and day counts. |
+| D6 | Proposal Hours report: drop zero-hour scenario rows only for inactive scenarios, or every zero-hour scenario row? | — | Ticket 11 | **(2026-11-19) Drop every zero-hour scenario row.** |
+| D7 | Dashboard Target card: what does "Target progress" measure, and which figures follow the selected date window? | — | Ticket 9 | **(2026-11-19) Target progress uses year-to-date Closed Won by LoE signed date for the target year.** Only the closed-won line and price variance follow the window. |
 
 ## Suggested batching & order
 
 | Batch | Tickets | What | Schema | PRs |
 | --- | --- | --- | --- | --- |
 | **1 — stop the bleeding** | 1, 2, 3, 4, 5 | font, service-hours Add Row, admin Users page, user removal, re-invites + Supabase dashboard checklist | No (D1 = soft delete) | Ticket 1 = [#146](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/146), Ticket 2 = [#148](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/148), Tickets 3–4 = [#147](https://github.com/CHITwnZaddy/Rapid-Rollout/pull/147); ticket 5 is operational |
-| **2 — silent no-op writes** | 6, 7 | affected-row checks everywhere, then ownership-aware UI | No | 1 PR each |
+| **2 — silent no-op writes** | 6, 7 | affected-row checks everywhere, then ownership-aware UI | No (Ticket 7's D4 follow-up became the SCHEMA migration `20261119220158_allow_any_se_to_edit_proposals`) | 1 PR each |
 | **3 — dashboard & reports** | 8, 9, 10, 11 | stale thresholds, quota window, inclusive dates + DST, Proposal Log/Hours/Breakout | No | 1 PR for 8–9, 1 PR for 10–11 |
 | **4 — proposal lifecycle** | 12, 13, 14 | closeout validation + delete ordering + Closed Lost, scenario grid resilience, correction UI | No | 1 PR each |
 | **5 — admin tables & change log** | 15, 16 | status/lookup_key safety, delete guards, change-log actor + paging | No | 1 PR each |
@@ -185,7 +188,7 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 
 ---
 
-## Ticket 9: Quota / closed-sold by LoE signed date; pipeline window semantics  P1  *(decision D2)*
+## Ticket 9: Quota / closed-sold by LoE signed date; pipeline window semantics  P1  *(decisions D2, D7)*
 
 **Purpose:** `dashboard/page.tsx` ~331-339 fetches proposals by `created_at` within the window and `calculateQuotaProgress` (`sales-ops.ts:124-146`) then filters by `loe_signed_date`, so a deal created last year and signed this year never counts, and older open proposals vanish from open value / stage charts under "Current year".
 
@@ -201,7 +204,7 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 
 ---
 
-## Ticket 10: Inclusive date-range end + DST-safe day counts  P2
+## Ticket 10: Inclusive date-range end + DST-safe day counts  P2  *(decision D5)*
 
 **Purpose:** `src/lib/reports/data.ts:206` applies `.lte(dateColumn, "YYYY-MM-DD")` to `created_at`/`updated_at` (timestamptz), which Postgres reads as midnight UTC, so the last day of every range is excluded; `src/lib/ui/helpers.ts:31` already uses `T23:59:59.999Z`. Separately `status-history.ts:49-53` and `sales-ops.ts:64-69` floor raw milliseconds, losing a day across the spring DST change.
 
@@ -216,7 +219,7 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 
 ---
 
-## Ticket 11: Proposal Log preset, Proposal Hours keys, Scenario Breakout download  P2/P3
+## Ticket 11: Proposal Log preset, Proposal Hours keys, Scenario Breakout download  P2/P3  *(decision D6)*
 
 **Files:** `src/app/(app)/reports/proposal-log/page.tsx`, `reports/proposal-hours/page.tsx`, `src/components/reports/report-table.tsx`, `src/lib/exports/scenario-breakout.ts`, tests.
 
@@ -321,7 +324,7 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 - [ ] Zod: make `summary_total_hours/cost`, `discount_percent`, `scoped_services.cost`, `created_at/updated_at` `.nullable()` with coalescing in `src/lib/validation/proposal.ts` (36-41, 49-69, 90-96, 110) so one legacy NULL cannot blank the proposals list or bid sheet; add a test with a NULL row.
 - [ ] `proposals/new/page.tsx:115-117`: copy says "4 scenarios"; the bundle creates six.
 - [ ] Error boundary: add a `reportClientError({ refCode, digest, message, url })` server action called from `(app)/error.tsx` and `global-error.tsx` so the reference code reaches server logs.
-- [ ] Non-owner status change surfaces raw RLS text (`transition_proposal_status`); map `row-level security` errors in `lifecycle-actions.ts` to the Ticket 6 message.
+- [ ] Non-owner status change surfaces raw RLS text (`transition_proposal_status`); map `row-level security` errors in `lifecycle-actions.ts` to the Ticket 6 message. *(2026-11-19: since migration `20261119220158` any signed-in user can change status, so this branch is only a backstop; it returns `PROPOSAL_CHANGE_NOT_SAVED`.)*
 - [ ] Migration page: validate complexity factor client-side against the DB CHECK (0.50–9.99); have Clear Tab cancel pending debounced saves before calling the reset RPC; surface unmount-time save failures via `sonner` instead of state setters.
 - [ ] Optional perf: wrap the server `getUser()` in React `cache()` per request (`src/lib/supabase/server.ts`) so layout + page + guards share one Auth round-trip; the proxy keeps its own call. ~600 `GET /auth/v1/user` calls were observed in one active hour *(live)*.
 
