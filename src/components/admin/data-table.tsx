@@ -82,13 +82,19 @@ export function AdminDataTable({
     setSavingCell(null);
 
     if (!result.ok) {
+      // Nothing was stored (for example RLS refused the write): close the
+      // editor so the cell falls back to the last persisted value in `data`.
       toast.error(`Couldn't save ${column.label}. ${result.error}`);
+      setEditingCell(null);
       return;
     }
 
+    // Prefer the row the server read back after the write over the typed text.
     setData((previous) =>
       previous.map((row) =>
-        row.id === rowId ? { ...row, ...(result.row ?? {}), [key]: parsed.value } : row
+        row.id === rowId
+          ? { ...row, ...(result.row ?? { [key]: parsed.value }) }
+          : row
       )
     );
     setEditingCell(null);

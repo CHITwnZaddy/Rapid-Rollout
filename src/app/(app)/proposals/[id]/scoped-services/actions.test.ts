@@ -30,10 +30,27 @@ type DeleteScopedServiceLineArgs = {
   p_proposal_id: string;
   p_line_id: string;
 };
+type WriteOptions = { count?: "exact" | "planned" | "estimated" };
+type CountedWriteResult = { error: { message: string } | null; count: number | null };
 
 let proposalRows: ProposalRow[] = [];
 let scopedServiceRows: ScopedServiceRow[] = [];
 let rateCardRows: RateCardRow[] = [];
+// Mirrors RLS on scoped_services: when false (caller is not the proposal
+// owner or an admin) updates and deletes match zero rows and return no error.
+let scopedServicesWritable = true;
+// One-shot override for the bulk Clear Tab delete result.
+let clearDeleteResultOverride: CountedWriteResult | null = null;
+// One-shot side effect run with that override (e.g. another session's delete).
+let clearDeleteSideEffect: (() => void) | null = null;
+
+// Supabase only fills `count` when the write asked for { count: "exact" }.
+function countedResult(
+  options: WriteOptions | undefined,
+  affected: number
+): CountedWriteResult {
+  return { error: null, count: options?.count === "exact" ? affected : null };
+}
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
@@ -118,6 +135,16 @@ vi.mock("@/lib/supabase/server", () => ({
             };
           },
           insert(payload: Partial<ScopedServiceRow>) {
+            if (!scopedServicesWritable) {
+              // RLS refuses inserts with an error, unlike updates/deletes.
+              return Promise.resolve({
+                error: {
+                  code: "42501",
+                  message:
+                    'new row violates row-level security policy for table "scoped_services"',
+                },
+              });
+            }
             scopedServiceRows.push({
               id: `line-${scopedServiceRows.length + 1}`,
               proposal_id: String(payload.proposal_id),
@@ -130,7 +157,7 @@ vi.mock("@/lib/supabase/server", () => ({
             });
             return Promise.resolve({ error: null });
           },
-          update(payload: Partial<ScopedServiceRow>) {
+          update(payload: Partial<ScopedServiceRow>, options?: WriteOptions) {
             return {
               eq(column: string, value: string) {
                 if (column !== "id") {
@@ -143,29 +170,50 @@ vi.mock("@/lib/supabase/server", () => ({
                         `Unexpected update eq second column ${secondColumn}`
                       );
                     }
-                    scopedServiceRows = scopedServiceRows.map((row) =>
-                      row.id === value && row.proposal_id === secondValue
-                        ? { ...row, ...payload }
-                        : row
-                    );
-                    return { error: null };
+                    if (!scopedServicesWritable) {
+                      return countedResult(options, 0);
+                    }
+                    let affected = 0;
+                    scopedServiceRows = scopedServiceRows.map((row) => {
+                      if (row.id === value && row.proposal_id === secondValue) {
+                        affected += 1;
+                        return { ...row, ...payload };
+                      }
+                      return row;
+                    });
+                    return countedResult(options, affected);
                   },
                 };
               },
             };
           },
-          delete() {
+          delete(options?: WriteOptions) {
             return {
               eq(column: string, value: string) {
                 // Bulk clear path: delete().eq("proposal_id", id) resolves
                 // directly; per-line path chains a second eq for proposal_id.
                 if (column === "proposal_id") {
-                  scopedServiceRows = scopedServiceRows.filter(
-                    (row) => row.proposal_id !== value
-                  );
+                  let result: CountedWriteResult;
+                  if (clearDeleteResultOverride) {
+                    result = clearDeleteResultOverride;
+                    clearDeleteResultOverride = null;
+                    clearDeleteSideEffect?.();
+                    clearDeleteSideEffect = null;
+                  } else if (!scopedServicesWritable) {
+                    result = countedResult(options, 0);
+                  } else {
+                    const before = scopedServiceRows.length;
+                    scopedServiceRows = scopedServiceRows.filter(
+                      (row) => row.proposal_id !== value
+                    );
+                    result = countedResult(
+                      options,
+                      before - scopedServiceRows.length
+                    );
+                  }
                   return {
-                    then(resolve: (result: { error: null }) => void) {
-                      resolve({ error: null });
+                    then(resolve: (result: CountedWriteResult) => void) {
+                      resolve(result);
                     },
                   };
                 }
@@ -179,10 +227,14 @@ vi.mock("@/lib/supabase/server", () => ({
                         `Unexpected delete eq second column ${secondColumn}`
                       );
                     }
+                    if (!scopedServicesWritable) {
+                      return countedResult(options, 0);
+                    }
+                    const before = scopedServiceRows.length;
                     scopedServiceRows = scopedServiceRows.filter(
                       (row) => !(row.id === value && row.proposal_id === secondValue)
                     );
-                    return { error: null };
+                    return countedResult(options, before - scopedServiceRows.length);
                   },
                 };
               },
@@ -222,6 +274,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
+import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
 import {
   addScopedServiceLine,
   clearScopedServices,
@@ -241,6 +294,9 @@ describe("scoped services actions", () => {
     revalidatePathMock.mockReset();
     rpcMock.mockReset();
     scopedServicesSelectMock.mockReset();
+    scopedServicesWritable = true;
+    clearDeleteResultOverride = null;
+    clearDeleteSideEffect = null;
 
     authAssertMock.mockResolvedValue({ id: "user-1" });
     rpcMock.mockImplementation(
@@ -353,6 +409,18 @@ describe("scoped services actions", () => {
     });
   });
 
+  it("reports a refused add with the shared permission message", async () => {
+    scopedServicesWritable = false;
+
+    const result = await addScopedServiceLine(proposalId);
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(
+      scopedServiceRows.filter((row) => row.proposal_id === proposalId)
+    ).toHaveLength(2);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
   it("adds a line at the next row order and returns canonical rows", async () => {
     const result = await addScopedServiceLine(proposalId);
 
@@ -419,6 +487,25 @@ describe("scoped services actions", () => {
     );
   });
 
+  it("reports a line update that RLS refused instead of reloading rows", async () => {
+    // A non-owner's update affects zero rows and returns no error.
+    scopedServicesWritable = false;
+    const before = structuredClone(scopedServiceRows);
+
+    const result = await updateScopedServiceLine(proposalId, lineOneId, {
+      serviceType: "05 Other",
+      description: "Not mine",
+      hours: 4,
+      rateCardLookupKey: "Master|Program Manager",
+    });
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(scopedServiceRows).toEqual(before);
+    // Only the pre-update existence check read the rows; no canonical reload.
+    expect(scopedServicesSelectMock).toHaveBeenCalledTimes(1);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
   it("rejects deletes for lines outside the proposal", async () => {
     const result = await deleteScopedServiceLine(proposalId, lineThreeId);
 
@@ -432,7 +519,9 @@ describe("scoped services actions", () => {
     });
   });
 
-  it("does not reload or revalidate when the scoped-service RPC fails", async () => {
+  it("reports a refused delete as not permitted while the line is still there", async () => {
+    // What RLS does to a non-owner: the RPC's DELETE matches no row, so it
+    // raises its "not found" error even though the line exists.
     rpcMock.mockResolvedValueOnce({
       data: null,
       error: {
@@ -442,10 +531,22 @@ describe("scoped services actions", () => {
 
     const result = await deleteScopedServiceLine(proposalId, lineOneId);
 
-    expect(result).toEqual({
-      ok: false,
-      error: "Scoped service line not found for this proposal.",
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    // Only the existence check read the rows; nothing was revalidated.
+    expect(scopedServicesSelectMock).toHaveBeenCalledTimes(1);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+    expect(scopedServiceRows.find((row) => row.id === lineOneId)).toBeDefined();
+  });
+
+  it("does not reload or revalidate when the scoped-service RPC fails", async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: "connection reset" },
     });
+
+    const result = await deleteScopedServiceLine(proposalId, lineOneId);
+
+    expect(result).toEqual({ ok: false, error: "connection reset" });
     expect(scopedServicesSelectMock).not.toHaveBeenCalled();
     expect(revalidatePathMock).not.toHaveBeenCalled();
     expect(scopedServiceRows.find((row) => row.id === lineOneId)).toBeDefined();
@@ -479,7 +580,61 @@ describe("scoped services actions", () => {
 
     expect(result).toEqual({ ok: true, lines: [] });
     expect(scopedServiceRows.filter((r) => r.proposal_id === proposalId)).toEqual([]);
+    expect(scopedServiceRows.map((r) => r.id)).toEqual([lineThreeId]);
     expect(revalidatePathMock).toHaveBeenCalledWith(`/proposals/${proposalId}`);
+  });
+
+  it("reports a clear that RLS refused and keeps the rows", async () => {
+    // A non-owner's delete affects zero rows and returns no error.
+    scopedServicesWritable = false;
+
+    const result = await clearScopedServices(proposalId);
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(
+      scopedServiceRows.filter((r) => r.proposal_id === proposalId)
+    ).toHaveLength(2);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a short clear that left rows behind as not permitted", async () => {
+    clearDeleteResultOverride = { error: null, count: 1 };
+
+    const result = await clearScopedServices(proposalId);
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a short clear as done when another session removed the other rows", async () => {
+    // The read saw 2 rows; another session deleted one, so this delete
+    // removed only 1, but nothing is left on the proposal.
+    clearDeleteResultOverride = { error: null, count: 1 };
+    clearDeleteSideEffect = () => {
+      scopedServiceRows = scopedServiceRows.filter(
+        (row) => row.proposal_id !== proposalId
+      );
+    };
+
+    const result = await clearScopedServices(proposalId);
+
+    expect(result).toEqual({ ok: true, lines: [] });
+    expect(revalidatePathMock).toHaveBeenCalledWith(`/proposals/${proposalId}`);
+  });
+
+  it("still clears an already-empty proposal (zero rows is legitimate)", async () => {
+    scopedServiceRows = scopedServiceRows.filter(
+      (row) => row.proposal_id !== proposalId
+    );
+
+    const result = await clearScopedServices(proposalId);
+
+    expect(result).toEqual({ ok: true, lines: [] });
+    expect(scopedServiceRows.map((r) => r.id)).toEqual([lineThreeId]);
+    expect(revalidatePathMock).toHaveBeenCalledWith(`/proposals/${proposalId}`);
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      `/proposals/${proposalId}/scoped-services`
+    );
   });
 
   it("rejects unauthenticated clear requests", async () => {

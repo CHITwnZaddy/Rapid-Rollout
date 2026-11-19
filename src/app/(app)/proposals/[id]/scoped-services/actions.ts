@@ -13,6 +13,11 @@ import {
   deleteScopedServiceLineInputSchema,
 } from "@/lib/validation/scoped-services";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
+import {
+  checkAffectedRows,
+  isRowLevelSecurityError,
+  PROPOSAL_EDIT_NOT_PERMITTED,
+} from "@/lib/supabase/affected-rows";
 import type { Database } from "@/types/database";
 import { z } from "zod";
 
@@ -212,7 +217,12 @@ export async function addScopedServiceLine(
 
   const { error } = await supabase.from("scoped_services").insert(insertPayload);
   if (error) {
-    return { ok: false, error: error.message };
+    return {
+      ok: false,
+      error: isRowLevelSecurityError(error)
+        ? PROPOSAL_EDIT_NOT_PERMITTED
+        : error.message,
+    };
   }
 
   const refreshedLineResult = await loadScopedServiceLines(
@@ -299,21 +309,26 @@ export async function updateScopedServiceLine(
     )
   );
 
-  const { error } = await supabase
+  // RLS lets only the proposal's owner or an admin write scoped_services. A
+  // refused update returns no error and zero rows, so count the rows changed
+  // (the line was just confirmed to exist above).
+  const { error, count } = await supabase
     .from("scoped_services")
-    .update({
-      service_type: parsed.data.serviceType,
-      description: parsed.data.description,
-      hours: parsed.data.hours,
-      rate_card_lookup_key: parsed.data.rateCardLookupKey,
-      cost: nextCost,
-    })
+    .update(
+      {
+        service_type: parsed.data.serviceType,
+        description: parsed.data.description,
+        hours: parsed.data.hours,
+        rate_card_lookup_key: parsed.data.rateCardLookupKey,
+        cost: nextCost,
+      },
+      { count: "exact" }
+    )
     .eq("id", parsed.data.lineId)
     .eq("proposal_id", parsed.data.proposalId);
 
-  if (error) {
-    return { ok: false, error: error.message };
-  }
+  const written = checkAffectedRows({ error, count }, PROPOSAL_EDIT_NOT_PERMITTED);
+  if (!written.ok) return written;
 
   const refreshedLineResult = await loadScopedServiceLines(
     supabase,
@@ -353,6 +368,9 @@ export async function deleteScopedServiceLine(
     return { ok: false, error: proposalResult.error };
   }
 
+  // The RPC is SECURITY INVOKER, so RLS applies to its DELETE, and it raises
+  // when no row was removed (IF NOT FOUND). A refused delete therefore
+  // surfaces as an error here rather than a silent success.
   const { error } = await supabase
     .rpc("delete_scoped_service_line", {
       p_proposal_id: parsed.data.proposalId,
@@ -360,11 +378,24 @@ export async function deleteScopedServiceLine(
     });
 
   if (error) {
+    if (!error.message.includes("was not found for proposal")) {
+      return { ok: false, error: error.message };
+    }
+    // The RPC raises the same "not found" error whether the line is missing
+    // or RLS hid it from the DELETE. Every signed-in user can read the lines,
+    // so a line that is still there means the delete was refused.
+    const remaining = await loadScopedServiceLines(
+      supabase,
+      parsed.data.proposalId
+    );
+    const stillThere =
+      remaining.ok &&
+      remaining.lines.some((line) => line.id === parsed.data.lineId);
     return {
       ok: false,
-      error: error.message.includes("was not found for proposal")
-        ? "Scoped service line not found for this proposal."
-        : error.message,
+      error: stillThere
+        ? PROPOSAL_EDIT_NOT_PERMITTED
+        : "Scoped service line not found for this proposal.",
     };
   }
 
@@ -381,7 +412,10 @@ export async function deleteScopedServiceLine(
 }
 
 // Clear Tab: remove every scoped service line for the proposal.
-// RLS limits the delete to proposals the caller can edit.
+// RLS limits the delete to proposals the caller can edit, and a refused
+// delete returns no error and zero rows. Count the proposal's rows first
+// (reads are open to every signed-in user) so a refused clear is reported,
+// while clearing an already-empty proposal still succeeds.
 export async function clearScopedServices(
   proposalId: string
 ): Promise<ScopedServiceActionResult> {
@@ -401,13 +435,32 @@ export async function clearScopedServices(
     return { ok: false, error: proposalResult.error };
   }
 
-  const { error } = await supabase
+  const existingLineResult = await loadScopedServiceLines(supabase, parsed.data);
+  if (!existingLineResult.ok) {
+    return { ok: false, error: existingLineResult.error };
+  }
+  const expectedCount = existingLineResult.lines.length;
+
+  const { error, count } = await supabase
     .from("scoped_services")
-    .delete()
+    .delete({ count: "exact" })
     .eq("proposal_id", parsed.data);
 
   if (error) {
     return { ok: false, error: error.message };
+  }
+
+  if (expectedCount > 0 && (count === null || count < expectedCount)) {
+    // RLS allows all of a proposal's rows or none, so a refusal deletes
+    // nothing. A short count can also mean another session removed rows
+    // between the read and the delete; if nothing is left, the clear worked.
+    const remaining = await loadScopedServiceLines(supabase, parsed.data);
+    if (!remaining.ok) {
+      return { ok: false, error: remaining.error };
+    }
+    if (remaining.lines.length > 0) {
+      return { ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED };
+    }
   }
 
   await revalidateScopedServicePaths(parsed.data);

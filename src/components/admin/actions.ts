@@ -20,6 +20,11 @@ import {
   type AdminTableName,
 } from "./data-table-config";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
+import {
+  CUSTOMER_EDIT_NOT_PERMITTED,
+  ROW_NOT_SAVED,
+  checkAffectedRows,
+} from "@/lib/supabase/affected-rows";
 
 const adminTableNameSchema = z.enum(["customers", "rate_cards", "service_hours"]);
 
@@ -42,6 +47,37 @@ const deleteAdminRowInputSchema = z.object({
 export type AdminActionResult =
   | { ok: true; row?: AdminRow }
   | { ok: false; error: string };
+
+// Postgres foreign_key_violation. proposals.customer_id and
+// bid_sheets.customer_id reference customers with no ON DELETE action, so an
+// admin deleting a customer that is still in use gets this error.
+const FOREIGN_KEY_VIOLATION = "23503";
+
+const CUSTOMER_IN_USE_MESSAGE =
+  "This customer can't be deleted because proposals still use it.";
+
+// RLS turns a refused UPDATE/DELETE into "no error, zero rows". Customers can
+// be changed by their creator or an admin; rate cards and service hours only
+// by admins (assertTablePermission already gates those, so a zero count there
+// usually means the row disappeared between the load and the write).
+function notPermittedMessage(tableName: AdminTableName): string {
+  return tableName === "customers" ? CUSTOMER_EDIT_NOT_PERMITTED : ROW_NOT_SAVED;
+}
+
+// The customer delete policy also refuses the creator while any proposal still
+// uses the customer. proposals are readable by every authenticated user, so a
+// refused delete can be explained accurately instead of blaming ownership.
+async function customerHasProposals(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  customerId: string
+): Promise<boolean> {
+  const { error, count } = await supabase
+    .from("proposals")
+    .select("id", { count: "exact", head: true })
+    .eq("customer_id", customerId);
+
+  return !error && (count ?? 0) > 0;
+}
 
 async function assertTablePermission(tableName: AdminTableName): Promise<AdminActionResult> {
   const { auth } = getAdminTableConfig(tableName);
@@ -219,13 +255,18 @@ export async function updateAdminTableCell(
     return { ok: false, error: rowResult.error };
   }
 
-  const { error } = await supabase
+  // loadRow just found the row, so zero affected rows means RLS refused it.
+  const { error, count } = await supabase
     .from(parsed.data.tableName)
-    .update({ [parsed.data.key]: normalized.value } as never)
+    .update({ [parsed.data.key]: normalized.value } as never, { count: "exact" })
     .eq("id", parsed.data.rowId);
 
-  if (error) {
-    return { ok: false, error: error.message };
+  const updated = checkAffectedRows(
+    { error, count },
+    notPermittedMessage(parsed.data.tableName)
+  );
+  if (!updated.ok) {
+    return updated;
   }
 
   const refreshedRowResult = await loadRow(
@@ -264,13 +305,30 @@ export async function deleteAdminTableRow(
     return { ok: false, error: rowResult.error };
   }
 
-  const { error } = await supabase
+  // loadRow just found the row, so zero affected rows means RLS refused it.
+  const { error, count } = await supabase
     .from(parsed.data.tableName)
-    .delete()
+    .delete({ count: "exact" })
     .eq("id", parsed.data.rowId);
 
-  if (error) {
-    return { ok: false, error: error.message };
+  const isCustomer = parsed.data.tableName === "customers";
+  if (isCustomer && error?.code === FOREIGN_KEY_VIOLATION) {
+    return { ok: false, error: CUSTOMER_IN_USE_MESSAGE };
+  }
+
+  const deleted = checkAffectedRows(
+    { error, count },
+    notPermittedMessage(parsed.data.tableName)
+  );
+  if (!deleted.ok) {
+    if (
+      isCustomer &&
+      !error &&
+      (await customerHasProposals(supabase, parsed.data.rowId))
+    ) {
+      return { ok: false, error: CUSTOMER_IN_USE_MESSAGE };
+    }
+    return deleted;
   }
 
   await revalidateAdminTablePaths(parsed.data.tableName);

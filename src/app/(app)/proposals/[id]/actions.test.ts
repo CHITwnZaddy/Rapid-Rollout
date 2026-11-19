@@ -91,6 +91,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
+import { PROPOSAL_ROW_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
 import {
   closeProposalLost,
   closeProposalWon,
@@ -130,7 +131,7 @@ describe("proposal actions", () => {
     proposalsUpdateMock.mockReturnValue({
       eq: proposalsEqByIdMock,
     });
-    proposalsEqByIdMock.mockResolvedValue({ error: null });
+    proposalsEqByIdMock.mockResolvedValue({ error: null, count: 1 });
     changeLogInsertMock.mockResolvedValue({ error: null });
 
     scenarioEqByProposalMock.mockReturnValue({
@@ -264,6 +265,21 @@ describe("proposal actions", () => {
       });
     });
 
+    it("maps row-level security failures to the permission message", async () => {
+      rpcMock.mockResolvedValue({
+        data: null,
+        error: {
+          message:
+            'new row violates row-level security policy for table "proposal_status_history"',
+        },
+      });
+
+      const result = await updateProposalStatus("proposal-1", "Scoping");
+
+      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
     it("routes Closed Won through the closeout action", async () => {
       const result = await updateProposalStatus("proposal-1", "Closed Won");
 
@@ -335,19 +351,97 @@ describe("proposal actions", () => {
       });
 
       expect(result).toEqual({ ok: true });
-      expect(proposalsUpdateMock).toHaveBeenCalledWith({
-        sold_price: 100000,
-        loe_value: 100000,
-        loe_signed_date: "2026-05-01",
-        variance_reason_code: null,
-        variance_note: null,
-        closed_lost_reason: null,
-        closed_lost_note: null,
-      });
+      expect(proposalsUpdateMock).toHaveBeenCalledWith(
+        {
+          sold_price: 100000,
+          loe_value: 100000,
+          loe_signed_date: "2026-05-01",
+          variance_reason_code: null,
+          variance_note: null,
+          closed_lost_reason: null,
+          closed_lost_note: null,
+        },
+        { count: "exact" }
+      );
+      expect(proposalsEqByIdMock).toHaveBeenCalledWith("id", "proposal-1");
       expect(rpcMock).toHaveBeenCalledWith("transition_proposal_status", {
         p_proposal_id: "proposal-1",
         p_new_status: "Closed Won",
       });
+    });
+
+    it("stops Closed Won before the status transition when RLS refuses the update", async () => {
+      proposalsEqByIdMock.mockResolvedValue({ error: null, count: 0 });
+
+      const result = await closeProposalWon("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 100000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "",
+        varianceNote: "",
+      });
+
+      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(rpcMock).not.toHaveBeenCalled();
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("maps a row-level security failure in the Closed Won transition", async () => {
+      rpcMock.mockResolvedValue({
+        data: null,
+        error: {
+          message:
+            'new row violates row-level security policy for table "proposal_status_history"',
+        },
+      });
+
+      const result = await closeProposalWon("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 100000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "",
+        varianceNote: "",
+      });
+
+      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("saves Closed Lost closeout fields and transitions status", async () => {
+      const result = await closeProposalLost("proposal-1", {
+        closedLostReason: "price",
+        closedLostNote: "Customer chose a cheaper vendor.",
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(proposalsUpdateMock).toHaveBeenCalledWith(
+        {
+          closed_lost_reason: "price",
+          closed_lost_note: "Customer chose a cheaper vendor.",
+          loe_signed_date: null,
+          loe_value: null,
+          variance_reason_code: null,
+          variance_note: null,
+        },
+        { count: "exact" }
+      );
+      expect(rpcMock).toHaveBeenCalledWith("transition_proposal_status", {
+        p_proposal_id: "proposal-1",
+        p_new_status: "Closed Lost",
+      });
+    });
+
+    it("stops Closed Lost before the status transition when RLS refuses the update", async () => {
+      proposalsEqByIdMock.mockResolvedValue({ error: null, count: 0 });
+
+      const result = await closeProposalLost("proposal-1", {
+        closedLostReason: "price",
+        closedLostNote: "Customer chose a cheaper vendor.",
+      });
+
+      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(rpcMock).not.toHaveBeenCalled();
+      expect(revalidatePathMock).not.toHaveBeenCalled();
     });
 
     it("blocks SEs from correcting closed financials", async () => {
@@ -382,15 +476,18 @@ describe("proposal actions", () => {
       });
 
       expect(result).toEqual({ ok: true });
-      expect(proposalsUpdateMock).toHaveBeenCalledWith({
-        sold_price: 100000,
-        loe_value: 95000,
-        loe_signed_date: "2026-05-01",
-        variance_reason_code: "ae_discount",
-        variance_note: "Sr. AE discounted before signature.",
-        closed_financials_corrected_at: expect.any(String),
-        closed_financials_corrected_by: "manager-1",
-      });
+      expect(proposalsUpdateMock).toHaveBeenCalledWith(
+        {
+          sold_price: 100000,
+          loe_value: 95000,
+          loe_signed_date: "2026-05-01",
+          variance_reason_code: "ae_discount",
+          variance_note: "Sr. AE discounted before signature.",
+          closed_financials_corrected_at: expect.any(String),
+          closed_financials_corrected_by: "manager-1",
+        },
+        { count: "exact" }
+      );
       expect(changeLogInsertMock).toHaveBeenCalledWith({
         proposal_id: "proposal-1",
         table_name: "proposals",
@@ -406,6 +503,43 @@ describe("proposal actions", () => {
           variance_reason_code: "ae_discount",
         },
       });
+      expect(revalidatePathMock).toHaveBeenCalledWith("/proposals/proposal-1");
+    });
+
+    it("does not log or revalidate a correction RLS refused", async () => {
+      proposalsEqByIdMock.mockResolvedValue({ error: null, count: 0 });
+
+      const result = await correctClosedProposalFinancials("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 95000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "ae_discount",
+        varianceNote: "Sr. AE discounted before signature.",
+        correctionNote: "Fixing closeout typo.",
+      });
+
+      expect(result).toEqual({ ok: false, error: PROPOSAL_ROW_NOT_PERMITTED });
+      expect(changeLogInsertMock).not.toHaveBeenCalled();
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("still surfaces database errors from the correction update", async () => {
+      proposalsEqByIdMock.mockResolvedValue({
+        error: { message: "connection reset" },
+        count: null,
+      });
+
+      const result = await correctClosedProposalFinancials("proposal-1", {
+        soldPrice: 100000,
+        loeValue: 95000,
+        loeSignedDate: "2026-05-01",
+        varianceReasonCode: "ae_discount",
+        varianceNote: "Sr. AE discounted before signature.",
+        correctionNote: "Fixing closeout typo.",
+      });
+
+      expect(result).toEqual({ ok: false, error: "connection reset" });
+      expect(changeLogInsertMock).not.toHaveBeenCalled();
     });
   });
 

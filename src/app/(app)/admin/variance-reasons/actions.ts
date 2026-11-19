@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { assertManagerOrAdmin, AuthError } from "@/lib/auth/require-admin";
 import { createClient } from "@/lib/supabase/server";
+import { ROW_NOT_SAVED, checkAffectedRows } from "@/lib/supabase/affected-rows";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -47,18 +48,23 @@ export async function updateVarianceReason(
     });
 
     const supabase = await createClient();
-    const { error } = await supabase
+    // RLS refuses non-managers with zero rows and no error, so count the write.
+    const { error, count } = await supabase
       .from("proposal_variance_reasons")
-      .update({
-        label: parsed.label,
-        description: parsed.description,
-        sort_order: parsed.sortOrder,
-        is_active: parsed.isActive,
-      })
+      .update(
+        {
+          label: parsed.label,
+          description: parsed.description,
+          sort_order: parsed.sortOrder,
+          is_active: parsed.isActive,
+        },
+        { count: "exact" }
+      )
       .eq("id", parsed.id)
       .eq("code", parsed.code);
 
-    if (error) throw new Error(error.message);
+    const saved = checkAffectedRows({ error, count }, ROW_NOT_SAVED);
+    if (!saved.ok) return saved;
     revalidatePath("/admin/variance-reasons");
     return { ok: true };
   } catch (error) {

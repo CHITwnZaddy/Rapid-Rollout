@@ -7,7 +7,15 @@ import {
 } from "@/lib/calculations/migration-engine";
 import { NUM } from "@/lib/calculations/num";
 import { fetchRequiredRates } from "@/lib/supabase/queries";
-import { createMigrationPersistenceController } from "./migration-persistence";
+import {
+  createMigrationPersistenceController,
+  MigrationSaveRefusedError,
+} from "./migration-persistence";
+import {
+  writeMigrationComputedTotal,
+  writeMigrationConfig,
+  writeMigrationLine,
+} from "./migration-writes";
 import {
   INTERNAL_COST_RATE_KEY,
   PM_RATE_KEY,
@@ -139,6 +147,20 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
     linesRef.current = nextLines;
   }, []);
 
+  // RLS refuses a non-owner's migration write with no error and zero rows, so
+  // the edited values (and the totals computed from them) were never stored.
+  // Put the stored values back on screen; the save error stays visible. If the
+  // reload itself fails, the error already says the change wasn't saved.
+  const restorePersistedState = useCallback(async () => {
+    const result = await loadMigrationState<DbConfig, DbLine>(supabase, proposalId);
+    if (!result.ok) {
+      return;
+    }
+    setConfig(result.config);
+    configRef.current = result.config;
+    syncCanonicalLines(result.lines);
+  }, [proposalId, supabase, syncCanonicalLines]);
+
   useEffect(() => {
     persistenceControllerRef.current = createMigrationPersistenceController({
       getSnapshot: () => ({
@@ -152,6 +174,9 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         const message =
           error instanceof Error ? error.message : "Unknown migration save error.";
         setSaveError(message);
+        if (error instanceof MigrationSaveRefusedError) {
+          void restorePersistedState();
+        }
       },
       saveConfig: async (updated, currentLines) => {
         const capacityError = importCapacityError(NUM(updated.lines_per_import_file));
@@ -166,47 +191,30 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         );
         const totalCost = totals?.clientPrice ?? 0;
 
-        const { error } = await supabase
-          .from("migration_config")
-          .update({
-            num_projects: updated.num_projects,
-            hrs_per_import: updated.hrs_per_import,
-            lines_per_import_file: updated.lines_per_import_file,
-            is_effort_included: updated.is_effort_included,
-            is_workshop_included: updated.is_workshop_included,
-            complexity_factor: updated.complexity_factor,
-            sr_im_trips: updated.sr_im_trips,
-            pm_trips: updated.pm_trips,
-            doc_avg_mb_per_project: updated.doc_avg_mb_per_project,
-            doc_mb_per_hour: updated.doc_mb_per_hour,
-            core_requirements_hrs: updated.core_requirements_hrs,
-            core_migration_plan_hrs: updated.core_migration_plan_hrs,
-            core_validation_hrs: updated.core_validation_hrs,
-            core_final_qa_hrs: updated.core_final_qa_hrs,
-            core_pm_oversight_hrs: updated.core_pm_oversight_hrs,
-            computed_total_cost: totalCost,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", updated.id);
-
-        if (error) {
-          throw new Error(`Couldn't save migration configuration. ${error.message}`);
-        }
+        // writeMigrationConfig fails the save when RLS refuses it (zero rows,
+        // no error) instead of reporting "All migration changes are saved."
+        await writeMigrationConfig(supabase, updated.id, {
+          num_projects: updated.num_projects,
+          hrs_per_import: updated.hrs_per_import,
+          lines_per_import_file: updated.lines_per_import_file,
+          is_effort_included: updated.is_effort_included,
+          is_workshop_included: updated.is_workshop_included,
+          complexity_factor: updated.complexity_factor,
+          sr_im_trips: updated.sr_im_trips,
+          pm_trips: updated.pm_trips,
+          doc_avg_mb_per_project: updated.doc_avg_mb_per_project,
+          doc_mb_per_hour: updated.doc_mb_per_hour,
+          core_requirements_hrs: updated.core_requirements_hrs,
+          core_migration_plan_hrs: updated.core_migration_plan_hrs,
+          core_validation_hrs: updated.core_validation_hrs,
+          core_final_qa_hrs: updated.core_final_qa_hrs,
+          core_pm_oversight_hrs: updated.core_pm_oversight_hrs,
+          computed_total_cost: totalCost,
+          updated_at: new Date().toISOString(),
+        });
       },
       saveLine: async (line) => {
-        const { error } = await supabase
-          .from("migration_detail_lines")
-          .update({
-            label: line.label,
-            quantity: line.quantity,
-            items_per_object: line.items_per_object,
-            total_line_items: line.total_line_items,
-          })
-          .eq("id", line.id);
-
-        if (error) {
-          throw new Error(`Couldn't save migration detail row. ${error.message}`);
-        }
+        await writeMigrationLine(supabase, line);
       },
       saveComputedTotal: async (updated, currentLines) => {
         const capacityError = importCapacityError(NUM(updated.lines_per_import_file));
@@ -220,17 +228,11 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
           getCurrentRateSnapshot()
         );
 
-        const { error } = await supabase
-          .from("migration_config")
-          .update({
-            computed_total_cost: totals?.clientPrice ?? updated.computed_total_cost,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", updated.id);
-
-        if (error) {
-          throw new Error(`Couldn't recompute migration totals. ${error.message}`);
-        }
+        await writeMigrationComputedTotal(
+          supabase,
+          updated.id,
+          totals?.clientPrice ?? updated.computed_total_cost
+        );
       },
     });
 
@@ -242,7 +244,7 @@ export function useMigrationConfig(proposalId: string): UseMigrationConfigReturn
         controller.dispose();
       }
     };
-  }, [getCurrentRateSnapshot, supabase]);
+  }, [getCurrentRateSnapshot, restorePersistedState, supabase]);
 
   // ─── Load ────────────────────────────────────────────────────────
   useEffect(() => {

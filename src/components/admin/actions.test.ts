@@ -52,6 +52,24 @@ let serviceHoursRows: ServiceHoursRow[] = [];
 // fails with this message so the error path can be exercised.
 let orderedSelectError: string | null = null;
 
+// Tables whose UPDATE/DELETE policies refuse the caller. Like live RLS, a
+// refused write returns no error and affects zero rows.
+let rlsRefusedTables = new Set<string>();
+
+// When set, DELETE fails with this Postgres error (e.g. a foreign-key
+// violation when proposals still reference the customer).
+let deleteError: { message: string; code: string } | null = null;
+
+// customer_id of every proposal; proposals are readable by every user.
+let proposalCustomerIds: string[] = [];
+
+type WriteOptions = { count?: "exact" };
+
+// Supabase only fills `count` when the write asked for { count: "exact" }.
+function countFor(options: WriteOptions | undefined, affected: number) {
+  return options?.count === "exact" ? affected : null;
+}
+
 type AnyRow = CustomerRow | RateCardRow | ServiceHoursRow;
 
 function numberAt(row: AnyRow, column: string): number {
@@ -135,23 +153,52 @@ function createTableApi(tableName: string) {
         },
       };
     },
-    update(payload: Record<string, unknown>) {
+    update(payload: Record<string, unknown>, options?: WriteOptions) {
       return {
         async eq(_column: string, value: string) {
+          if (rlsRefusedTables.has(tableName)) {
+            return { error: null, count: countFor(options, 0) };
+          }
+          const affected = getRows().filter((row) => row.id === value).length;
           setRows(
             getRows().map((row) =>
               row.id === value ? ({ ...row, ...payload } as AnyRow) : row
             )
           );
-          return { error: null };
+          return { error: null, count: countFor(options, affected) };
         },
       };
     },
-    delete() {
+    delete(options?: WriteOptions) {
       return {
         async eq(_column: string, value: string) {
-          setRows(getRows().filter((row) => row.id !== value));
-          return { error: null };
+          if (deleteError) {
+            return { error: deleteError, count: null };
+          }
+          if (rlsRefusedTables.has(tableName)) {
+            return { error: null, count: countFor(options, 0) };
+          }
+          const remaining = getRows().filter((row) => row.id !== value);
+          const affected = getRows().length - remaining.length;
+          setRows(remaining);
+          return { error: null, count: countFor(options, affected) };
+        },
+      };
+    },
+  };
+}
+
+function createProposalsApi() {
+  return {
+    select(_columns: string, options?: { count?: "exact"; head?: boolean }) {
+      return {
+        async eq(_column: string, value: string) {
+          const matches = proposalCustomerIds.filter((id) => id === value).length;
+          return {
+            data: null,
+            error: null,
+            count: options?.count === "exact" ? matches : null,
+          };
         },
       };
     },
@@ -161,6 +208,7 @@ function createTableApi(tableName: string) {
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     from(tableName: string) {
+      if (tableName === "proposals") return createProposalsApi();
       return createTableApi(tableName);
     },
   })),
@@ -184,10 +232,18 @@ vi.mock("next/cache", () => ({
 
 import { AuthError } from "@/lib/auth/require-admin";
 import {
+  CUSTOMER_EDIT_NOT_PERMITTED,
+  ROW_NOT_SAVED,
+} from "@/lib/supabase/affected-rows";
+import {
   addAdminTableRow,
   deleteAdminTableRow,
   updateAdminTableCell,
 } from "./actions";
+
+const CUSTOMER_IN_USE_MESSAGE =
+  "This customer can't be deleted because proposals still use it.";
+const customerId = "11111111-1111-4111-8111-111111111111";
 
 describe("admin data table actions", () => {
   beforeEach(() => {
@@ -195,6 +251,9 @@ describe("admin data table actions", () => {
     assertAuthenticatedMock.mockReset();
     revalidatePathMock.mockReset();
     orderedSelectError = null;
+    rlsRefusedTables = new Set();
+    deleteError = null;
+    proposalCustomerIds = [];
 
     assertAdminMock.mockResolvedValue({ id: "admin-1" });
     assertAuthenticatedMock.mockResolvedValue({ id: "user-1" });
@@ -403,5 +462,106 @@ describe("admin data table actions", () => {
     expect(result).toEqual({ ok: true });
     expect(serviceHoursRows).toHaveLength(0);
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/service-hours");
+  });
+
+  it("deletes a customer the caller may delete", async () => {
+    const result = await deleteAdminTableRow("customers", customerId);
+
+    expect(result).toEqual({ ok: true });
+    expect(customersRows).toHaveLength(0);
+    expect(revalidatePathMock).toHaveBeenCalledWith("/customers");
+  });
+
+  describe("writes refused by row-level security (zero rows, no error)", () => {
+    it("reports a refused customer edit instead of saving", async () => {
+      rlsRefusedTables.add("customers");
+
+      const result = await updateAdminTableCell(
+        "customers",
+        customerId,
+        "company_name",
+        "Not Mine"
+      );
+
+      expect(result).toEqual({ ok: false, error: CUSTOMER_EDIT_NOT_PERMITTED });
+      expect(customersRows[0]?.company_name).toBe("Acme");
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("reports a refused rate card edit instead of saving", async () => {
+      rlsRefusedTables.add("rate_cards");
+
+      const result = await updateAdminTableCell(
+        "rate_cards",
+        "22222222-2222-4222-8222-222222222222",
+        "rate",
+        "999"
+      );
+
+      expect(result).toEqual({ ok: false, error: ROW_NOT_SAVED });
+      expect(rateCardRows[0]?.rate).toBe(250);
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("reports a refused customer delete and keeps the row", async () => {
+      rlsRefusedTables.add("customers");
+
+      const result = await deleteAdminTableRow("customers", customerId);
+
+      expect(result).toEqual({ ok: false, error: CUSTOMER_EDIT_NOT_PERMITTED });
+      expect(customersRows).toHaveLength(1);
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("explains a refused customer delete when proposals still use the customer", async () => {
+      // The creator's delete policy also requires that no proposal uses it.
+      rlsRefusedTables.add("customers");
+      proposalCustomerIds = [customerId];
+
+      const result = await deleteAdminTableRow("customers", customerId);
+
+      expect(result).toEqual({ ok: false, error: CUSTOMER_IN_USE_MESSAGE });
+      expect(customersRows).toHaveLength(1);
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+
+    it("reports a refused service hours delete and keeps the row", async () => {
+      rlsRefusedTables.add("service_hours");
+
+      const result = await deleteAdminTableRow(
+        "service_hours",
+        "33333333-3333-4333-8333-333333333332"
+      );
+
+      expect(result).toEqual({ ok: false, error: ROW_NOT_SAVED });
+      expect(serviceHoursRows).toHaveLength(1);
+      expect(revalidatePathMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("replaces the raw foreign-key error when proposals still use a customer", async () => {
+    deleteError = {
+      code: "23503",
+      message:
+        'update or delete on table "customers" violates foreign key constraint "proposals_customer_id_fkey" on table "proposals"',
+    };
+
+    const result = await deleteAdminTableRow("customers", customerId);
+
+    expect(result).toEqual({ ok: false, error: CUSTOMER_IN_USE_MESSAGE });
+    expect(customersRows).toHaveLength(1);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("passes other delete errors through unchanged", async () => {
+    deleteError = { code: "57014", message: "canceling statement due to statement timeout" };
+
+    const result = await deleteAdminTableRow("customers", customerId);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "canceling statement due to statement timeout",
+    });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });

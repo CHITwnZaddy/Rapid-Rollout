@@ -1,4 +1,41 @@
+import {
+  checkAffectedRows,
+  PROPOSAL_EDIT_NOT_PERMITTED,
+} from "@/lib/supabase/affected-rows";
+
 type TimerHandle = ReturnType<typeof setTimeout>;
+
+/**
+ * RLS refused a migration write: Supabase reported no error but zero affected
+ * rows. Resending the same write cannot succeed, so the controller drops the
+ * pending work instead of re-queuing it, and the caller restores the stored
+ * values.
+ */
+export class MigrationSaveRefusedError extends Error {
+  constructor(message: string = PROPOSAL_EDIT_NOT_PERMITTED) {
+    super(message);
+    this.name = "MigrationSaveRefusedError";
+  }
+}
+
+/**
+ * Check a migration_config / migration_detail_lines write made with
+ * { count: "exact" }. A Supabase error keeps the caller's "Couldn't ..."
+ * prefix and stays retryable; zero (or missing) affected rows throws
+ * MigrationSaveRefusedError.
+ */
+export function assertMigrationWriteSaved(
+  result: { error: { message: string } | null; count: number | null },
+  failurePrefix: string
+): void {
+  if (result.error) {
+    throw new Error(`${failurePrefix} ${result.error.message}`);
+  }
+  const written = checkAffectedRows(result, PROPOSAL_EDIT_NOT_PERMITTED);
+  if (!written.ok) {
+    throw new MigrationSaveRefusedError(written.error);
+  }
+}
 
 type DbConfigLike = {
   id: string;
@@ -47,6 +84,11 @@ export function createMigrationPersistenceController<
   let totalsDirty = false;
   let lineIdsDirty = new Set<string>();
   let saveQueue = Promise.resolve(true);
+  let runsInFlight = 0;
+  // Bumped each time a refusal drops pending work. A run queued before the
+  // drop then finds nothing to do; it must not report "saved" for edits that
+  // were thrown away.
+  let refusalEpoch = 0;
 
   const clearTimer = () => {
     if (timer) {
@@ -58,7 +100,8 @@ export function createMigrationPersistenceController<
   const hasPendingWork = () =>
     configDirty || totalsDirty || lineIdsDirty.size > 0;
 
-  const runPending = async () => {
+  // Resolves true when it attempted a save, false when there was nothing to do.
+  const runPending = async (): Promise<boolean> => {
     const lineIds = [...lineIdsDirty];
     const shouldSaveConfig = configDirty;
     const shouldRecomputeTotals = totalsDirty;
@@ -68,12 +111,12 @@ export function createMigrationPersistenceController<
     lineIdsDirty = new Set<string>();
 
     if (!shouldSaveConfig && !shouldRecomputeTotals && lineIds.length === 0) {
-      return;
+      return false;
     }
 
     const snapshot = options.getSnapshot();
     if (!snapshot.config) {
-      return;
+      return false;
     }
 
     try {
@@ -87,13 +130,25 @@ export function createMigrationPersistenceController<
 
       if (shouldSaveConfig) {
         await options.saveConfig(snapshot.config, snapshot.lines);
-        return;
+        return true;
       }
 
       if (shouldRecomputeTotals || linesToSave.length > 0) {
         await options.saveComputedTotal(snapshot.config, snapshot.lines);
       }
+      return true;
     } catch (error) {
+      if (error instanceof MigrationSaveRefusedError) {
+        // Retrying a refused write cannot succeed. Drop everything pending
+        // (the caller puts the stored values back on screen) so later edits,
+        // Retry Save and the unmount flush do not resend it.
+        clearTimer();
+        configDirty = false;
+        totalsDirty = false;
+        lineIdsDirty = new Set<string>();
+        refusalEpoch += 1;
+        throw error;
+      }
       configDirty = configDirty || shouldSaveConfig;
       totalsDirty = totalsDirty || shouldRecomputeTotals || lineIds.length > 0;
       lineIdsDirty = new Set([...lineIdsDirty, ...lineIds]);
@@ -103,13 +158,23 @@ export function createMigrationPersistenceController<
 
   const enqueueRun = () => {
     if (!hasPendingWork()) {
-      return saveQueue;
+      // Wait for a run still in flight; otherwise nothing is outstanding. A
+      // refused run drops its work, so its `false` must not stick to later
+      // flushes (it would block every row add/remove after one refusal).
+      return runsInFlight > 0 ? saveQueue : Promise.resolve(true);
     }
 
+    runsInFlight += 1;
     options.onStatusChange?.("saving");
+    const epochAtEnqueue = refusalEpoch;
     saveQueue = saveQueue
       .then(async () => {
-        await runPending();
+        const attempted = await runPending();
+        if (!attempted && refusalEpoch !== epochAtEnqueue) {
+          // A refusal earlier in the queue dropped this run's edits, so
+          // nothing was saved. Leave the status at "error" from that run.
+          return false;
+        }
         options.onStatusChange?.("saved");
         return true;
       })
@@ -117,6 +182,9 @@ export function createMigrationPersistenceController<
         options.onStatusChange?.("error");
         options.onError?.(error);
         return false;
+      })
+      .finally(() => {
+        runsInFlight -= 1;
       });
     return saveQueue;
   };
