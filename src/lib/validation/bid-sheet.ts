@@ -46,9 +46,14 @@ export const bidSheetDiscountDollarsInputSchema = z.object({
   discountDollars: discountDollarsSchema,
 });
 
+export const BID_SHEET_NOTES_MAX_LENGTH = 5000;
+
 export const bidSheetNotesInputSchema = z.object({
   proposalId: z.uuid("Invalid proposal id"),
   notes: z
     .string({ error: "Notes must be text" })
-    .max(5000, "Notes cannot exceed 5000 characters"),
+    .max(
+      BID_SHEET_NOTES_MAX_LENGTH,
+      `Notes cannot exceed ${BID_SHEET_NOTES_MAX_LENGTH} characters`
+    ),
 });

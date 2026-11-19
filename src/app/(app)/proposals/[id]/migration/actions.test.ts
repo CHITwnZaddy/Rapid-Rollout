@@ -304,6 +304,16 @@ describe("migration actions", () => {
           insert: async (
             payload: Record<string, unknown> | Record<string, unknown>[]
           ) => {
+            if (refusedTables.has("migration_detail_lines")) {
+              // RLS refuses inserts with an error, unlike updates/deletes.
+              return {
+                error: {
+                  code: "42501",
+                  message:
+                    'new row violates row-level security policy for table "migration_detail_lines"',
+                },
+              };
+            }
             const items = Array.isArray(payload) ? payload : [payload];
             for (const item of items) {
               lineInserts.push(item);
@@ -393,6 +403,16 @@ describe("migration actions", () => {
         "Migration Services Unavailable. This proposal is missing its migration configuration row.",
     });
     expect(lineInserts).toEqual([]);
+  });
+
+  it("reports a refused add with the shared permission message", async () => {
+    refusedTables.add("migration_detail_lines");
+
+    const result = await addMigrationDetailLine(proposalId, "workflow");
+
+    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(lineInserts).toEqual([]);
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   it("adds a row at max row_order + 1, returns ordered lines, and persists computed_total_cost", async () => {

@@ -15,6 +15,7 @@ import {
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import {
   checkAffectedRows,
+  isRowLevelSecurityError,
   PROPOSAL_EDIT_NOT_PERMITTED,
 } from "@/lib/supabase/affected-rows";
 import type { Database } from "@/types/database";
@@ -216,7 +217,12 @@ export async function addScopedServiceLine(
 
   const { error } = await supabase.from("scoped_services").insert(insertPayload);
   if (error) {
-    return { ok: false, error: error.message };
+    return {
+      ok: false,
+      error: isRowLevelSecurityError(error)
+        ? PROPOSAL_EDIT_NOT_PERMITTED
+        : error.message,
+    };
   }
 
   const refreshedLineResult = await loadScopedServiceLines(
@@ -445,7 +451,16 @@ export async function clearScopedServices(
   }
 
   if (expectedCount > 0 && (count === null || count < expectedCount)) {
-    return { ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED };
+    // RLS allows all of a proposal's rows or none, so a refusal deletes
+    // nothing. A short count can also mean another session removed rows
+    // between the read and the delete; if nothing is left, the clear worked.
+    const remaining = await loadScopedServiceLines(supabase, parsed.data);
+    if (!remaining.ok) {
+      return { ok: false, error: remaining.error };
+    }
+    if (remaining.lines.length > 0) {
+      return { ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED };
+    }
   }
 
   await revalidateScopedServicePaths(parsed.data);

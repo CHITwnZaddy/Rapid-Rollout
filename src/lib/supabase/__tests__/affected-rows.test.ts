@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkAffectedRows,
+  isRowLevelSecurityError,
   PROPOSAL_EDIT_NOT_PERMITTED,
 } from "../affected-rows";
 
@@ -30,5 +31,24 @@ describe("checkAffectedRows", () => {
         PROPOSAL_EDIT_NOT_PERMITTED
       )
     ).toEqual({ ok: false, error: "boom" });
+  });
+});
+
+describe("isRowLevelSecurityError", () => {
+  it("recognises the Postgres insufficient-privilege code", () => {
+    expect(isRowLevelSecurityError({ code: "42501", message: "denied" })).toBe(true);
+  });
+
+  it("recognises the RLS message when no code is present", () => {
+    expect(
+      isRowLevelSecurityError({
+        message: 'new row violates row-level security policy for table "scoped_services"',
+      })
+    ).toBe(true);
+  });
+
+  it("ignores other errors and a missing error", () => {
+    expect(isRowLevelSecurityError({ code: "23505", message: "duplicate key" })).toBe(false);
+    expect(isRowLevelSecurityError(null)).toBe(false);
   });
 });

@@ -30,6 +30,7 @@ import { applyComplexity } from "@/lib/calculations/complexity";
 import { NUM } from "@/lib/calculations/num";
 import { hasMigrationSection, toEngineLine } from "@/lib/calculations/adapters";
 import {
+  BID_SHEET_NOTES_MAX_LENGTH,
   discountPercentSchema,
   discountDollarsSchema,
 } from "@/lib/validation/bid-sheet";
@@ -56,6 +57,7 @@ import {
 } from "@/lib/validation/proposal";
 import { z } from "zod";
 import { toast } from "sonner";
+import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
 import { Download } from "lucide-react";
 import {
   INTERNAL_COST_RATE_KEY,
@@ -364,7 +366,11 @@ export default function BidSheetPage() {
       return;
     }
 
-    setBidSheet({ ...bidSheet, discount_percent: parsed.data });
+    // Merge into the latest state: a credit save that finished meanwhile
+    // must not be undone by this handler's older copy of the bid sheet.
+    setBidSheet((current) =>
+      current ? { ...current, discount_percent: parsed.data } : current
+    );
     setDiscountPercentDraft(String(parsed.data));
   };
 
@@ -394,7 +400,9 @@ export default function BidSheetPage() {
       return;
     }
 
-    setBidSheet({ ...bidSheet, discount_dollars: parsed.data });
+    setBidSheet((current) =>
+      current ? { ...current, discount_dollars: parsed.data } : current
+    );
     setDiscountDollarsDraft(String(parsed.data));
   };
 
@@ -407,11 +415,19 @@ export default function BidSheetPage() {
 
     if (!result.ok) {
       toast.error(`Failed to save notes: ${result.error}`);
-      setNotesDraft(bidSheet.notes ?? "");
+      // Put the stored notes back only when the save was refused. For any
+      // other failure (too long, signed out, a network error) keep the typed
+      // text so it can be fixed or copied and saved again.
+      if (result.error === PROPOSAL_EDIT_NOT_PERMITTED) {
+        setNotesDraft(bidSheet.notes ?? "");
+      }
       return;
     }
 
-    setBidSheet({ ...bidSheet, notes: notesDraft });
+    const savedNotes = notesDraft;
+    setBidSheet((current) =>
+      current ? { ...current, notes: savedNotes } : current
+    );
   };
 
   const discountPercent = bidSheet?.discount_percent ?? 0;
@@ -796,6 +812,7 @@ export default function BidSheetPage() {
         <CardContent>
           <Textarea
             rows={4}
+            maxLength={BID_SHEET_NOTES_MAX_LENGTH}
             value={notesDraft}
             disabled={savingNotes}
             onChange={(e) => setNotesDraft(e.target.value)}

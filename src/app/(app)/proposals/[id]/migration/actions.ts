@@ -24,6 +24,7 @@ import {
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import {
   checkAffectedRows,
+  isRowLevelSecurityError,
   PROPOSAL_EDIT_NOT_PERMITTED,
 } from "@/lib/supabase/affected-rows";
 import type { Database } from "@/types/database";
@@ -338,7 +339,9 @@ export async function addMigrationDetailLine(
   if (insertError) {
     return {
       ok: false,
-      error: `Couldn't add migration detail row. ${insertError.message}`,
+      error: isRowLevelSecurityError(insertError)
+        ? PROPOSAL_EDIT_NOT_PERMITTED
+        : `Couldn't add migration detail row. ${insertError.message}`,
     };
   }
 

@@ -104,13 +104,23 @@ export default async function ProposalLayout({
           className="mb-3 mt-2 flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
         >
           <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <p>
-            This proposal belongs to {scopedBy ?? "another user"}. Only they or
-            an admin can save changes here; your edits won&apos;t be saved.
-            {editability.canChangeStatus && (
-              <> As a manager, you can still change its status.</>
-            )}
-          </p>
+          {editability.canChangeStatus ? (
+            // Managers may write the proposals row itself (name, status,
+            // closeout figures, scoped complexity factor) but not its tabs.
+            <p>
+              This proposal belongs to {scopedBy ?? "another user"}. Only they
+              or an admin can save changes to its scenarios, bid sheet, scoped
+              service lines and migration details. As a manager, you can still
+              rename it, change its status and closeout figures, and set the
+              scoped complexity factor.
+            </p>
+          ) : (
+            <p>
+              This proposal belongs to {scopedBy ?? "another user"}. Only they
+              or an admin can save changes here; your edits won&apos;t be
+              saved.
+            </p>
+          )}
         </div>
       )}
       <ProposalNav proposalId={id} />

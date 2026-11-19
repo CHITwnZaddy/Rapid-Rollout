@@ -25,6 +25,15 @@ export const CUSTOMER_EDIT_NOT_PERMITTED =
 export const ROW_NOT_SAVED =
   "This change wasn't saved. The row may have been removed, or you may not have permission to change it.";
 
+// Unlike updates and deletes, an insert that RLS refuses does raise:
+// Postgres error 42501, "new row violates row-level security policy ...".
+export function isRowLevelSecurityError(
+  error: { code?: string; message: string } | null
+): boolean {
+  if (!error) return false;
+  return error.code === "42501" || error.message.includes("row-level security");
+}
+
 export type WriteCheckResult = { ok: true } | { ok: false; error: string };
 
 type CountedWriteResult = {
