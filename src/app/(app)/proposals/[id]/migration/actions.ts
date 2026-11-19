@@ -22,6 +22,10 @@ import {
   type MigrationSection,
 } from "@/lib/validation/migration";
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
+import {
+  checkAffectedRows,
+  PROPOSAL_EDIT_NOT_PERMITTED,
+} from "@/lib/supabase/affected-rows";
 import type { Database } from "@/types/database";
 import { z } from "zod";
 
@@ -257,19 +261,20 @@ async function updateComputedTotal(
     };
   }
 
-  const { error } = await supabase
+  // RLS lets only the proposal's owner or an admin write migration_config. A
+  // refused update returns no error and zero rows, so count the rows changed.
+  const { error, count } = await supabase
     .from("migration_config")
-    .update({
-      computed_total_cost: totals.clientPrice,
-      updated_at: new Date().toISOString(),
-    })
+    .update(
+      {
+        computed_total_cost: totals.clientPrice,
+        updated_at: new Date().toISOString(),
+      },
+      { count: "exact" }
+    )
     .eq("id", config.id);
 
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  return { ok: true };
+  return checkAffectedRows({ error, count }, PROPOSAL_EDIT_NOT_PERMITTED);
 }
 
 async function revalidateMigrationPaths(proposalId: string) {
@@ -414,6 +419,14 @@ export async function removeMigrationDetailLine(
     return { ok: false, error: remainingLineResult.error };
   }
 
+  // The RPC is SECURITY INVOKER: its SELECT sees the row (readable by every
+  // signed-in user), but RLS silently filters its DELETE for anyone but the
+  // proposal's owner or an admin, so it returns without error. The row still
+  // being there means the delete was refused.
+  if (remainingLineResult.lines.some((line) => line.id === parsed.data.lineId)) {
+    return { ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED };
+  }
+
   const totalUpdate = await updateComputedTotal(
     supabase,
     configResult.config,
@@ -450,12 +463,32 @@ export async function resetMigrationServices(
   if (!auth.ok) return auth;
 
   const supabase = await createClient();
+  // No affected-row check needed: the RPC raises when its migration_config
+  // UPDATE matches no row (IF NOT FOUND), which is also what RLS does to a
+  // non-owner's update, and the raise rolls back the line delete/insert.
+  // The error is told apart below.
   const { error } = await supabase.rpc("reset_migration_services", {
     p_proposal_id: parsed.data,
   });
 
   if (error) {
-    return { ok: false, error: error.message };
+    if (!error.message.includes("Missing migration_config row")) {
+      return { ok: false, error: error.message };
+    }
+    // The RPC raises the same "missing row" error whether the config row is
+    // absent or RLS hid it from the UPDATE. Every signed-in user can read
+    // migration_config, so a row that is still there means a refused clear.
+    const { data: configRow } = await supabase
+      .from("migration_config")
+      .select("id")
+      .eq("proposal_id", parsed.data)
+      .maybeSingle();
+    return {
+      ok: false,
+      error: configRow
+        ? PROPOSAL_EDIT_NOT_PERMITTED
+        : "Migration settings for this proposal weren't found. Reload the page and try again.",
+    };
   }
 
   await revalidateMigrationPaths(parsed.data);

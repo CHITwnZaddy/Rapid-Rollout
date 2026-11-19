@@ -1,5 +1,54 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMigrationPersistenceController } from "./migration-persistence";
+import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import {
+  assertMigrationWriteSaved,
+  createMigrationPersistenceController,
+  MigrationSaveRefusedError,
+} from "./migration-persistence";
+
+describe("assertMigrationWriteSaved", () => {
+  it("accepts a write that changed a row", () => {
+    expect(() =>
+      assertMigrationWriteSaved({ error: null, count: 1 }, "Couldn't save.")
+    ).not.toThrow();
+  });
+
+  it("throws the not-permitted refusal when RLS let the write through with zero rows", () => {
+    let thrown: unknown;
+    try {
+      assertMigrationWriteSaved({ error: null, count: 0 }, "Couldn't save.");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(MigrationSaveRefusedError);
+    expect((thrown as Error).message).toBe(PROPOSAL_EDIT_NOT_PERMITTED);
+  });
+
+  it("treats a missing count (no { count: \"exact\" }) as a refusal, not a save", () => {
+    expect(() =>
+      assertMigrationWriteSaved({ error: null, count: null }, "Couldn't save.")
+    ).toThrow(MigrationSaveRefusedError);
+  });
+
+  it("keeps the caller's prefix and stays retryable for a Supabase error", () => {
+    let thrown: unknown;
+    try {
+      assertMigrationWriteSaved(
+        { error: { message: "network down" }, count: null },
+        "Couldn't save migration detail row."
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown).not.toBeInstanceOf(MigrationSaveRefusedError);
+    expect((thrown as Error).message).toBe(
+      "Couldn't save migration detail row. network down"
+    );
+  });
+});
 
 describe("createMigrationPersistenceController", () => {
   beforeEach(() => {
@@ -214,5 +263,158 @@ describe("createMigrationPersistenceController", () => {
     expect(statuses).toContain("error");
     expect(statuses.at(-1)).toBe("saved");
     expect(saveLine.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("reports a zero-row (RLS-refused) write as an error instead of saved", async () => {
+    const statuses: string[] = [];
+    const errors: string[] = [];
+    const saveComputedTotal = vi.fn(async () => undefined);
+
+    const controller = createMigrationPersistenceController({
+      debounceMs: 50,
+      getSnapshot: () => ({
+        config: { id: "cfg-1", num_projects: 2 },
+        lines: [{ id: "line-1", quantity: 7 }],
+      }),
+      saveConfig: vi.fn(async () => undefined),
+      // What the hook's saveLine does with Supabase's reply for a non-owner.
+      saveLine: vi.fn(async () => {
+        assertMigrationWriteSaved(
+          { error: null, count: 0 },
+          "Couldn't save migration detail row."
+        );
+      }),
+      saveComputedTotal,
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+      onError: (error) => {
+        errors.push(error instanceof Error ? error.message : String(error));
+      },
+    });
+
+    controller.scheduleLineSave("line-1");
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(statuses).toEqual(["saving", "error"]);
+    expect(errors).toEqual([PROPOSAL_EDIT_NOT_PERMITTED]);
+    expect(saveComputedTotal).not.toHaveBeenCalled();
+  });
+
+  it("drops a refused save instead of resending it on retry or later edits", async () => {
+    const statuses: string[] = [];
+    const saveLine = vi.fn(async () => {
+      throw new MigrationSaveRefusedError();
+    });
+    const saveConfig = vi.fn(async () => undefined);
+
+    const controller = createMigrationPersistenceController({
+      debounceMs: 50,
+      getSnapshot: () => ({
+        config: { id: "cfg-1", num_projects: 2 },
+        lines: [{ id: "line-1", quantity: 7 }],
+      }),
+      saveConfig,
+      saveLine,
+      saveComputedTotal: vi.fn(async () => undefined),
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+    });
+
+    controller.scheduleLineSave("line-1");
+    await expect(controller.flushNow()).resolves.toBe(false);
+
+    // Retry Save / a row add-remove flush: nothing outstanding, so it neither
+    // resends the refused row nor stays stuck on the refused run's failure.
+    await expect(controller.flushNow()).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saveLine).toHaveBeenCalledTimes(1);
+    expect(statuses).toEqual(["saving", "error"]);
+
+    // A later edit saves only itself.
+    controller.scheduleConfigSave();
+    await expect(controller.flushNow()).resolves.toBe(true);
+    expect(saveLine).toHaveBeenCalledTimes(1);
+    expect(saveConfig).toHaveBeenCalledTimes(1);
+    expect(statuses.at(-1)).toBe("saved");
+  });
+
+  it("still reports failure to a flush that waits on a refused run in flight", async () => {
+    let refuse: (() => void) | undefined;
+    const saveLine = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          refuse = () => reject(new MigrationSaveRefusedError());
+        })
+    );
+
+    const controller = createMigrationPersistenceController({
+      debounceMs: 50,
+      getSnapshot: () => ({
+        config: { id: "cfg-1", num_projects: 2 },
+        lines: [{ id: "line-1", quantity: 7 }],
+      }),
+      saveConfig: vi.fn(async () => undefined),
+      saveLine,
+      saveComputedTotal: vi.fn(async () => undefined),
+    });
+
+    controller.scheduleLineSave("line-1");
+    const first = controller.flushNow();
+    await vi.advanceTimersByTimeAsync(0);
+    // Nothing new is pending, so this waits on the in-flight run.
+    const waiting = controller.flushNow();
+    refuse?.();
+
+    await expect(first).resolves.toBe(false);
+    await expect(waiting).resolves.toBe(false);
+  });
+
+  it("does not report \"saved\" for a queued edit that a refusal dropped", async () => {
+    const statuses: string[] = [];
+    let refuse: (() => void) | undefined;
+    const saveLine = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          refuse = () => reject(new MigrationSaveRefusedError());
+        })
+    );
+    const saveConfig = vi.fn(async () => undefined);
+
+    const controller = createMigrationPersistenceController({
+      debounceMs: 50,
+      getSnapshot: () => ({
+        config: { id: "cfg-1", num_projects: 2 },
+        lines: [{ id: "line-1", quantity: 7 }],
+      }),
+      saveConfig,
+      saveLine,
+      saveComputedTotal: vi.fn(async () => undefined),
+      onStatusChange: (status) => {
+        statuses.push(status);
+      },
+    });
+
+    // Edit A is in flight; edit B queues a second run behind it.
+    controller.scheduleLineSave("line-1");
+    const first = controller.flushNow();
+    await vi.advanceTimersByTimeAsync(0);
+    controller.scheduleConfigSave();
+    const queued = controller.flushNow();
+
+    // A is refused, which drops B before its run starts.
+    refuse?.();
+
+    await expect(first).resolves.toBe(false);
+    await expect(queued).resolves.toBe(false);
+    expect(saveConfig).not.toHaveBeenCalled();
+    expect(statuses).toEqual(["saving", "saving", "error"]);
+
+    // The next real edit saves and reports "saved" again.
+    controller.scheduleConfigSave();
+    await expect(controller.flushNow()).resolves.toBe(true);
+    expect(saveConfig).toHaveBeenCalledTimes(1);
+    expect(statuses.at(-1)).toBe("saved");
   });
 });

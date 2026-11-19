@@ -6,6 +6,7 @@ import { requireAuthenticatedResult } from "@/lib/auth/require-admin";
 import {
   checkAffectedRows,
   PROPOSAL_EDIT_NOT_PERMITTED,
+  PROPOSAL_ROW_NOT_PERMITTED,
 } from "@/lib/supabase/affected-rows";
 
 export type UpdateComplexityFactorResult =
@@ -76,7 +77,7 @@ export async function updateScopedComplexityFactor(
 
   const written = checkAffectedRows(
     { error, count },
-    PROPOSAL_EDIT_NOT_PERMITTED
+    PROPOSAL_ROW_NOT_PERMITTED
   );
   if (!written.ok) return written;
 

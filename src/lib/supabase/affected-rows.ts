@@ -14,6 +14,11 @@
 export const PROPOSAL_EDIT_NOT_PERMITTED =
   "This change wasn't saved. Only the proposal's owner or an admin can edit it.";
 
+// For writes to the proposals row itself (status, closeout fields, the
+// scoped complexity factor), which managers may also make.
+export const PROPOSAL_ROW_NOT_PERMITTED =
+  "This change wasn't saved. Only the proposal's owner, a manager, or an admin can change it.";
+
 export const CUSTOMER_EDIT_NOT_PERMITTED =
   "This change wasn't saved. Only the person who created this customer, or an admin, can change it.";
 

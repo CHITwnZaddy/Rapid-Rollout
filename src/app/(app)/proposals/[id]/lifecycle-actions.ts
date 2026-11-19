@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { PROPOSAL_STATUSES, type ProposalStatus } from "@/lib/constants/statuses";
 import { isClosedProposalStatus } from "@/lib/proposals/status";
 import {
+  PROPOSAL_ROW_NOT_PERMITTED,
+  checkAffectedRows,
+} from "@/lib/supabase/affected-rows";
+import {
   requireAuthenticatedResult,
   requireManagerOrAdminResult,
 } from "@/lib/auth/require-admin";
@@ -67,6 +71,12 @@ async function transitionProposalStatus(
   );
 
   if (error) {
+    // The RPC is SECURITY INVOKER: a caller who may read the proposal but not
+    // write its status history hits the history table's RLS policy. Show the
+    // shared permission message instead of the raw Postgres text.
+    if (error.message.includes("row-level security")) {
+      return { ok: false, error: PROPOSAL_ROW_NOT_PERMITTED };
+    }
     return { ok: false, error: error.message };
   }
   if (!changed) {
@@ -89,20 +99,26 @@ export async function closeProposalWon(
   if (!auth.ok) return auth;
 
   const supabase = await createClient();
-  const { error: updateError } = await supabase
+  // RLS filters a refused UPDATE to zero rows instead of erroring, so count
+  // the affected rows and stop before the status transition runs.
+  const updated = await supabase
     .from("proposals")
-    .update({
-      sold_price: parsed.data.soldPrice,
-      loe_value: parsed.data.loeValue,
-      loe_signed_date: parsed.data.loeSignedDate,
-      variance_reason_code: parsed.data.varianceReasonCode,
-      variance_note: parsed.data.varianceNote,
-      closed_lost_reason: null,
-      closed_lost_note: null,
-    })
+    .update(
+      {
+        sold_price: parsed.data.soldPrice,
+        loe_value: parsed.data.loeValue,
+        loe_signed_date: parsed.data.loeSignedDate,
+        variance_reason_code: parsed.data.varianceReasonCode,
+        variance_note: parsed.data.varianceNote,
+        closed_lost_reason: null,
+        closed_lost_note: null,
+      },
+      { count: "exact" }
+    )
     .eq("id", proposalId);
 
-  if (updateError) return { ok: false, error: updateError.message };
+  const updateCheck = checkAffectedRows(updated, PROPOSAL_ROW_NOT_PERMITTED);
+  if (!updateCheck.ok) return updateCheck;
 
   const transitioned = await transitionProposalStatus(proposalId, "Closed Won");
   if (!transitioned.ok) return transitioned;
@@ -121,19 +137,23 @@ export async function closeProposalLost(
   if (!auth.ok) return auth;
 
   const supabase = await createClient();
-  const { error: updateError } = await supabase
+  const updated = await supabase
     .from("proposals")
-    .update({
-      closed_lost_reason: parsed.data.closedLostReason,
-      closed_lost_note: parsed.data.closedLostNote,
-      loe_signed_date: null,
-      loe_value: null,
-      variance_reason_code: null,
-      variance_note: null,
-    })
+    .update(
+      {
+        closed_lost_reason: parsed.data.closedLostReason,
+        closed_lost_note: parsed.data.closedLostNote,
+        loe_signed_date: null,
+        loe_value: null,
+        variance_reason_code: null,
+        variance_note: null,
+      },
+      { count: "exact" }
+    )
     .eq("id", proposalId);
 
-  if (updateError) return { ok: false, error: updateError.message };
+  const updateCheck = checkAffectedRows(updated, PROPOSAL_ROW_NOT_PERMITTED);
+  if (!updateCheck.ok) return updateCheck;
 
   const transitioned = await transitionProposalStatus(proposalId, "Closed Lost");
   if (!transitioned.ok) return transitioned;
@@ -159,20 +179,24 @@ export async function correctClosedProposalFinancials(
 
   const supabase = await createClient();
   const correctedAt = new Date().toISOString();
-  const { error: updateError } = await supabase
+  const updated = await supabase
     .from("proposals")
-    .update({
-      sold_price: parsed.data.soldPrice,
-      loe_value: parsed.data.loeValue,
-      loe_signed_date: parsed.data.loeSignedDate,
-      variance_reason_code: parsed.data.varianceReasonCode,
-      variance_note: parsed.data.varianceNote,
-      closed_financials_corrected_at: correctedAt,
-      closed_financials_corrected_by: managerId,
-    })
+    .update(
+      {
+        sold_price: parsed.data.soldPrice,
+        loe_value: parsed.data.loeValue,
+        loe_signed_date: parsed.data.loeSignedDate,
+        variance_reason_code: parsed.data.varianceReasonCode,
+        variance_note: parsed.data.varianceNote,
+        closed_financials_corrected_at: correctedAt,
+        closed_financials_corrected_by: managerId,
+      },
+      { count: "exact" }
+    )
     .eq("id", proposalId);
 
-  if (updateError) return { ok: false, error: updateError.message };
+  const updateCheck = checkAffectedRows(updated, PROPOSAL_ROW_NOT_PERMITTED);
+  if (!updateCheck.ok) return updateCheck;
 
   const { error: logError } = await supabase.from("change_log").insert({
     proposal_id: proposalId,

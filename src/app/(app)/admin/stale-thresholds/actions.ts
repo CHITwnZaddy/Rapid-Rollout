@@ -5,6 +5,7 @@ import { z } from "zod";
 import { assertManagerOrAdmin, AuthError } from "@/lib/auth/require-admin";
 import { STALE_THRESHOLD_STATUSES } from "@/lib/settings/sales-ops-constants";
 import { createClient } from "@/lib/supabase/server";
+import { ROW_NOT_SAVED, checkAffectedRows } from "@/lib/supabase/affected-rows";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -46,17 +47,22 @@ export async function updateStaleThreshold(
     });
 
     const supabase = await createClient();
-    const { error } = await supabase
+    // RLS refuses non-managers with zero rows and no error, so count the write.
+    const { error, count } = await supabase
       .from("proposal_stale_thresholds")
-      .update({
-        threshold_days: parsed.thresholdDays,
-        is_active: parsed.isActive,
-        updated_by: user.id,
-      })
+      .update(
+        {
+          threshold_days: parsed.thresholdDays,
+          is_active: parsed.isActive,
+          updated_by: user.id,
+        },
+        { count: "exact" }
+      )
       .eq("id", parsed.id)
       .eq("status", parsed.status);
 
-    if (error) throw new Error(error.message);
+    const saved = checkAffectedRows({ error, count }, ROW_NOT_SAVED);
+    if (!saved.ok) return saved;
     revalidatePath("/admin/stale-thresholds");
     return { ok: true };
   } catch (error) {

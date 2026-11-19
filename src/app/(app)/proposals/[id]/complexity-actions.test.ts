@@ -50,7 +50,10 @@ vi.mock("next/cache", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
-import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import {
+  PROPOSAL_EDIT_NOT_PERMITTED,
+  PROPOSAL_ROW_NOT_PERMITTED,
+} from "@/lib/supabase/affected-rows";
 import {
   updateScenarioComplexityFactor,
   updateScopedComplexityFactor,
@@ -214,7 +217,7 @@ describe("complexity factor actions", () => {
 
       expect(result).toEqual({
         ok: false,
-        error: PROPOSAL_EDIT_NOT_PERMITTED,
+        error: PROPOSAL_ROW_NOT_PERMITTED,
       });
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
