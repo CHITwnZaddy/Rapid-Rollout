@@ -36,8 +36,10 @@ type CountedWriteResult = { error: { message: string } | null; count: number | n
 let proposalRows: ProposalRow[] = [];
 let scopedServiceRows: ScopedServiceRow[] = [];
 let rateCardRows: RateCardRow[] = [];
-// Mirrors RLS on scoped_services: when false (caller is not the proposal
-// owner or an admin) updates and deletes match zero rows and return no error.
+// When false, writes to scoped_services don't take effect, as when the
+// proposal or row was deleted (e.g. in another tab) or the session ended:
+// updates and deletes match zero rows and return no error, inserts get an RLS
+// error.
 let scopedServicesWritable = true;
 // One-shot override for the bulk Clear Tab delete result.
 let clearDeleteResultOverride: CountedWriteResult | null = null;
@@ -136,7 +138,8 @@ vi.mock("@/lib/supabase/server", () => ({
           },
           insert(payload: Partial<ScopedServiceRow>) {
             if (!scopedServicesWritable) {
-              // RLS refuses inserts with an error, unlike updates/deletes.
+              // An insert RLS rejects (proposal missing or signed out) raises
+              // an error, unlike updates/deletes.
               return Promise.resolve({
                 error: {
                   code: "42501",
@@ -274,7 +277,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
-import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import { PROPOSAL_CHANGE_NOT_SAVED } from "@/lib/supabase/affected-rows";
 import {
   addScopedServiceLine,
   clearScopedServices,
@@ -409,12 +412,12 @@ describe("scoped services actions", () => {
     });
   });
 
-  it("reports a refused add with the shared permission message", async () => {
+  it("reports an add RLS rejected (proposal missing or signed out) with the shared not-saved message", async () => {
     scopedServicesWritable = false;
 
     const result = await addScopedServiceLine(proposalId);
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(
       scopedServiceRows.filter((row) => row.proposal_id === proposalId)
     ).toHaveLength(2);
@@ -487,19 +490,20 @@ describe("scoped services actions", () => {
     );
   });
 
-  it("reports a line update that RLS refused instead of reloading rows", async () => {
-    // A non-owner's update affects zero rows and returns no error.
+  it("reports a line update that matched no row as not saved instead of reloading rows", async () => {
+    // A deleted row or an ended session: the update affects zero rows and
+    // returns no error.
     scopedServicesWritable = false;
     const before = structuredClone(scopedServiceRows);
 
     const result = await updateScopedServiceLine(proposalId, lineOneId, {
       serviceType: "05 Other",
-      description: "Not mine",
+      description: "Unsaved edit",
       hours: 4,
       rateCardLookupKey: "Master|Program Manager",
     });
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(scopedServiceRows).toEqual(before);
     // Only the pre-update existence check read the rows; no canonical reload.
     expect(scopedServicesSelectMock).toHaveBeenCalledTimes(1);
@@ -519,9 +523,9 @@ describe("scoped services actions", () => {
     });
   });
 
-  it("reports a refused delete as not permitted while the line is still there", async () => {
-    // What RLS does to a non-owner: the RPC's DELETE matches no row, so it
-    // raises its "not found" error even though the line exists.
+  it("reports a delete that didn't take effect as not saved while the line is still there", async () => {
+    // The RPC's DELETE matched no row, so it raises its "not found" error,
+    // yet the line still exists: the delete didn't take effect.
     rpcMock.mockResolvedValueOnce({
       data: null,
       error: {
@@ -531,7 +535,7 @@ describe("scoped services actions", () => {
 
     const result = await deleteScopedServiceLine(proposalId, lineOneId);
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     // Only the existence check read the rows; nothing was revalidated.
     expect(scopedServicesSelectMock).toHaveBeenCalledTimes(1);
     expect(revalidatePathMock).not.toHaveBeenCalled();
@@ -584,25 +588,26 @@ describe("scoped services actions", () => {
     expect(revalidatePathMock).toHaveBeenCalledWith(`/proposals/${proposalId}`);
   });
 
-  it("reports a clear that RLS refused and keeps the rows", async () => {
-    // A non-owner's delete affects zero rows and returns no error.
+  it("reports a clear that matched no rows as not saved and keeps the rows", async () => {
+    // The delete affects zero rows and returns no error, as for an ended
+    // session.
     scopedServicesWritable = false;
 
     const result = await clearScopedServices(proposalId);
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(
       scopedServiceRows.filter((r) => r.proposal_id === proposalId)
     ).toHaveLength(2);
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
-  it("reports a short clear that left rows behind as not permitted", async () => {
+  it("reports a short clear that left rows behind as not saved", async () => {
     clearDeleteResultOverride = { error: null, count: 1 };
 
     const result = await clearScopedServices(proposalId);
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 

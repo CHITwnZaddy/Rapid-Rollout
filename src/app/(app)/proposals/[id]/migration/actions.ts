@@ -423,10 +423,10 @@ export async function removeMigrationDetailLine(
     return { ok: false, error: remainingLineResult.error };
   }
 
-  // The RPC raises when the row is missing, but a DELETE that matches nothing
-  // after its SELECT (e.g. RLS filters it once the proposal is gone or the
-  // session ended) returns without error. The row still being there means
-  // the delete didn't take effect.
+  // The RPC is SECURITY INVOKER and raises when its SELECT finds no row, but
+  // a DELETE that then matches nothing (RLS filters it) returns without
+  // error. Any signed-in user may delete these rows, so this is a backstop:
+  // the row still being there means the delete didn't take effect.
   if (remainingLineResult.lines.some((line) => line.id === parsed.data.lineId)) {
     return { ok: false, error: PROPOSAL_CHANGE_NOT_SAVED };
   }
