@@ -2,33 +2,41 @@ import { describe, expect, it } from "vitest";
 import {
   checkAffectedRows,
   isRowLevelSecurityError,
-  PROPOSAL_EDIT_NOT_PERMITTED,
+  PROPOSAL_CHANGE_NOT_SAVED,
 } from "../affected-rows";
+
+describe("PROPOSAL_CHANGE_NOT_SAVED", () => {
+  it("tells the user the change wasn't saved and why, without blaming permissions", () => {
+    expect(PROPOSAL_CHANGE_NOT_SAVED).toBe(
+      "This change wasn't saved. The proposal may have been deleted, or you may have been signed out. Reload the page and try again."
+    );
+  });
+});
 
 describe("checkAffectedRows", () => {
   it("passes when at least one row was written", () => {
     expect(
-      checkAffectedRows({ error: null, count: 1 }, PROPOSAL_EDIT_NOT_PERMITTED)
+      checkAffectedRows({ error: null, count: 1 }, PROPOSAL_CHANGE_NOT_SAVED)
     ).toEqual({ ok: true });
   });
 
-  it("reports the not-permitted message when RLS filtered every row", () => {
+  it("reports the not-saved message when the write matched no row", () => {
     expect(
-      checkAffectedRows({ error: null, count: 0 }, PROPOSAL_EDIT_NOT_PERMITTED)
-    ).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+      checkAffectedRows({ error: null, count: 0 }, PROPOSAL_CHANGE_NOT_SAVED)
+    ).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
   });
 
   it("treats a missing count as a failure, not a success", () => {
     expect(
-      checkAffectedRows({ error: null, count: null }, PROPOSAL_EDIT_NOT_PERMITTED)
-    ).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+      checkAffectedRows({ error: null, count: null }, PROPOSAL_CHANGE_NOT_SAVED)
+    ).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
   });
 
   it("surfaces the database error first", () => {
     expect(
       checkAffectedRows(
         { error: { message: "boom" }, count: 0 },
-        PROPOSAL_EDIT_NOT_PERMITTED
+        PROPOSAL_CHANGE_NOT_SAVED
       )
     ).toEqual({ ok: false, error: "boom" });
   });

@@ -1,23 +1,31 @@
 // Row-level security makes a Supabase .update() or .delete() on a row the
-// caller may not change return no error and zero affected rows. Every write
-// that can be refused this way must request { count: "exact" } and pass the
-// result through checkAffectedRows, so a refused write reports an error
-// instead of a false "Saved".
+// caller can't see or may not change return no error and zero affected rows.
+// Every write that can match nothing this way must request { count: "exact" }
+// and pass the result through checkAffectedRows, so a write that changed
+// nothing reports an error instead of a false "Saved".
 //
-// The live policies (supabase/migrations) let only a proposal's owner or an
-// admin write its child tables (scenarios, scenario_lines, bid_sheets,
-// scoped_services, migration_config, migration_detail_lines); managers can
-// also update the proposals row itself. Customers can be changed by their
-// creator or an admin; rate cards and service hours by admins; sales-ops
-// settings by managers and admins.
+// Who may write what (supabase/migrations, latest
+// 20261119220158_allow_any_se_to_edit_proposals.sql). SEs act as backups for
+// each other, so editing a proposal is shared the same way reading it is:
+//   - Edit any tab (scenario grid, complexity factors, bid sheet, scoped
+//     services lines, migration config and rows, Clear Tab), rename, change
+//     status, close won/lost: any signed-in user.
+//   - Correct closed-won financials: a manager or an admin (a trigger guards
+//     the correction stamp).
+//   - Delete a proposal: its owner (proposals.created_by) or an admin.
+//   - Change who owns a proposal: an admin only (trigger, error 42501).
+//   - Create or delete the structural rows (scenarios, scenario_lines,
+//     bid_sheets, migration_config): the owner or an admin. The app only does
+//     this in create_proposal_bundle and the proposal-delete cascade.
+// Customers can be changed by their creator or an admin; rate cards and
+// service hours by admins; sales-ops settings by managers and admins.
+//
+// So a proposal write that affects zero rows doesn't mean "not permitted": the
+// proposal or row was deleted (for example in another tab) or the session
+// ended. Proposal writes still count rows and report PROPOSAL_CHANGE_NOT_SAVED.
 
-export const PROPOSAL_EDIT_NOT_PERMITTED =
-  "This change wasn't saved. Only the proposal's owner or an admin can edit it.";
-
-// For writes to the proposals row itself (status, closeout fields, the
-// scoped complexity factor), which managers may also make.
-export const PROPOSAL_ROW_NOT_PERMITTED =
-  "This change wasn't saved. Only the proposal's owner, a manager, or an admin can change it.";
+export const PROPOSAL_CHANGE_NOT_SAVED =
+  "This change wasn't saved. The proposal may have been deleted, or you may have been signed out. Reload the page and try again.";
 
 export const CUSTOMER_EDIT_NOT_PERMITTED =
   "This change wasn't saved. Only the person who created this customer, or an admin, can change it.";
