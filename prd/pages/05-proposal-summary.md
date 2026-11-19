@@ -8,7 +8,7 @@
 
 The **Summary** tab presents a single comparison table for **six scenarios**, plus roll-ups for **scoped services** and **migration services**, showing hours, pre-discount client price, discounted allocation, and margin badges. Links jump into the underlying editors.
 
-**Shared layout (parent):** proposal title, customer line, **ProposalStatus** control + **Save**, **Delete** button, and tab navigation — documented implicitly here as header chrome.
+**Shared layout (parent):** proposal title (editable), customer line, “Scoped by” owner name, **ProposalStatus** control + **Save**, **Delete** button (owner or admin only), an optional backup note, and tab navigation — documented implicitly here as header chrome. See [Who can edit](#who-can-edit).
 
 ## Layout
 
@@ -68,6 +68,23 @@ The **Summary** tab presents a single comparison table for **six scenarios**, pl
 
 - **Inbound:** Any proposal tab; list/dashboard cards.
 - **Outbound:** Scenario grid pages, scoped services, migration.
+
+## Who can edit
+
+SEs act as backups for each other (Austin, 2026-11-19; migration `20261119220158_allow_any_se_to_edit_proposals`), so the header and every tab behind it are editable by any signed-in user, not only the proposal's owner.
+
+| Action | Who |
+|--------|-----|
+| View the proposal and its tabs | Any signed-in user |
+| Edit any tab (scenario grids, complexity factors, bid sheet, scoped services, migration) | Any signed-in user |
+| Rename, change status, close won/lost | Any signed-in user |
+| Correct closed-won financials | Manager or admin |
+| **Delete** | Owner or admin; the button is hidden for everyone else and the server re-checks |
+| Change the owner (`created_by`) | Admin only (not exposed in the UI) |
+
+- **Backup note:** a signed-in user who is neither the owner nor an admin sees a muted note under the header: “You're editing {owner}'s proposal as their backup. Your changes save to their proposal, and only they or an admin can delete it. Let them know what you changed.” ({owner} is the owner's display name, or “another SE” when it is unknown.) Admins never see it, and it is not shown when the proposal has no recorded owner.
+- **No edit attribution:** edits are not recorded against the user who made them (no change tracking yet). Status changes still record who made them in the status history.
+- **Failed saves:** a write that changes nothing because the proposal or row was deleted (for example in another tab) or the session ended shows “This change wasn't saved. The proposal may have been deleted, or you may have been signed out. Reload the page and try again.”
 
 ## Business rules
 
