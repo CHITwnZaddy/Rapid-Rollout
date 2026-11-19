@@ -5,6 +5,7 @@ import {
   isPublicPath,
 } from "@/lib/auth/public-paths";
 import { getRequiredEnv } from "@/lib/env";
+import { shouldLogAuthError } from "@/lib/supabase/auth-errors";
 import type { Database } from "@/types/database";
 
 const SUPABASE_AUTH_RESPONSE_HEADERS = [
@@ -84,7 +85,10 @@ export async function updateSession(request: NextRequest) {
     error: userError,
   } = await supabase.auth.getUser();
 
-  if (userError) {
+  // A signed-out visitor gets AuthSessionMissingError here on every request.
+  // That case is handled by the /login redirect below, so only log real
+  // failures (rejected tokens, auth server unreachable, etc.).
+  if (userError && shouldLogAuthError(userError)) {
     console.error("Supabase auth user lookup failed", userError.message);
   }
 
