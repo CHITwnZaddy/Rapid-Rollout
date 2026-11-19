@@ -141,6 +141,8 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 
 ## Ticket 6: Affected-row checks on every mutation (the silent no-op class)  P1
 
+> Note (2026-11-19, D4): after migration `20261119220158_allow_any_se_to_edit_proposals` a zero-row proposal write no longer means "not permitted"; it means the proposal or row was deleted (for example in another tab) or the session ended. The two proposal messages are replaced by one, `PROPOSAL_CHANGE_NOT_SAVED` in `src/lib/supabase/affected-rows.ts` ("This change wasn't saved. The proposal may have been deleted, or you may have been signed out. Reload the page and try again."). Every count check stays. Customer writes keep `CUSTOMER_EDIT_NOT_PERMITTED`.
+
 **Purpose:** Child-table `.update()/.delete()` calls never check how many rows changed, so RLS-filtered writes by a manager or a non-owner SE return success: bid sheet (`proposals/[id]/bid-sheet/actions.ts:102-111`, page then recomputes totals with the unsaved value), complexity factors (`complexity-actions.ts` ~35-44, ~61-70; toast "Complexity factor saved."), scoped services line edit and Clear Tab (`scoped-services/actions.ts` ~302-327, ~404-414), migration config/lines from the browser (`src/lib/hooks/use-migration-config.ts` ~169-209 → "All migration changes are saved."), migration remove-row (RPC without `IF NOT FOUND`, `migration/actions.ts` ~395-432 reloads and reports "saved"), the generic admin table used by `/customers` (`src/components/admin/actions.ts:203-258`; `data-table.tsx:89-93` overlays the typed value, `:128-132` toasts "Row deleted."), and the sales-ops settings updates (`admin/stale-thresholds/actions.ts:49-57`, `admin/variance-reasons/actions.ts:50-59`).
 
 **Files:** new `src/lib/supabase/affected-rows.ts`; the action/hook files above; their `*.test.ts` siblings.
@@ -159,6 +161,8 @@ Recommended order: **1 → 2 → 3 → 4 → 5 → 6 → 8 → 9 → 10 → 12 �
 ---
 
 ## Ticket 7: Ownership-aware proposal UI  P2  *(decision D4)*
+
+> Resolution (2026-11-19, D4): the follow-up is resolved by migration `20261119220158_allow_any_se_to_edit_proposals`, which lets any signed-in user save changes on every tab and change status. The banner now says the backup's changes save to the owner's proposal (a muted note shown only to a signed-in SE who is neither the owner nor an admin), and Delete is hidden for anyone who is not the owner or an admin (`deleteProposal` re-checks on the server). `getProposalEditability` returns `{ canEdit, canDelete, isOwner }`. The read-only steps below (`canEditContent` / `canChangeStatus`, `readOnly` props, disabled inputs, skipped autosave) are superseded: every control stays enabled.
 
 **Purpose:** Nothing in the proposal pages gates editing on ownership; `[id]/layout.tsx` reads `created_by` only to print "Scoped by". After Ticket 6 non-owners get errors instead of silent no-ops; this ticket stops them from trying.
 
