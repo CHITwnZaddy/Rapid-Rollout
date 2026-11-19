@@ -26,7 +26,8 @@ An SE receives a customer opportunity. They create a proposal tied to a customer
 1. **Given** a logged-in SE with a hydrated rate card, **When** they create a new proposal and add a line item to scenario P1 with a known service and quantity, **Then** the scenario line output displays rate, hours, and cost matching the calculation engine to the cent.
 2. **Given** a proposal with line items in all six scenarios, **When** the SE changes the proposal-level complexity factor, **Then** every scenario total and the proposal summary total recompute accordingly and persist on save.
 3. **Given** a rate-card row is missing from Supabase, **When** the SE opens the scenario grid, **Then** an error card is shown and no pricing UI renders with a default value.
-4. **Given** two SEs viewing the same proposal, **When** one SE updates scenario P2, **Then** the second SE sees the change after refresh (global read, owner-write RLS).
+4. **Given** two SEs viewing the same proposal, **When** one SE updates scenario P2, **Then** the second SE sees the change after refresh (global read, shared write: any signed-in SE can edit any proposal).
+5. **Given** an SE opens a proposal another SE created, **When** they edit any tab, rename it, or change its status, **Then** the change saves to that proposal (SEs back each other up), a muted note tells them they are editing the owner's proposal as their backup, and the Delete action is hidden (delete is owner-or-admin).
 
 ---
 
@@ -42,7 +43,7 @@ An SE configures migration services for a proposal: number of locations, documen
 
 1. **Given** a proposal and a valid migration configuration, **When** the SE saves the migration detail, **Then** the computed Sr. IM hours, PM Oversight hours, and travel cost match the migration engine output, and the proposal total updates.
 2. **Given** the rate card is missing `Master|Sr. Implementation Manager`, `Master|Program Manager`, or `Master|Travel Cost/Trip`, **When** the SE opens the migration page, **Then** the app surfaces a visible error and refuses to compute a migration total.
-3. **Given** a saved migration, **When** an SE edits a row in the migration queue, **Then** the change persists through a server action and appears in the change log.
+3. **Given** a saved migration, **When** an SE edits a row in the migration queue, **Then** the change persists. Edits are not written to the change log (no change tracking yet; deferred by Austin on 2026-11-19).
 
 ---
 
@@ -127,7 +128,8 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 
 - Rate card or service-hours table returns zero rows → fail closed with a visible error; no hardcoded fallback prices.
 - Supabase auth session expires mid-session → middleware redirects to login; no half-written mutations.
-- Two SEs edit the same proposal simultaneously → last-writer-wins at the server-action level; audit log preserves both actors and timestamps.
+- Two SEs edit the same proposal simultaneously (allowed: SEs back each other up) → last-writer-wins at the server-action level. Edits are not attributed (no change tracking yet), so neither actor is recorded; status changes still record who made them in `proposal_status_history`.
+- A write affects zero rows because the proposal or row was deleted (for example in another tab) or the session ended → the action reports "This change wasn't saved. The proposal may have been deleted, or you may have been signed out. Reload the page and try again." instead of a false success.
 - Proposal has a migration configured but the travel rate is later deleted from the rate card → migration page renders an error instead of silently zeroing travel cost.
 - SE enters a complexity factor of 0 or a negative value → Zod rejects at input boundary.
 - SE enters credit greater than subtotal, then also a discount → adjusted subtotal floors at 0, discount applies to 0, final total is 0.
@@ -146,9 +148,9 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 
 **Proposals & Customers**
 
-- **FR-010**: Users MUST be able to create, view, edit, and delete proposals tied to customer records.
-- **FR-011**: System MUST apply global-read, owner-write RLS on proposals so any SE can view any proposal but only the owner (or admin) can write.
-- **FR-012**: System MUST treat customers as shared-write so any SE can create or update customer records.
+- **FR-010**: Users MUST be able to create, view, and edit proposals tied to customer records, and the owner or an admin MUST be able to delete them.
+- **FR-011**: System MUST let any signed-in user read **and edit** any proposal and all of its tabs (scenarios, complexity factors, bid sheet, scoped services, migration), rename it, change its status, and close it out, so SEs can back each other up (Austin, 2026-11-19; migration `20261119220158_allow_any_se_to_edit_proposals`). Deleting a proposal MUST stay owner-or-admin, changing its owner (`created_by`) MUST be admin-only, and correcting closed-won financials MUST be manager-or-admin. Edits are not attributed to the user who made them (change tracking deferred); status changes still record the acting user.
+- **FR-012**: System MUST let any SE read customers and create new ones; only the user who created a customer, or an admin, can update or delete it.
 - **FR-013**: Users MUST be able to set a proposal-level complexity factor and a per-scenario complexity factor, both persisted.
 
 **Scenario Pricing**
@@ -163,7 +165,7 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 - **FR-030**: Users MUST be able to configure migration parameters (line-item imports, document complexity, sections, travel, oversight) for a proposal.
 - **FR-031**: System MUST compute migration hours and cost using `src/lib/calculations/migration-engine.ts`, rolling labor into the Sr. IM bucket and PM Oversight onto the PM side.
 - **FR-032**: System MUST fail closed on migration pricing when any required rate-card row is missing (`Master|Sr. Implementation Manager`, `Master|Program Manager`, `Master|Travel Cost/Trip`).
-- **FR-033**: Users MUST be able to edit individual migration rows via server actions; changes MUST appear in the change log.
+- **FR-033**: Users MUST be able to edit individual migration rows. Row edits are not written to the change log (change tracking deferred by Austin on 2026-11-19).
 
 **Scoped Services**
 
@@ -216,8 +218,8 @@ An admin manages the Supabase-backed lookup data (rate cards, service hours), us
 
 ### Key Entities
 
-- **Customer**: Organization the proposal is for. Shared-write across SEs.
-- **Proposal**: Top-level record owned by an SE, referencing a customer. Carries proposal-level complexity factor and status. Global-read, owner-write.
+- **Customer**: Organization the proposal is for. Readable by every SE; changed only by its creator or an admin.
+- **Proposal**: Top-level record owned by an SE, referencing a customer. Carries proposal-level complexity factor and status. Any signed-in user can read and edit it (SEs back each other up); only the owner or an admin can delete it, and only an admin can change its owner.
 - **Scenario (P1 / P2 / P3 / Opt1 / Opt2 / Opt3)**: Six variant price views on a proposal. Each has its own complexity factor and line items.
 - **Scenario Line**: A single priced row in a scenario, derived from a service-hours row and a rate-card row.
 - **Migration Configuration**: Per-proposal migration parameters driving the migration engine.
