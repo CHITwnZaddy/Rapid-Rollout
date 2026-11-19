@@ -200,40 +200,40 @@ PR INTO staging                Vercel preview URL spins up
    │                           Uses staging Supabase
    │ merge to staging
    ▼
-STAGING                        If migration: npm run db:push:staging
+STAGING                        New migration files are applied automatically
+   │                           (Supabase GitHub integration, ~30-60 s)
    │                           https://staging-rapid-rollout.vercel.app
    │                           Smoke test here. This is the gate.
    │ PR: staging → main, merge
    ▼
-PRODUCTION                     If migration: npm run db:push:prod
+PRODUCTION                     New migration files are applied automatically
+                               (Supabase GitHub integration, ~30-60 s)
                                Real users see the change
 ```
 
-The hard rule that makes this work: **migrations are applied to the
-target environment's DB *before* merging the PR that depends on them.**
-This is just the existing rule from `deploy-and-migrations.md`, applied to
-two environments instead of one.
+Migrations reach each database through the Supabase GitHub integration:
+merging to `staging` applies new files in `supabase/migrations` to the
+staging project, and merging to `main` applies them to production. See
+`deploy-and-migrations.md` for the full flow, the "Migrations drift" check
+and the hand-apply fallback (`npm run db:push:staging` / `db:push:prod`).
 
-## Optional: Supabase Branching
+## Supabase Branching and the GitHub integration
 
-Supabase Branching automatically spins up an ephemeral DB branch per git
-branch. It is slick but:
-
-- Requires Supabase Pro plan
-- Still maturing
-- Adds complexity that a solo project does not yet need
-
-For now, two static projects (Staging + Production) is the right call.
-Revisit Branching when multiple developers open overlapping
-schema-changing PRs.
+Both projects are connected to this repository through the Supabase GitHub
+integration: the staging project follows the `staging` branch and the
+production project follows `main`, and each applies new migration files when
+its branch receives them. On the production project, Branching is also on: a
+PR that changes `supabase/` gets an ephemeral preview database built from every
+migration (the "Supabase Preview" check), which proves a new migration replays
+cleanly before it is merged. Staging stays a separate, long-lived project.
 
 ## What this doc does not cover
 
 - Seeding staging with realistic-but-anonymized data from production.
   That is a separate workflow involving `pg_dump`, careful PII scrubbing,
   and access controls — to be documented if/when needed.
-- CI/CD automation of `supabase db push` on merge. Currently manual by
-  design, matching the existing discipline in `deploy-and-migrations.md`.
+- Hand-applying migrations. The Supabase GitHub integration applies them on
+  merge; `deploy-and-migrations.md` documents the `db push` fallback.
 - Rollback procedures. If staging surfaces a bad change, the procedure is
   the same as today: revert the merge commit and fast-forward the
   affected branches. No additional staging-specific rollback is needed.
