@@ -494,6 +494,12 @@ describe("allow_any_se_to_edit_proposals migration", () => {
       );
     });
 
+    it("refuses any change to a proposal's id", () => {
+      expect(guard.body).toContain(
+        "IF NEW.id IS DISTINCT FROM OLD.id THEN RAISE EXCEPTION 'A proposal''s id can''t be changed.' USING ERRCODE = '42501'; END IF;"
+      );
+    });
+
     it("raises 42501 unless an admin changes created_by", () => {
       expect(guard.body).toContain(
         "IF NEW.created_by IS DISTINCT FROM OLD.created_by AND NOT (SELECT public.auth_is_admin()) THEN RAISE EXCEPTION 'Only an admin can change who owns a proposal.' USING ERRCODE = '42501'; END IF;"
@@ -504,8 +510,8 @@ describe("allow_any_se_to_edit_proposals migration", () => {
       expect(guard.body).toContain(
         "IF (NEW.closed_financials_corrected_at IS DISTINCT FROM OLD.closed_financials_corrected_at OR NEW.closed_financials_corrected_by IS DISTINCT FROM OLD.closed_financials_corrected_by) AND NOT (SELECT public.is_manager_or_admin()) THEN RAISE EXCEPTION 'Only a manager or an admin can correct closed-won financials.' USING ERRCODE = '42501'; END IF;"
       );
-      expect(guard.body.match(/RAISE EXCEPTION/g)).toHaveLength(3);
-      expect(guard.body.match(/USING ERRCODE = '42501';/g)).toHaveLength(3);
+      expect(guard.body.match(/RAISE EXCEPTION/g)).toHaveLength(4);
+      expect(guard.body.match(/USING ERRCODE = '42501';/g)).toHaveLength(4);
       expect(guard.body.endsWith("RETURN NEW; END;")).toBe(true);
     });
 
@@ -546,6 +552,7 @@ describe("allow_any_se_to_edit_proposals migration", () => {
 
       const columns = trigger![1].split(",").map((column) => column.trim());
       expect(columns).toEqual([
+        "id",
         "created_by",
         "closed_financials_corrected_at",
         "closed_financials_corrected_by",
@@ -556,7 +563,7 @@ describe("allow_any_se_to_edit_proposals migration", () => {
         columns.map((column) => `OLD.${column} IS DISTINCT FROM NEW.${column}`)
       );
 
-      for (const column of columns.slice(1)) {
+      for (const column of columns.slice(2)) {
         expect(earlierSql).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
       }
     });
@@ -583,7 +590,7 @@ describe("allow_any_se_to_edit_proposals migration", () => {
         "CREATE OR REPLACE FUNCTION public.guard_proposal_child_parent() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''"
       );
       expect(guard.body).toContain(
-        "IF current_user IN ('anon', 'authenticated') THEN RAISE EXCEPTION 'A proposal''s rows can''t be moved to another proposal.' USING ERRCODE = '42501'; END IF; RETURN NEW;"
+        "IF current_user IN ('anon', 'authenticated') THEN RAISE EXCEPTION 'A proposal''s rows can''t be moved to another proposal or re-keyed.' USING ERRCODE = '42501'; END IF; RETURN NEW;"
       );
     });
 
@@ -594,9 +601,9 @@ describe("allow_any_se_to_edit_proposals migration", () => {
       expect(sql).not.toMatch(/GRANT[^;]*guard_proposal_child_parent/i);
     });
 
-    it.each(PARENT_KEYS)("guards %s.%s with a BEFORE UPDATE OF trigger and a matching WHEN clause", (table, column) => {
+    it.each(PARENT_KEYS)("guards %s.id and %s with a BEFORE UPDATE OF trigger and a matching WHEN clause", (table, column) => {
       expect(squash(sql)).toContain(
-        `CREATE OR REPLACE TRIGGER trg_guard_${table}_parent BEFORE UPDATE OF ${column} ON public.${table} FOR EACH ROW WHEN (OLD.${column} IS DISTINCT FROM NEW.${column}) EXECUTE FUNCTION public.guard_proposal_child_parent();`
+        `CREATE OR REPLACE TRIGGER trg_guard_${table}_parent BEFORE UPDATE OF id, ${column} ON public.${table} FOR EACH ROW WHEN (OLD.id IS DISTINCT FROM NEW.id OR OLD.${column} IS DISTINCT FROM NEW.${column}) EXECUTE FUNCTION public.guard_proposal_child_parent();`
       );
     });
   });
