@@ -21,7 +21,7 @@ export function ValueByStageChart({
   if (rows.length === 0) {
     return (
       <div className="flex h-[220px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-        No open value in this range.
+        No open pipeline value.
       </div>
     );
   }

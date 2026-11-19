@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { buildMigrationCostMap } from "@/lib/reports/proposal-aggregates";
@@ -10,9 +10,12 @@ import {
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
 import {
-  PROPOSAL_STATUSES,
-} from "@/lib/constants/statuses";
-import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/status";
+  initialStatusSelection,
+  shouldAutoRunOnArrival,
+  statusFilterForSelection,
+  statusFilterOptions,
+  statusSelectionLabel,
+} from "@/lib/reports/proposal-log-status";
 import type { ReportConfig } from "@/lib/reports/report-config";
 import { exportReportXLSX } from "@/lib/reports/export-xlsx";
 import { ReportFilterBar, type FilterSpec } from "@/components/reports/report-filter-bar";
@@ -79,17 +82,16 @@ const REPORT_CONFIG: ReportConfig = {
   ],
 };
 
-const STATUSES = ["All", ...PROPOSAL_STATUSES];
-
 type OwnerScope = "team" | "mine" | "specific";
 
-function parseStatusPreset(value: string | null): string[] | undefined {
-  if (!value || value === "All") return undefined;
-  if (value === "open") return [...OPEN_PROPOSAL_STATUSES];
-  return value.split(",").map((status) => status.trim()).filter(Boolean);
+// Keyed on the query string so a new arrival URL on the same route
+// re-seeds the filters (the page itself never writes the URL).
+export default function ProposalLogReport() {
+  const searchParamKey = useSearchParams().toString();
+  return <ProposalLogReportContent key={searchParamKey} />;
 }
 
-export default function ProposalLogReport() {
+function ProposalLogReportContent() {
   const {
     supabase,
     customers,
@@ -109,7 +111,7 @@ export default function ProposalLogReport() {
   } = useMemo(() => {
     const params = new URLSearchParams(searchParamString);
     return {
-      statusPreset: parseStatusPreset(params.get("status")),
+      statusPreset: initialStatusSelection(params.get("status")),
       scopePreset: (params.get("scope") as OwnerScope | null) ?? "team",
       ownerIdPreset: params.get("ownerId") ?? undefined,
       dateFromPreset: params.get("dateFrom") ?? undefined,
@@ -119,9 +121,8 @@ export default function ProposalLogReport() {
   }, [searchParamString]);
 
   const [selectedCustomer, setSelectedCustomer] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState(
-    statusPreset?.length === 1 ? statusPreset[0] : "All"
-  );
+  // Seeded from the ?status= preset once; the dropdown owns it afterwards.
+  const [selectedStatus, setSelectedStatus] = useState(statusPreset);
   const { rows, loading, hasRun, error, run } = useReportState<ReportRow>(
     "Proposal Log report failed to load."
   );
@@ -132,9 +133,7 @@ export default function ProposalLogReport() {
     await run(async () => {
       const proposals = await fetchRevenueReportBaseRows(supabase, {
         customerId: selectedCustomer !== "all" ? selectedCustomer : undefined,
-        status:
-          selectedStatus !== "All" && !statusPreset ? selectedStatus : undefined,
-        statuses: statusPreset,
+        ...statusFilterForSelection(selectedStatus),
         ownerScope: scopePreset,
         currentUserId: currentUserId ?? undefined,
         selectedOwnerId: ownerIdPreset,
@@ -195,7 +194,6 @@ export default function ProposalLogReport() {
     supabase,
     selectedCustomer,
     selectedStatus,
-    statusPreset,
     scopePreset,
     currentUserId,
     ownerIdPreset,
@@ -205,10 +203,23 @@ export default function ProposalLogReport() {
     filterError,
   ]);
 
+  // Auto-run once per arrival URL (dashboard drill-down), not on every
+  // later dropdown change: after arrival the user re-runs with Run.
+  const autoRunKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!searchParamString) return;
-    if (filtersLoading || filterError) return;
-    if (scopePreset === "mine" && !currentUserId) return;
+    if (
+      !shouldAutoRunOnArrival({
+        searchParamString,
+        lastAutoRunKey: autoRunKeyRef.current,
+        filtersLoading,
+        filterError,
+        scopePreset,
+        currentUserId,
+      })
+    ) {
+      return;
+    }
+    autoRunKeyRef.current = searchParamString;
     void runReport();
   }, [
     currentUserId,
@@ -231,17 +242,14 @@ export default function ProposalLogReport() {
         ? "All Customers"
         : (customers.find((c) => c.id === selectedCustomer)?.company_name ??
           "All Customers");
-    const statusLabel =
-      statusPreset && statusPreset.length > 1
-        ? statusPreset.join(", ")
-        : selectedStatus === "All" ? "All Statuses" : selectedStatus;
+    const statusLabel = statusSelectionLabel(selectedStatus);
 
     await exportReportXLSX(
       REPORT_CONFIG,
       sorted,
       `${customerLabel} and ${statusLabel}`
     );
-  }, [rows, selectedCustomer, selectedStatus, statusPreset, customers]);
+  }, [rows, selectedCustomer, selectedStatus, customers]);
 
   // Screen sort: Customer A→Z.
   const screenRows = [...rows].sort((a, b) =>
@@ -249,7 +257,9 @@ export default function ProposalLogReport() {
   );
   const appliedPresetLabel = searchParamString
     ? [
-        statusPreset?.length ? `Status: ${statusPreset.join(", ")}` : null,
+        statusPreset !== "All" && selectedStatus === statusPreset
+          ? `Status: ${statusSelectionLabel(statusPreset)}`
+          : null,
         `Scope: ${scopePreset}`,
         dateFromPreset || dateToPreset
           ? `Date: ${dateFromPreset ?? "start"} to ${dateToPreset ?? "end"}`
@@ -275,7 +285,7 @@ export default function ProposalLogReport() {
       key: "status",
       label: "Status",
       widthClass: "w-[180px]",
-      options: STATUSES.map((s) => ({ label: s, value: s })),
+      options: statusFilterOptions(statusPreset),
     },
   ];
 

@@ -19,6 +19,15 @@ function row(
   return { proposal_id: proposalId, old_status, new_status, changed_at };
 }
 
+function rowAt(
+  proposalId: string,
+  new_status: string,
+  changed_at: string,
+  old_status: string | null = null
+): StatusHistoryRow {
+  return { proposal_id: proposalId, old_status, new_status, changed_at };
+}
+
 describe("computeStatusMetrics", () => {
   it("returns all-null for a proposal with no history", () => {
     expect(computeStatusMetrics("p1", [], NOW)).toEqual({
@@ -104,6 +113,82 @@ describe("computeStatusMetrics", () => {
     const m = computeStatusMetrics("p1", rows, NOW);
     expect(m.currentStatus).toBe("Sent for Review");
     expect(m.firstWonAt).toBeNull();
+  });
+});
+
+describe("computeStatusMetrics (America/Chicago calendar days)", () => {
+  it("daysInCurrentStatus counts Chicago calendar days across spring-forward", () => {
+    // 21 calendar days but only 20 days + 23 hours of elapsed time, because
+    // 2026-03-08 is 23 hours long. The old floor-of-ms count gave 20.
+    const rows = [rowAt("p1", "Discovery", "2026-03-01T09:00:00-06:00")];
+    const m = computeStatusMetrics(
+      "p1",
+      rows,
+      new Date("2026-03-22T09:00:00-05:00")
+    );
+    expect(m.daysInCurrentStatus).toBe(21);
+  });
+
+  it("late-evening change reads 1 day next Chicago morning", () => {
+    const rows = [rowAt("p1", "Discovery", "2026-04-21T23:30:00-05:00")];
+    const m = computeStatusMetrics(
+      "p1",
+      rows,
+      new Date("2026-04-22T08:00:00-05:00")
+    );
+    expect(m.daysInCurrentStatus).toBe(1);
+  });
+
+  it("25-hour fall-back day is still day 0", () => {
+    const rows = [rowAt("p1", "Discovery", "2026-11-01T00:30:00-05:00")];
+    const m = computeStatusMetrics(
+      "p1",
+      rows,
+      new Date("2026-11-01T23:45:00-06:00")
+    );
+    expect(m.daysInCurrentStatus).toBe(0);
+  });
+
+  it("daysToClose uses calendar days across DST", () => {
+    const rows = [
+      rowAt("p1", "Sent for Review", "2026-03-01T09:00:00-06:00"),
+      rowAt(
+        "p1",
+        "Closed Won",
+        "2026-03-22T09:00:00-05:00",
+        "Sent for Review"
+      ),
+    ];
+    const m = computeStatusMetrics(
+      "p1",
+      rows,
+      new Date("2026-04-01T12:00:00-05:00")
+    );
+    expect(m.daysToClose).toBe(21);
+  });
+
+  it("clamps daysInCurrentStatus to 0 under clock skew", () => {
+    // changed_at is just after Chicago midnight; now is just before it.
+    const rows = [rowAt("p1", "Discovery", "2026-04-22T00:00:00.500-05:00")];
+    const m = computeStatusMetrics(
+      "p1",
+      rows,
+      new Date("2026-04-21T23:59:59.900-05:00")
+    );
+    expect(m.daysInCurrentStatus).toBe(0);
+  });
+
+  it("unparseable changed_at yields null days and does not throw", () => {
+    const rows = [
+      rowAt("p1", "Sent for Review", "not-a-date"),
+      rowAt("p1", "Closed Won", "also-not-a-date", "Sent for Review"),
+    ];
+    let m: ReturnType<typeof computeStatusMetrics> | undefined;
+    expect(() => {
+      m = computeStatusMetrics("p1", rows, NOW);
+    }).not.toThrow();
+    expect(m?.daysInCurrentStatus).toBeNull();
+    expect(m?.daysToClose).toBeNull();
   });
 });
 
