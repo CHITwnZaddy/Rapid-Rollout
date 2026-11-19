@@ -27,6 +27,12 @@ Lists **hours by role** (Sr. IM, PM, BA) for proposals across **scenario lines**
 
 Each row represents a proposal plus either a scenario code or synthetic buckets **Scoped Services** / **Migration Services**, with aggregated role hours and total.
 
+- A scenario row appears only when that scenario has non-zero Sr. IM, PM or BA hours — the same rule as the **Scoped Services** and **Migration Services** buckets. Every proposal is created with all six scenarios, so empty ones are suppressed rather than listed as 0-hour rows.
+- A proposal with no hours anywhere produces no rows.
+- The Scenario filter is applied after suppression, so picking a scenario with no hours shows the empty state.
+- Each row's **Proposal Name** links to its proposal (`/proposals/<proposal id>`); the row's own id is `<proposal id>:<scenario or bucket>` so it is unique per row.
+- Logic lives in `buildProposalHoursRows` (`src/lib/reports/proposal-hours.ts`).
+
 ## Interactions
 
 ### Run Report

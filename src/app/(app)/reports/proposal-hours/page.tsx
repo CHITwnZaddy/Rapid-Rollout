@@ -6,6 +6,12 @@ import {
   buildScopedHoursMap,
 } from "@/lib/reports/proposal-aggregates";
 import {
+  buildProposalHoursRows,
+  MIGRATION_SERVICES_BUCKET,
+  SCOPED_SERVICES_BUCKET,
+  type ProposalHoursRow,
+} from "@/lib/reports/proposal-hours";
+import {
   fetchHoursAggregateInputs,
   fetchReportProposals,
 } from "@/lib/reports/data";
@@ -25,21 +31,6 @@ import {
 
 type OwnerFilter = "all" | "mine";
 
-// A single (proposal, scenario-or-bucket) row. "scenario" stores the
-// internal code or synthetic bucket; "scenarioLabel" is the display name.
-type HoursRow = {
-  id: string;
-  proposalName: string;
-  customerName: string;
-  scenario: string;
-  scenarioLabel: string;
-  srImHours: number;
-  pmHours: number;
-  baHours: number;
-  totalHours: number;
-  [key: string]: string | number | null;
-};
-
 const REPORT_CONFIG: ReportConfig = {
   title: "Proposal Hours Report",
   xlsxTitle: "Rapid Rollout – Proposal Hours",
@@ -54,7 +45,8 @@ const REPORT_CONFIG: ReportConfig = {
       width: 32,
       format: "link",
       hrefBase: "/proposals",
-      hrefKey: "id",
+      // Row ids are composite (proposal:scenario); link by proposal id.
+      hrefKey: "proposalId",
     },
     { key: "customerName", header: "Customer", width: 26, format: "text" },
     { key: "scenarioLabel", header: "Scenario", width: 20, format: "text" },
@@ -68,8 +60,8 @@ const REPORT_CONFIG: ReportConfig = {
 const SCENARIO_FILTER = [
   "All",
   ...SCENARIO_ORDER,
-  "Scoped Services",
-  "Migration Services",
+  SCOPED_SERVICES_BUCKET,
+  MIGRATION_SERVICES_BUCKET,
 ];
 
 function scenarioFilterLabel(value: string): string {
@@ -87,7 +79,7 @@ export default function ProposalHoursReport() {
   const [selectedCustomer, setSelectedCustomer] = useState("all");
   const [selectedScenario, setSelectedScenario] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>("all");
-  const { rows, loading, hasRun, error, run } = useReportState<HoursRow>(
+  const { rows, loading, hasRun, error, run } = useReportState<ProposalHoursRow>(
     "Proposal Hours report failed to load."
   );
   const resultsError = filterError ?? error;
@@ -109,87 +101,21 @@ export default function ProposalHoursReport() {
         proposalIds
       );
 
-      const customerMap = new Map(customers.map((c) => [c.id, c.company_name]));
-      const lineSumByScenario = new Map<
-        string,
-        { sr: number; pm: number; ba: number }
-      >();
-      for (const l of aggregateInputs.scenarioLineRows) {
-        const agg = lineSumByScenario.get(l.scenario_id) ?? { sr: 0, pm: 0, ba: 0 };
-        agg.sr += Number(l.sr_im_hours) || 0;
-        agg.pm += Number(l.pm_hours) || 0;
-        agg.ba += Number(l.ba_hours) || 0;
-        lineSumByScenario.set(l.scenario_id, agg);
-      }
-
-      const scopedByProposal = buildScopedHoursMap(aggregateInputs.scopedRows);
-      const migrationByProposal = buildMigrationHoursMap(
-        aggregateInputs.migrationConfigRows,
-        aggregateInputs.migrationLineRows,
-        aggregateInputs.rateMap
-      );
-
-      const out: HoursRow[] = [];
-      const customerName = (cid: string | null) =>
-        customerMap.get(cid ?? "") ?? "—";
-      const pushRow = (
-        p: { id: string; name: string; customer_id: string | null },
-        scenario: string,
-        sr: number,
-        pm: number,
-        ba: number
-      ) => {
-        out.push({
-          id: p.id,
-          proposalName: p.name,
-          customerName: customerName(p.customer_id),
-          scenario,
-          scenarioLabel: getScenarioDisplayName(scenario),
-          srImHours: sr,
-          pmHours: pm,
-          baHours: ba,
-          totalHours: sr + pm + ba,
-        });
-      };
-
-      const scenariosByProposal = new Map<
-        string,
-        { id: string; type: string }[]
-      >();
-      for (const s of aggregateInputs.scenarioRows) {
-        if (!scenariosByProposal.has(s.proposal_id))
-          scenariosByProposal.set(s.proposal_id, []);
-        scenariosByProposal
-          .get(s.proposal_id)!
-          .push({ id: s.id, type: s.scenario_type });
-      }
-
-      const sortedProposals = [...proposals].sort((a, b) =>
-        a.name.localeCompare(b.name)
-      );
-      for (const p of sortedProposals) {
-        const pScenarios = (scenariosByProposal.get(p.id) ?? []).sort(
-          (a, b) =>
-            SCENARIO_ORDER.indexOf(a.type as (typeof SCENARIO_ORDER)[number]) -
-            SCENARIO_ORDER.indexOf(b.type as (typeof SCENARIO_ORDER)[number])
-        );
-        for (const s of pScenarios) {
-          const sums = lineSumByScenario.get(s.id) ?? { sr: 0, pm: 0, ba: 0 };
-          pushRow(p, s.type, sums.sr, sums.pm, sums.ba);
-        }
-        const sc = scopedByProposal.get(p.id);
-        if (sc && (sc.sr || sc.pm || sc.ba)) {
-          pushRow(p, "Scoped Services", sc.sr, sc.pm, sc.ba);
-        }
-        const mig = migrationByProposal.get(p.id);
-        if (mig && (mig.pm || mig.srIm)) {
-          pushRow(p, "Migration Services", mig.srIm, mig.pm, 0);
-        }
-      }
-
-      return selectedScenario === "All"
-        ? out
-        : out.filter((r) => r.scenario === selectedScenario);
+      // Kept inside run() so a missing-rate throw from buildMigrationHoursMap
+      // still reaches the error toast.
+      return buildProposalHoursRows({
+        proposals,
+        customerNames: new Map(customers.map((c) => [c.id, c.company_name])),
+        scenarioRows: aggregateInputs.scenarioRows,
+        scenarioLineRows: aggregateInputs.scenarioLineRows,
+        scopedHours: buildScopedHoursMap(aggregateInputs.scopedRows),
+        migrationHours: buildMigrationHoursMap(
+          aggregateInputs.migrationConfigRows,
+          aggregateInputs.migrationLineRows,
+          aggregateInputs.rateMap
+        ),
+        selectedScenario,
+      });
     });
   }, [
     run,
