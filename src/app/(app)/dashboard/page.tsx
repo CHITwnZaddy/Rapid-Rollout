@@ -19,10 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CountByStageChart } from "@/components/dashboard/count-by-stage-chart";
-import {
-  DashboardDateFilter,
-  type DashboardDateRange,
-} from "@/components/dashboard/dashboard-date-filter";
+import { DashboardDateFilter } from "@/components/dashboard/dashboard-date-filter";
 import {
   DashboardScopeFilter,
   type DashboardScope,
@@ -32,6 +29,7 @@ import { ValueByStageChart } from "@/components/dashboard/value-by-stage-chart";
 import { formatCurrency } from "@/lib/calculations/engine";
 import { roundMoney } from "@/lib/calculations/rounding";
 import {
+  calculateClosedWonTotal,
   calculateCountByStage,
   calculateOnHoldCount,
   calculateOpenProposalValue,
@@ -39,19 +37,26 @@ import {
   calculateStaleCount,
   calculateValueByStage,
   calculateVarianceRollups,
+  type ClosedFinancialsRow,
   type SalesOpsDashboardProposal,
 } from "@/lib/dashboard/sales-ops";
+import {
+  buildDashboardDrillDowns,
+  firstParam,
+  resolveDashboardDateWindow,
+  type DashboardDateWindow,
+} from "@/lib/dashboard/date-window";
 import { isManagerOrAdminRole } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { buildMigrationCostMap } from "@/lib/reports/proposal-aggregates";
 import {
+  fetchClosedWonFinancials,
   fetchMigrationCostInputs,
   fetchRevenueReportBaseRows,
+  fetchStaleThresholds,
   fetchStatusHistoryMap,
 } from "@/lib/reports/data";
-import type { StaleTrackedStatus } from "@/lib/proposals/status";
-import { z } from "zod";
-import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
+import { OPEN_PROPOSAL_STATUSES } from "@/lib/proposals/status";
 
 type DashboardSearchParams = {
   scope?: string | string[];
@@ -60,150 +65,8 @@ type DashboardSearchParams = {
   dateTo?: string | string[];
 };
 
-const CloseoutFinancialRowSchema = z.object({
-  id: z.string(),
-  sold_price: z.number().nullable(),
-  loe_value: z.number().nullable(),
-  loe_signed_date: z.string().nullable(),
-});
-type CloseoutFinancialRow = z.infer<typeof CloseoutFinancialRowSchema>;
-
-const StaleThresholdRowSchema = z.object({
-  status: z.string(),
-  threshold_days: z.number(),
-});
-
-type DashboardDateWindow = {
-  range: DashboardDateRange;
-  dateFrom: string;
-  dateTo: string;
-  label: string;
-  year: number;
-};
-
-function firstParam(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function toDateInput(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function startOfQuarter(date: Date): Date {
-  const quarterStartMonth = Math.floor(date.getMonth() / 3) * 3;
-  return new Date(date.getFullYear(), quarterStartMonth, 1);
-}
-
-function endOfQuarter(date: Date): Date {
-  const quarterStartMonth = Math.floor(date.getMonth() / 3) * 3;
-  return new Date(date.getFullYear(), quarterStartMonth + 3, 0);
-}
-
-function resolveDateWindow(searchParams: DashboardSearchParams): DashboardDateWindow {
-  const now = new Date();
-  const requestedRange = firstParam(searchParams.range);
-  const range: DashboardDateRange =
-    requestedRange === "current-quarter" || requestedRange === "custom"
-      ? requestedRange
-      : "current-year";
-
-  if (range === "current-quarter") {
-    const dateFrom = toDateInput(startOfQuarter(now));
-    const dateTo = toDateInput(endOfQuarter(now));
-    const quarter = Math.floor(now.getMonth() / 3) + 1;
-    return {
-      range,
-      dateFrom,
-      dateTo,
-      label: `Q${quarter} ${now.getFullYear()}`,
-      year: now.getFullYear(),
-    };
-  }
-
-  if (range === "custom") {
-    const fallbackFrom = `${now.getFullYear()}-01-01`;
-    const fallbackTo = `${now.getFullYear()}-12-31`;
-    const dateFrom = firstParam(searchParams.dateFrom) || fallbackFrom;
-    const dateTo = firstParam(searchParams.dateTo) || fallbackTo;
-    return {
-      range,
-      dateFrom,
-      dateTo,
-      label: `${dateFrom} to ${dateTo}`,
-      year: Number(dateFrom.slice(0, 4)) || now.getFullYear(),
-    };
-  }
-
-  return {
-    range,
-    dateFrom: `${now.getFullYear()}-01-01`,
-    dateTo: `${now.getFullYear()}-12-31`,
-    label: `${now.getFullYear()}`,
-    year: now.getFullYear(),
-  };
-}
-
-function buildReportHref(
-  pathname: string,
-  params: Record<string, string | undefined>
-): string {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value) query.set(key, value);
-  }
-  const queryString = query.toString();
-  return queryString ? `${pathname}?${queryString}` : pathname;
-}
-
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-async function fetchCloseoutFinancials(
-  proposalIds: string[]
-): Promise<Map<string, CloseoutFinancialRow>> {
-  if (proposalIds.length === 0) return new Map();
-  const supabase = await createClient();
-  const result = await supabase
-    .from("proposals")
-    .select("id, sold_price, loe_value, loe_signed_date")
-    .in("id", proposalIds);
-  const parsed = safeParseSupabaseResult(
-    z.array(CloseoutFinancialRowSchema),
-    result
-  );
-  if (!parsed.ok) {
-    throw new Error(`Could not load closeout financials: ${parsed.error}`);
-  }
-
-  return new Map(parsed.data.map((row) => [row.id, row]));
-}
-
-async function fetchStaleThresholds(): Promise<
-  Partial<Record<StaleTrackedStatus, number>>
-> {
-  const supabase = await createClient();
-  const result = await supabase
-    .from("proposal_stale_thresholds")
-    .select("status, threshold_days")
-    .eq("is_active", true);
-  const parsed = safeParseSupabaseResult(
-    z.array(StaleThresholdRowSchema),
-    result
-  );
-  if (!parsed.ok) {
-    throw new Error(`Could not load stale thresholds: ${parsed.error}`);
-  }
-
-  return parsed.data.reduce<
-    Partial<Record<StaleTrackedStatus, number>>
-  >((thresholds, row) => {
-    thresholds[row.status as StaleTrackedStatus] = row.threshold_days;
-    return thresholds;
-  }, {});
 }
 
 async function fetchTargetAmount(
@@ -252,10 +115,13 @@ function DashboardHeader({
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-bold">Proposal Dashboard</h1>
           <Badge variant="secondary">{scopeLabel}</Badge>
-          <Badge variant="outline">{dateWindow.label}</Badge>
+          <Badge variant="outline">Closed won: {dateWindow.label}</Badge>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Pipeline value, stage mix, stale work, and closed revenue for the selected view.
+          Open pipeline, stage mix, follow-up and on-hold counts show every open
+          proposal today. Target progress counts Closed Won deals by LoE signed
+          date in {dateWindow.year}, year to date. The closed-won line and price
+          variance follow the selected range.
         </p>
       </div>
       <Link href="/proposals/new">
@@ -305,7 +171,7 @@ export default async function DashboardPage({
 }) {
   const supabase = await createClient();
   const sp = await searchParams;
-  const dateWindow = resolveDateWindow(sp);
+  const dateWindow = resolveDashboardDateWindow(sp);
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -319,37 +185,61 @@ export default async function DashboardPage({
       : defaultScope;
   const scopeLabel = scope === "mine" ? "My proposals" : "Team proposals";
 
-  let proposals: Awaited<ReturnType<typeof fetchRevenueReportBaseRows>>;
+  // Target progress always covers the whole target year (year to date); only
+  // the closed-won line and price variance follow the selected window. Fetch
+  // Closed Won once over the union of the two (YYYY-MM-DD compares as text).
+  const targetYearWindow = {
+    dateFrom: `${dateWindow.year}-01-01`,
+    dateTo: `${dateWindow.year}-12-31`,
+  };
+  const selectedWindow = {
+    dateFrom: dateWindow.dateFrom,
+    dateTo: dateWindow.dateTo,
+  };
+  const closedWonFetchWindow = {
+    dateFrom:
+      selectedWindow.dateFrom < targetYearWindow.dateFrom
+        ? selectedWindow.dateFrom
+        : targetYearWindow.dateFrom,
+    dateTo:
+      selectedWindow.dateTo > targetYearWindow.dateTo
+        ? selectedWindow.dateTo
+        : targetYearWindow.dateTo,
+  };
+  const owner = { ownerScope: scope, currentUserId: userId ?? undefined };
+
+  let pipelineRows: Awaited<ReturnType<typeof fetchRevenueReportBaseRows>>;
+  let closedWonRows: Awaited<ReturnType<typeof fetchClosedWonFinancials>>;
   let migrationInputs: Awaited<ReturnType<typeof fetchMigrationCostInputs>>;
   let historyMetrics: Awaited<ReturnType<typeof fetchStatusHistoryMap>>;
-  let closeoutMap: Awaited<ReturnType<typeof fetchCloseoutFinancials>>;
   let thresholds: Awaited<ReturnType<typeof fetchStaleThresholds>>;
   let targetAmount: number;
   let migrationMap: Map<string, number>;
 
   try {
-    proposals = await fetchRevenueReportBaseRows(supabase, {
-      ownerScope: scope,
-      currentUserId: userId ?? undefined,
-      dateColumn: "created_at",
-      dateFrom: dateWindow.dateFrom,
-      dateTo: dateWindow.dateTo,
-      orderBy: "created_at",
-      ascending: false,
-    });
-    const proposalIds = proposals.map((proposal) => proposal.proposal_id);
-    [migrationInputs, historyMetrics, closeoutMap, thresholds, targetAmount] =
-      await Promise.all([
-        fetchMigrationCostInputs(supabase, proposalIds),
-        fetchStatusHistoryMap(supabase, proposalIds),
-        fetchCloseoutFinancials(proposalIds),
-        fetchStaleThresholds(),
-        fetchTargetAmount(dateWindow.year, scope, userId),
-      ]);
+    [pipelineRows, closedWonRows, thresholds, targetAmount] = await Promise.all([
+      // The pipeline is today's snapshot of every open proposal (On Hold
+      // included), whatever the date window.
+      fetchRevenueReportBaseRows(supabase, {
+        ...owner,
+        statuses: [...OPEN_PROPOSAL_STATUSES],
+        orderBy: "created_at",
+        ascending: false,
+      }),
+      // Closed revenue counts Closed Won by LoE signed date (a DATE, inclusive).
+      fetchClosedWonFinancials(supabase, { ...owner, ...closedWonFetchWindow }),
+      fetchStaleThresholds(supabase),
+      fetchTargetAmount(dateWindow.year, scope, userId),
+    ]);
+    const pipelineIds = pipelineRows.map((row) => row.proposal_id);
+    [migrationInputs, historyMetrics] = await Promise.all([
+      fetchMigrationCostInputs(supabase, pipelineIds),
+      fetchStatusHistoryMap(supabase, pipelineIds),
+    ]);
     // Compute inside the try so a missing-rate throw from buildMigrationCostMap
     // surfaces in the graceful error card below, not the page error boundary.
     migrationMap =
-      proposalIds.length > 0
+      pipelineIds.length > 0
         ? buildMigrationCostMap(
             migrationInputs.migrationConfigRows,
             migrationInputs.migrationLineRows,
@@ -375,77 +265,63 @@ export default async function DashboardPage({
     );
   }
 
-  const dashboardProposals: SalesOpsDashboardProposal[] = proposals.map((proposal) => {
-    const closeout = closeoutMap.get(proposal.proposal_id);
-    const metrics = historyMetrics.get(proposal.proposal_id);
+  const pipelineProposals: SalesOpsDashboardProposal[] = pipelineRows.map((row) => {
+    const metrics = historyMetrics.get(row.proposal_id);
     const value = roundMoney(
-      (Number(proposal.p1_cost) || 0) +
-        (Number(proposal.p2_cost) || 0) +
-        (Number(proposal.p3_cost) || 0) +
-        (Number(proposal.opt3_cost) || 0) +
-        (Number(proposal.opt1_cost) || 0) +
-        (Number(proposal.opt2_cost) || 0) +
-        (Number(proposal.scoped_total) || 0) +
-        (migrationMap.get(proposal.proposal_id) ?? 0)
+      (Number(row.p1_cost) || 0) +
+        (Number(row.p2_cost) || 0) +
+        (Number(row.p3_cost) || 0) +
+        (Number(row.opt3_cost) || 0) +
+        (Number(row.opt1_cost) || 0) +
+        (Number(row.opt2_cost) || 0) +
+        (Number(row.scoped_total) || 0) +
+        (migrationMap.get(row.proposal_id) ?? 0)
     );
 
     return {
-      id: proposal.proposal_id,
-      status: proposal.status,
-      ownerId: proposal.created_by,
+      id: row.proposal_id,
+      status: row.status,
+      ownerId: row.created_by,
       value,
-      soldPrice: closeout?.sold_price ?? null,
-      loeValue: closeout?.loe_value ?? null,
-      loeSignedDate: closeout?.loe_signed_date ?? null,
-      statusChangedAt: metrics?.lastChangedAt ?? proposal.created_at ?? null,
+      // A reopened deal keeps its old closeout values in the database; they
+      // must not leak into the pipeline.
+      soldPrice: null,
+      loeValue: null,
+      loeSignedDate: null,
+      statusChangedAt: metrics?.lastChangedAt ?? row.created_at ?? null,
     };
   });
 
-  const openValue = calculateOpenProposalValue(dashboardProposals);
-  const valueByStage = calculateValueByStage(dashboardProposals);
-  const countByStage = calculateCountByStage(dashboardProposals);
-  const staleCount = calculateStaleCount(dashboardProposals, {
+  const closedProposals: ClosedFinancialsRow[] = closedWonRows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    ownerId: row.created_by,
+    soldPrice: row.sold_price,
+    loeValue: row.loe_value,
+    loeSignedDate: row.loe_signed_date,
+  }));
+
+  const openValue = calculateOpenProposalValue(pipelineProposals);
+  const valueByStage = calculateValueByStage(pipelineProposals);
+  const countByStage = calculateCountByStage(pipelineProposals);
+  const staleCount = calculateStaleCount(pipelineProposals, {
     now: new Date(),
     thresholds,
   });
-  const onHoldCount = calculateOnHoldCount(dashboardProposals);
-  const quotaProgress = calculateQuotaProgress(dashboardProposals, {
+  const onHoldCount = calculateOnHoldCount(pipelineProposals);
+  const quotaProgress = calculateQuotaProgress(closedProposals, {
     targetAmount,
-    dateFrom: dateWindow.dateFrom,
-    dateTo: dateWindow.dateTo,
+    ...targetYearWindow,
   });
-  const varianceRollups = calculateVarianceRollups(dashboardProposals);
+  const closedWonInWindow = calculateClosedWonTotal(closedProposals, selectedWindow);
+  const varianceRollups = calculateVarianceRollups(closedProposals, selectedWindow);
   const maxStageValue = Math.max(...valueByStage.map((row) => row.value), 0);
   const maxStageCount = Math.max(...countByStage.map((row) => row.count), 0);
 
-  const proposalLogParams = {
-    scope,
-    from: "dashboard",
-    range: dateWindow.range,
-    dateFrom: dateWindow.dateFrom,
-    dateTo: dateWindow.dateTo,
-  };
-  const openProposalHref = buildReportHref("/reports/proposal-log", {
-    ...proposalLogParams,
-    status: "open",
-  });
-  const staleHref = buildReportHref("/reports/stale-proposals", {
-    scope,
-    from: "dashboard",
-    range: dateWindow.range,
-    dateFrom: dateWindow.dateFrom,
-    dateTo: dateWindow.dateTo,
-    bucket: "stale",
-  });
-  const onHoldHref = buildReportHref("/reports/proposal-log", {
-    ...proposalLogParams,
-    status: "On Hold",
-  });
-  const stageHref = (status: string) =>
-    buildReportHref("/reports/proposal-log", {
-      ...proposalLogParams,
-      status,
-    });
+  // Pipeline drill-downs carry no dates. There are no closed-won links:
+  // Proposal Log cannot filter by LoE signed date.
+  const { openProposalHref, staleHref, onHoldHref, stageHref } =
+    buildDashboardDrillDowns(scope);
 
   return (
     <div className="space-y-6">
@@ -456,7 +332,7 @@ export default async function DashboardPage({
       <div className="grid gap-4 lg:grid-cols-2">
         <DashboardWidgetLink
           href={openProposalHref}
-          title="Blue means normal pipeline value. The value comes from open proposal totals."
+          title="Blue means normal pipeline value: every open proposal, whatever the date range."
         >
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
@@ -468,10 +344,6 @@ export default async function DashboardPage({
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>Closed sold in range</span>
-              <span>{formatCurrency(quotaProgress.closedSoldPrice)}</span>
-            </div>
             <div className="flex items-center gap-1 text-sm font-medium text-primary">
               View open proposals <ArrowRight className="size-4" />
             </div>
@@ -494,7 +366,8 @@ export default async function DashboardPage({
           </CardHeader>
           <CardContent className="space-y-2">
             <p className="text-sm text-muted-foreground">
-              Based on days in current status and editable stale thresholds.
+              All open proposals past their status&apos;s editable stale threshold,
+              whatever the date range.
             </p>
             <div className="flex items-center gap-1 text-sm font-medium text-primary">
               View stale proposals <ArrowRight className="size-4" />
@@ -528,12 +401,14 @@ export default async function DashboardPage({
 
         <Card
           className="rounded-lg border-l-4 border-l-emerald-500/60"
-          title="Green means quota progress. This uses closed sold value in the selected range."
+          title={`Green means quota progress: Closed Won sold price by LoE signed date in ${dateWindow.year} (year to date).`}
         >
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm text-muted-foreground">Target progress</p>
+                <p className="text-sm text-muted-foreground">
+                  Target progress ({dateWindow.year} year to date)
+                </p>
                 <CardTitle className="text-3xl">
                   {quotaProgress.percentToTarget.toFixed(1)}%
                 </CardTitle>
@@ -554,6 +429,9 @@ export default async function DashboardPage({
               <span>Annual target: {formatCurrency(quotaProgress.targetAmount)}</span>
               <span>
                 Annual remaining: {formatCurrency(quotaProgress.remainingToTarget)}
+              </span>
+              <span>
+                Closed won ({dateWindow.label}): {formatCurrency(closedWonInWindow)}
               </span>
             </div>
           </CardContent>
@@ -593,6 +471,9 @@ export default async function DashboardPage({
           <CardHeader>
             <p className="text-sm text-muted-foreground">Closed price variance</p>
             <CardTitle>{formatCurrency(varianceRollups.netVariance)}</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Closed Won, LoE signed {dateWindow.label}
+            </p>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm text-muted-foreground">
             <div className="flex justify-between">

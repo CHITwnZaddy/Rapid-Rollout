@@ -1,3 +1,5 @@
+import { businessDateOf } from "@/lib/dates/business-day";
+
 // Returns a Tailwind badge class string for a margin percentage.
 // Thresholds: ≤30% → red, <40% → yellow, ≥40% → green.
 export function getMarginBadgeClass(marginPercent: number | null): string {
@@ -17,17 +19,21 @@ export function formatMarginPercent(
   return marginPercent == null ? "—" : `${marginPercent.toFixed(digits)}%`;
 }
 
-// Returns true when an ISO timestamp falls within [from, to] (YYYY-MM-DD, inclusive).
-// A null iso with no date bounds returns true (unfiltered). The "to" bound extends
-// to end-of-day so a sent-date of 2026-04-18T23:xx still matches "to=2026-04-18".
+// Returns true when an ISO timestamp falls within [from, to]. The bounds are
+// YYYY-MM-DD America/Chicago calendar days, inclusive of both ends, matching the
+// DB filter in applyDateRange: a sent-date of 11:30 PM Chicago on 2026-04-18
+// matches "to=2026-04-18". A null iso returns true only when there are no
+// bounds (unfiltered); an unparseable iso returns false.
 export function withinRange(
   iso: string | null,
   from: string | null,
   to: string | null
 ): boolean {
   if (!iso) return !from && !to;
-  const ts = new Date(iso).getTime();
-  if (from && ts < new Date(from).getTime()) return false;
-  if (to && ts > new Date(to + "T23:59:59.999Z").getTime()) return false;
+  const day = businessDateOf(iso);
+  if (day == null) return false;
+  // Lexical comparison is valid for YYYY-MM-DD strings.
+  if (from && day < from) return false;
+  if (to && day > to) return false;
   return true;
 }

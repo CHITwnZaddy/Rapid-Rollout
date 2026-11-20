@@ -24,19 +24,21 @@ This section states what the system **must** do, in testable form. IDs are stabl
 | **FR-AUTH-6** | The user shall be able to sign out from the sidebar; signing out shall end the session and navigate to login. |
 | **FR-ROLE-1** | Users whose JWT `app_metadata.role` is `admin` shall access routes under `/admin/*`; all others shall be redirected to `/dashboard` when visiting `/admin/*`. |
 | **FR-ROLE-2** | The sidebar shall show an **Admin** navigation section only after admin role is confirmed (no flash of admin links for non-admins during session load). |
-| **FR-CUST-1** | Any authenticated user shall view the **Customers** list at `/customers` in a table with create, inline edit, and delete for customer records. |
+| **FR-CUST-1** | Any authenticated user shall view the **Customers** list at `/customers` in a table with create, inline edit, and delete for customer records. Only the user who created a customer, or an admin, can change or delete it. |
 | **FR-CUST-2** | Customer records shall support company name (required) and optional address fields (line1, line2, city, state, zip). |
 | **FR-PROP-1** | The system shall list all proposals the current user can read (per RLS) at `/proposals`, ordered by most recently updated, with New Proposal CTA. |
 | **FR-PROP-2** | Creating a proposal shall require a non-empty proposal name (trimmed, max 200 characters) and optional customer (valid UUID or none). |
 | **FR-PROP-3** | Successful creation shall invoke the `create_proposal_bundle` database routine and navigate to the new proposal’s detail area. |
 | **FR-PROP-4** | Each proposal shall expose sub-areas: Summary, Bid Sheet, six scenario tabs (Phase 1, Phase 2, Phase 3, Option 1, Option 2, Option 3), Scoped Services, and Migration Services. |
-| **FR-PROP-5** | The proposal header shall show name, customer (or “No customer”), a status control, and a delete action. |
+| **FR-PROP-5** | The proposal header shall show name, customer (or “No customer”), a status control, and a delete action. The delete action is shown only to the proposal's owner or an admin. |
+| **FR-PROP-6** | Any signed-in user shall be able to edit any proposal and all of its tabs, rename it, change its status, and close it out (SEs back each other up). A signed-in user who is neither the owner nor an admin shall see a muted note in the header that they are editing the owner's proposal as their backup. Edits are not attributed to the user who made them (no change tracking yet); status changes still record who made them. |
 | **FR-STATUS-1** | Proposal status shall be one of: Draft, Proposal Sent, Customer Review, Won, Lost, VOID. |
 | **FR-STATUS-2** | Changing status shall require the user to select a new value and click **Save**; the system shall call `transition_proposal_status` so the proposal row and status history stay consistent. |
 | **FR-STATUS-3** | Invalid status values shall be rejected with an error message. |
 | **FR-DEL-1** | Deleting a **Draft** proposal shall use a confirmation dialog, then a justification and typed phrase `DELETE {proposal name}` before the server performs deletion. |
 | **FR-DEL-2** | Deleting a non-draft “in flight” proposal shall add an initial warning step (Proposal Sent, Customer Review, Won, Lost, VOID) before the same justification and typed-confirmation step. |
 | **FR-DEL-3** | Successful deletion shall record audit context and redirect to `/proposals`. |
+| **FR-DEL-4** | Only the proposal's owner or an admin shall be able to delete it; the server refuses anyone else before recording audit context. |
 | **FR-SCEN-1** | Each scenario tab shall load grid lines from `scenario_lines` and allow editing per active `service_hours` and `rate_cards` catalog rows. |
 | **FR-SCEN-2** | Each scenario shall support a **complexity factor** constrained between **0.50** and **9.99** (inclusive); invalid values shall be rejected. |
 | **FR-SCEN-3** | Saving the scenario grid shall use the `save_scenario_grid` RPC with line payload and summary totals. |
@@ -62,7 +64,7 @@ This section states what the system **must** do, in testable form. IDs are stabl
 ### Out of scope / [TBC]
 
 - **Password reset and email verification flows** are not described in the current UI; behavior depends on Supabase project settings.
-- **Exact RLS rules** per table: enforced in Supabase; this PRD assumes authenticated reads/writes align with deployment policies.
+- **Exact RLS rules** per table: enforced in Supabase. The proposal permission model is summarized under [Permission model](#permission-model); see `supabase/migrations/` for the policies themselves.
 
 ---
 
@@ -73,7 +75,7 @@ This section states what the system **must** do, in testable form. IDs are stabl
 | Authentication | `/login`, `/signup`, `/` | Sign-in, registration, session redirects |
 | Dashboard | `/dashboard` | KPI cards, filtered recent proposals |
 | Proposals | `/proposals`, `/proposals/new`, `/proposals/[id]/*` | CRUD bundle, scenarios, scoped services, migration, bid sheet, summary |
-| Customers | `/customers` | Shared customer directory CRUD |
+| Customers | `/customers` | Shared customer directory (anyone can create; the creator or an admin edits and deletes) |
 | Reports | `/reports/*` | Proposal log, breakout, hours, portfolio, stale, time-to-close |
 | Admin | `/admin/*` | Rate cards, service hours, admin customers, users, audit log, theme |
 
@@ -118,7 +120,9 @@ This section states what the system **must** do, in testable form. IDs are stabl
 
 - **Authenticated user:** default role; can use main app routes gated by middleware.
 - **Admin:** `user.app_metadata.role === "admin"` (JWT). Server-side admin layout enforces this for `/admin/*`. Client-side admin UI uses `useRequireAdmin()` to avoid incorrect flashes during loading; **not** a security boundary by itself.
-- **Data access:** Supabase RLS and policies determine which rows are visible; the proposals list comment in code notes proposals can be globally readable for certain workflows—treat as deployment-specific.
+- **Data access:** Supabase RLS and policies determine which rows are visible and writable.
+- **Proposals (SEs back each other up; Austin, 2026-11-19):** any signed-in user can read **and edit** any proposal and its tabs (scenario grids, complexity factors, bid sheet, scoped services, migration), rename it, change its status, and close it out. Deleting a proposal is owner-or-admin; changing its owner (`created_by`) is admin-only; correcting closed-won financials is manager-or-admin. Edits are not attributed (no change tracking yet); status changes still record who made them.
+- **Customers:** any signed-in user can read customers and create new ones; only the creator or an admin can change or delete one (the creator can delete it only while no proposal uses it).
 
 ### Common interaction patterns
 

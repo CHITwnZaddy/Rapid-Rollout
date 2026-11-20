@@ -64,7 +64,7 @@ vi.mock("@/lib/proposals/proposal-subtotal", () => ({
 }));
 
 import { AuthError } from "@/lib/auth/require-admin";
-import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
+import { PROPOSAL_CHANGE_NOT_SAVED } from "@/lib/supabase/affected-rows";
 import {
   updateBidSheetCredit,
   updateBidSheetCustomer,
@@ -106,7 +106,7 @@ describe("bid sheet actions", () => {
       },
       error: null,
     });
-    // Counted write: one bid_sheets row changed (the permitted-caller case).
+    // Counted write: one bid_sheets row changed (the normal saved case).
     bidSheetUpdateEqMock.mockResolvedValue({
       error: null,
       count: 1,
@@ -266,41 +266,41 @@ describe("bid sheet actions", () => {
     );
   });
 
-  describe("when RLS refuses the bid_sheets update (zero rows changed)", () => {
+  describe("when the bid_sheets update changes zero rows", () => {
     beforeEach(() => {
-      // A non-owner, non-admin caller: RLS filters the row out of the UPDATE,
-      // so Supabase returns no error and a count of 0.
+      // A deleted row or an ended session: the UPDATE matches no row, so
+      // Supabase returns no error and a count of 0.
       bidSheetUpdateEqMock.mockResolvedValue({ error: null, count: 0 });
     });
 
-    it("reports the customer update as not permitted and does not revalidate", async () => {
+    it("reports the customer update as not saved and does not revalidate", async () => {
       const result = await updateBidSheetCustomer(proposalId, customerId);
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(bidSheetUpdateMock).toHaveBeenCalledTimes(1);
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
 
-    it("reports the discount percent update as not permitted and does not revalidate", async () => {
+    it("reports the discount percent update as not saved and does not revalidate", async () => {
       const result = await updateBidSheetDiscountPercent(proposalId, 12.5);
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(bidSheetUpdateMock).toHaveBeenCalledTimes(1);
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
 
-    it("reports the credit update as not permitted and does not revalidate", async () => {
+    it("reports the credit update as not saved and does not revalidate", async () => {
       const result = await updateBidSheetCredit(proposalId, 1500);
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(bidSheetUpdateMock).toHaveBeenCalledTimes(1);
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
 
-    it("reports the notes update as not permitted and does not revalidate", async () => {
+    it("reports the notes update as not saved and does not revalidate", async () => {
       const result = await updateBidSheetNotes(proposalId, "Important note");
 
-      expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+      expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
       expect(bidSheetUpdateMock).toHaveBeenCalledTimes(1);
       expect(revalidatePathMock).not.toHaveBeenCalled();
     });
@@ -311,7 +311,7 @@ describe("bid sheet actions", () => {
 
     const result = await updateBidSheetNotes(proposalId, "Important note");
 
-    expect(result).toEqual({ ok: false, error: PROPOSAL_EDIT_NOT_PERMITTED });
+    expect(result).toEqual({ ok: false, error: PROPOSAL_CHANGE_NOT_SAVED });
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 

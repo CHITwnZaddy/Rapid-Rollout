@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  fetchClosedWonFinancials,
   fetchCustomerMap,
   fetchHoursAggregateInputs,
   fetchMigrationCostInputs,
   fetchRevenueReportBaseRows,
   fetchReportProposals,
   fetchRevenueAggregateInputs,
+  fetchStaleThresholds,
   fetchStatusHistoryMap,
 } from "../data";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -32,6 +34,7 @@ type QueryMock = {
   eq: ReturnType<typeof vi.fn>;
   gte: ReturnType<typeof vi.fn>;
   in: ReturnType<typeof vi.fn>;
+  lt: ReturnType<typeof vi.fn>;
   lte: ReturnType<typeof vi.fn>;
   not: ReturnType<typeof vi.fn>;
   result: { data: unknown; error: unknown };
@@ -45,6 +48,7 @@ function createQueryMock(response: { data: unknown; error: unknown }): QueryMock
     eq: vi.fn().mockReturnThis(),
     gte: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
+    lt: vi.fn().mockReturnThis(),
     lte: vi.fn().mockReturnThis(),
     not: vi.fn().mockReturnThis(),
     then: vi.fn((resolve) => Promise.resolve(response).then(resolve)),
@@ -351,14 +355,153 @@ describe("fetchReportProposals", () => {
       dateTo: "2026-03-31",
     });
 
-    expect(queries.get("proposals")?.gte).toHaveBeenCalledWith(
+    // Half-open Chicago days: midnight Jan 1 (CST, UTC-6) up to, but not
+    // including, midnight Apr 1 (CDT, UTC-5).
+    const query = queries.get("proposals");
+    expect(query?.gte).toHaveBeenCalledWith(
       "created_at",
-      "2026-01-01"
+      "2026-01-01T06:00:00.000Z"
     );
-    expect(queries.get("proposals")?.lte).toHaveBeenCalledWith(
+    expect(query?.lt).toHaveBeenCalledWith(
       "created_at",
-      "2026-03-31"
+      "2026-04-01T05:00:00.000Z"
     );
+    expect(query?.lte).not.toHaveBeenCalled();
+  });
+
+  it("updated_at uses Chicago day bounds on the fall-back day", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      dateColumn: "updated_at",
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-01",
+    });
+
+    // Nov 1 2026 is 25 hours long in Chicago: it starts in CDT and ends in CST.
+    const query = queries.get("proposals");
+    expect(query?.gte).toHaveBeenCalledWith(
+      "updated_at",
+      "2026-11-01T05:00:00.000Z"
+    );
+    expect(query?.lt).toHaveBeenCalledWith(
+      "updated_at",
+      "2026-11-02T06:00:00.000Z"
+    );
+    expect(query?.lte).not.toHaveBeenCalled();
+  });
+
+  it("uses Chicago day bounds on the spring-forward day", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      dateColumn: "created_at",
+      dateFrom: "2026-03-08",
+      dateTo: "2026-03-08",
+    });
+
+    // Mar 8 2026 is 23 hours long in Chicago: it starts in CST and ends in CDT.
+    const query = queries.get("proposals");
+    expect(query?.gte).toHaveBeenCalledWith(
+      "created_at",
+      "2026-03-08T06:00:00.000Z"
+    );
+    expect(query?.lt).toHaveBeenCalledWith(
+      "created_at",
+      "2026-03-09T05:00:00.000Z"
+    );
+  });
+
+  it("applies only the upper bound when only dateTo is set", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, { dateTo: "2026-03-31" });
+
+    const query = queries.get("proposals");
+    expect(query?.lt).toHaveBeenCalledWith(
+      "created_at",
+      "2026-04-01T05:00:00.000Z"
+    );
+    expect(query?.gte).not.toHaveBeenCalled();
+    expect(query?.lte).not.toHaveBeenCalled();
+  });
+
+  it("applies only the lower bound when only dateFrom is set", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, { dateFrom: "2026-01-01" });
+
+    const query = queries.get("proposals");
+    expect(query?.gte).toHaveBeenCalledWith(
+      "created_at",
+      "2026-01-01T06:00:00.000Z"
+    );
+    expect(query?.lt).not.toHaveBeenCalled();
+    expect(query?.lte).not.toHaveBeenCalled();
+  });
+
+  it("skips empty-string date bounds", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, { dateFrom: "", dateTo: "" });
+
+    const query = queries.get("proposals");
+    expect(query?.gte).not.toHaveBeenCalled();
+    expect(query?.lt).not.toHaveBeenCalled();
+    expect(query?.lte).not.toHaveBeenCalled();
+  });
+
+  it("uses bare inclusive bounds for the DATE column loe_signed_date", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchReportProposals(client, {
+      dateColumn: "loe_signed_date",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-12-31",
+    });
+
+    const query = queries.get("proposals");
+    expect(query?.gte).toHaveBeenCalledWith("loe_signed_date", "2026-01-01");
+    expect(query?.lte).toHaveBeenCalledWith("loe_signed_date", "2026-12-31");
+    expect(query?.lt).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed date filters", async () => {
+    const { client } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await expect(
+      fetchReportProposals(client, {
+        dateColumn: "created_at",
+        dateTo: "2026-02-30",
+      })
+    ).rejects.toThrow("Invalid date filter: 2026-02-30");
+  });
+
+  it("rejects malformed date filters on the DATE column", async () => {
+    const { client } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await expect(
+      fetchReportProposals(client, {
+        dateColumn: "loe_signed_date",
+        dateFrom: "2026-13-01",
+      })
+    ).rejects.toThrow("Invalid date filter: 2026-13-01");
   });
 
   it("throws on query error", async () => {
@@ -442,8 +585,15 @@ describe("fetchRevenueReportBaseRows", () => {
       "Discovery",
       "Awaiting Sig",
     ]);
-    expect(query?.gte).toHaveBeenCalledWith("created_at", "2026-01-01");
-    expect(query?.lte).toHaveBeenCalledWith("created_at", "2026-12-31");
+    expect(query?.gte).toHaveBeenCalledWith(
+      "created_at",
+      "2026-01-01T06:00:00.000Z"
+    );
+    expect(query?.lt).toHaveBeenCalledWith(
+      "created_at",
+      "2027-01-01T06:00:00.000Z"
+    );
+    expect(query?.lte).not.toHaveBeenCalled();
   });
 
   it("throws on query error", async () => {
@@ -457,6 +607,214 @@ describe("fetchRevenueReportBaseRows", () => {
     await expect(fetchRevenueReportBaseRows(client, {})).rejects.toThrow(
       "Could not load revenue report base: view unavailable"
     );
+  });
+});
+
+describe("fetchClosedWonFinancials", () => {
+  it("filters Closed Won by LoE signed date on proposals, not created_at", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchClosedWonFinancials(client, {
+      ownerScope: "team",
+      currentUserId: "u1",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-12-31",
+    });
+
+    expect(client.from).toHaveBeenCalledWith("proposals");
+    expect(client.from).not.toHaveBeenCalledWith("proposal_revenue_report_base");
+    const query = queries.get("proposals");
+    expect(query?.select).toHaveBeenCalledWith(
+      "id, status, created_by, sold_price, loe_value, loe_signed_date"
+    );
+    expect(query?.eq).toHaveBeenCalledWith("status", "Closed Won");
+    expect(query?.gte).toHaveBeenCalledWith("loe_signed_date", "2026-01-01");
+    expect(query?.lte).toHaveBeenCalledWith("loe_signed_date", "2026-12-31");
+    expect(query?.lt).not.toHaveBeenCalled();
+    expect(query?.gte).not.toHaveBeenCalledWith(
+      "created_at",
+      expect.anything()
+    );
+    expect(query?.eq).not.toHaveBeenCalledWith(
+      "created_by",
+      expect.anything()
+    );
+    expect(query?.order).toHaveBeenCalledWith("loe_signed_date", {
+      ascending: false,
+    });
+  });
+
+  it("applies mine scope", async () => {
+    const { client, queries } = mockTableClient({
+      proposals: { data: [], error: null },
+    });
+
+    await fetchClosedWonFinancials(client, {
+      ownerScope: "mine",
+      currentUserId: "u1",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-12-31",
+    });
+
+    expect(queries.get("proposals")?.eq).toHaveBeenCalledWith(
+      "created_by",
+      "u1"
+    );
+  });
+
+  it("returns a deal created in a prior year and coerces numeric strings", async () => {
+    const { client } = mockTableClient({
+      proposals: {
+        data: [
+          {
+            id: "cw-2025",
+            status: "Closed Won",
+            created_by: "u1",
+            sold_price: "250000.00",
+            loe_value: 260000,
+            loe_signed_date: "2026-03-31",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const rows = await fetchClosedWonFinancials(client, {
+      ownerScope: "team",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-12-31",
+    });
+
+    expect(rows).toEqual([
+      {
+        id: "cw-2025",
+        status: "Closed Won",
+        created_by: "u1",
+        sold_price: 250000,
+        loe_value: 260000,
+        loe_signed_date: "2026-03-31",
+      },
+    ]);
+  });
+
+  it("keeps null financial values as null", async () => {
+    const { client } = mockTableClient({
+      proposals: {
+        data: [
+          {
+            id: "cw-1",
+            status: "Closed Won",
+            created_by: null,
+            sold_price: null,
+            loe_value: null,
+            loe_signed_date: "2026-05-01",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const rows = await fetchClosedWonFinancials(client, {
+      dateFrom: "2026-01-01",
+      dateTo: "2026-12-31",
+    });
+
+    expect(rows[0]).toMatchObject({
+      created_by: null,
+      sold_price: null,
+      loe_value: null,
+    });
+  });
+
+  it("throws on query error", async () => {
+    const { client } = mockTableClient({
+      proposals: { data: null, error: { message: "boom" } },
+    });
+
+    await expect(
+      fetchClosedWonFinancials(client, {
+        dateFrom: "2026-01-01",
+        dateTo: "2026-12-31",
+      })
+    ).rejects.toThrow("Could not load closed-won financials: boom");
+  });
+});
+
+describe("fetchStaleThresholds", () => {
+  const seededThresholdRows = [
+    { status: "Discovery", threshold_days: 21 },
+    { status: "Scoping", threshold_days: 21 },
+    { status: "Proposal Draft", threshold_days: 5 },
+    { status: "Sent for Review", threshold_days: 3 },
+    { status: "Negotiations", threshold_days: 3 },
+    { status: "Awaiting Sig", threshold_days: 14 },
+  ];
+
+  it("reads only active thresholds", async () => {
+    const { client, queries } = mockTableClient({
+      proposal_stale_thresholds: { data: seededThresholdRows, error: null },
+    });
+
+    await fetchStaleThresholds(client);
+
+    expect(client.from).toHaveBeenCalledWith("proposal_stale_thresholds");
+    const query = queries.get("proposal_stale_thresholds");
+    expect(query?.select).toHaveBeenCalledWith("status, threshold_days");
+    expect(query?.eq).toHaveBeenCalledWith("is_active", true);
+  });
+
+  it("maps seeded thresholds and drops untracked statuses", async () => {
+    const { client } = mockTableClient({
+      proposal_stale_thresholds: {
+        data: [
+          ...seededThresholdRows,
+          { status: "On Hold", threshold_days: 7 },
+          { status: "Legacy", threshold_days: 9 },
+        ],
+        error: null,
+      },
+    });
+
+    await expect(fetchStaleThresholds(client)).resolves.toEqual({
+      Discovery: 21,
+      Scoping: 21,
+      "Proposal Draft": 5,
+      "Sent for Review": 3,
+      Negotiations: 3,
+      "Awaiting Sig": 14,
+    });
+  });
+
+  it("throws on query error", async () => {
+    const { client } = mockTableClient({
+      proposal_stale_thresholds: { data: null, error: { message: "boom" } },
+    });
+
+    await expect(fetchStaleThresholds(client)).rejects.toThrow(
+      "Could not load stale thresholds: boom"
+    );
+  });
+
+  it("throws on unexpected shape", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const { client } = mockTableClient({
+      proposal_stale_thresholds: {
+        data: [{ status: "Discovery", threshold_days: "3" }],
+        error: null,
+      },
+    });
+
+    try {
+      await expect(fetchStaleThresholds(client)).rejects.toThrow(
+        "Could not load stale thresholds: the data was in an unexpected format."
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
 

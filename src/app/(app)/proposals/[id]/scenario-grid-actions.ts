@@ -83,10 +83,14 @@ export async function saveScenarioGridSelections(
     scenarioRecordSchema,
     scenarioResult
   );
+  // Any signed-in user may edit any proposal's scenarios, so a failed lookup
+  // here means the scenario is gone (or isn't on this proposal), not that the
+  // caller was refused. Same wording as the save_scenario_grid RPC's own
+  // not-found error.
   if (!scenarioParsed.ok) {
     return {
       ok: false,
-      error: "Scenario not found or you do not have permission to edit it.",
+      error: "Scenario not found. Reload the page and try again.",
     };
   }
   const scenario: ScenarioRecord = scenarioParsed.data;

@@ -26,7 +26,7 @@ The app must never invent a price.
 The database schema, RLS policies, and audit triggers — not the application — define who can do what.
 
 - Schema changes ship as numbered, idempotent SQL files in `supabase/migrations/NNN_*.sql`. Migrations are append-only; never edit a merged migration.
-- RLS model: proposals are global-read, owner-write (SEs back each other up). Customers are shared-write. Audit-log rows carry `WITH CHECK (changed_by = auth.uid())` plus triggers.
+- RLS model: proposals and their tabs are global-read and global-write for signed-in users (SEs back each other up; edits are not attributed yet). Deleting a proposal stays owner-or-admin, and changing its owner is admin-only. Customers can be changed by their creator or an admin. Audit-log rows carry `WITH CHECK (changed_by = auth.uid())` plus triggers.
 - Any PR that touches `supabase/migrations/*.sql` or `src/types/database.ts` pauses for explicit human approval before merge (see `AGENTS.md`).
 - Writes go through server actions with Supabase SSR helpers. Client components do not hold service-role keys or write directly to privileged tables.
 
@@ -72,7 +72,7 @@ Amendments require a PR that edits this file, a one-line entry in the commit mes
 
 `AGENTS.md` remains the runtime guide for AI agents working in this repo, including the pull/merge caveat for schema changes.
 
-**Version**: 1.0.0 | **Ratified**: 2026-04-24 | **Last Amended**: 2026-04-24
+**Version**: 1.1.0 | **Ratified**: 2026-04-24 | **Last Amended**: 2026-11-19
 # [PROJECT_NAME] Constitution
 <!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
 

@@ -16,8 +16,15 @@
  * On success the user is redirected to /proposals.
  * On failure an inline error message is shown inside the dialog.
  *
+ * Who sees it: delete is owner-or-admin. Any signed-in user can edit a
+ * proposal (SEs back each other up), but the proposal layout only renders
+ * this button for the proposal's owner or an admin (it fails open if the
+ * user lookup fails), and deleteProposal re-checks ownership on the server.
+ *
  * The server action handles:
  *   - assertAuthenticated() session check
+ *   - Owner-or-admin check (before the audit write, so a refused delete
+ *     never leaves a change_log row)
  *   - Typed-confirmation match against the live proposal.name
  *   - Audit log write to change_log before deletion
  *   - The actual delete (child rows cascade)
@@ -136,6 +143,10 @@ export function DeleteProposalButton({
     if (!result.ok) {
       setError(result.error);
       setLoading(false);
+      // A backup SE may have renamed the proposal since this page loaded, so
+      // the server's confirmation phrase can differ from ours. Refresh so the
+      // layout passes the current name and the dialog asks for the right one.
+      router.refresh();
       return;
     }
 

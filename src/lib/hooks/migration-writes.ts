@@ -9,9 +9,9 @@ import {
 // The browser writes behind the migration autosave. They live here, not in
 // the hook, so tests can run them against a fake client.
 //
-// Each write asks for { count: "exact" }. RLS refuses a write by a user who
-// isn't the proposal's owner or an admin with no error and zero rows, so the
-// count is the only way to tell a refused save from a real one.
+// Each write asks for { count: "exact" }. A write that matches no row (the row
+// or its proposal was deleted, or the session ended) returns no error and zero
+// rows, so the count is the only way to tell an unsaved write from a real one.
 
 type MigrationClient = SupabaseClient<Database>;
 
@@ -57,10 +57,10 @@ export async function writeMigrationLine(
     .eq("id", line.id);
 
   if (!error && count === 0) {
-    // Zero rows is also what the owner gets when the row was removed after it
-    // was edited (Clear Tab, or a row delete in another tab). Every signed-in
-    // user can read the lines, so look the row up: gone means there is
-    // nothing left to save; still there means RLS refused the write.
+    // Zero rows usually means the row was removed after it was edited (Clear
+    // Tab, or a row delete in another tab). Every signed-in user can read the
+    // lines, so look the row up: gone means there is nothing left to save;
+    // still there means the write didn't take effect.
     const { data, error: lookupError } = await supabase
       .from("migration_detail_lines")
       .select("id")

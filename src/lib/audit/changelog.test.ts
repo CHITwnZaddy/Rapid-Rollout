@@ -258,6 +258,205 @@ describe("change_log payload invariants (SA-QA-02)", () => {
   });
 });
 
+// Delete stays owner-or-admin in RLS even though any signed-in SE can now
+// edit someone else's proposal. Without a pre-check, a non-owner's delete
+// would write a change_log DELETE row and then match zero rows, leaving a
+// false audit record for a delete that never happened.
+describe("deleteProposal ownership pre-check", () => {
+  const OWNER_ID = "user-owner";
+  const OWNER_ERROR = "Only the proposal's owner or an admin can delete it.";
+
+  function signInAs(user: { id: string; app_metadata?: Record<string, unknown> }) {
+    authAssertMock.mockResolvedValue({ id: user.id });
+    getUserMock.mockResolvedValue({
+      data: { user: { ...user, email: USER_EMAIL } },
+      error: null,
+    });
+  }
+
+  function ownedBy(createdBy: string | null) {
+    proposalSelectEqSingleMock.mockResolvedValue({
+      data: {
+        id: PROPOSAL_ID,
+        name: PROPOSAL_NAME,
+        status: "Draft",
+        created_by: createdBy,
+      },
+      error: null,
+    });
+  }
+
+  beforeEach(() => {
+    authAssertMock.mockReset();
+    getUserMock.mockReset();
+    fromMock.mockReset();
+    changeLogInsertMock.mockReset();
+    proposalSelectEqSingleMock.mockReset();
+    proposalDeleteEqMock.mockReset();
+    revalidatePathMock.mockReset();
+    setupHappyPathMocks();
+  });
+
+  it("refuses a non-owner SE before writing the audit row or deleting", async () => {
+    signInAs({ id: USER_ID, app_metadata: { role: "user" } });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({ ok: false, error: OWNER_ERROR });
+    expect(changeLogInsertMock).not.toHaveBeenCalled();
+    expect(proposalDeleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-owner with no role claim (plain SE)", async () => {
+    signInAs({ id: USER_ID });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({ ok: false, error: OWNER_ERROR });
+    expect(changeLogInsertMock).not.toHaveBeenCalled();
+    expect(proposalDeleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-owner manager (delete is owner or admin only)", async () => {
+    signInAs({ id: USER_ID, app_metadata: { role: "manager" } });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({ ok: false, error: OWNER_ERROR });
+    expect(changeLogInsertMock).not.toHaveBeenCalled();
+    expect(proposalDeleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-admin when the proposal has no created_by", async () => {
+    signInAs({ id: USER_ID, app_metadata: { role: "user" } });
+    ownedBy(null);
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({ ok: false, error: OWNER_ERROR });
+    expect(changeLogInsertMock).not.toHaveBeenCalled();
+    expect(proposalDeleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("reports the ownership error before checking a wrong confirmation", async () => {
+    signInAs({ id: USER_ID, app_metadata: { role: "user" } });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(PROPOSAL_ID, "Cleaning up", "wrong text");
+
+    expect(result).toEqual({ ok: false, error: OWNER_ERROR });
+    expect(changeLogInsertMock).not.toHaveBeenCalled();
+    expect(proposalDeleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("lets a non-owner admin delete, with the admin recorded as the author", async () => {
+    signInAs({ id: USER_ID, app_metadata: { role: "admin" } });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(changeLogInsertMock).toHaveBeenCalledTimes(1);
+    expect(changeLogInsertMock.mock.calls[0][0].changed_by).toBe(USER_ID);
+    expect(proposalDeleteEqMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not read the role from user_metadata (users can edit that)", async () => {
+    signInAs({ id: USER_ID });
+    getUserMock.mockResolvedValue({
+      data: {
+        user: {
+          id: USER_ID,
+          email: USER_EMAIL,
+          app_metadata: {},
+          user_metadata: { role: "admin" },
+        },
+      },
+      error: null,
+    });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({ ok: false, error: OWNER_ERROR });
+    expect(changeLogInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves the owner's path unchanged", async () => {
+    signInAs({ id: OWNER_ID, app_metadata: { role: "user" } });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(changeLogInsertMock).toHaveBeenCalledTimes(1);
+    expect(changeLogInsertMock.mock.calls[0][0].changed_by).toBe(OWNER_ID);
+    expect(proposalDeleteEqMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still gives the owner the confirmation error on a wrong phrase", async () => {
+    signInAs({ id: OWNER_ID });
+    ownedBy(OWNER_ID);
+
+    const result = await deleteProposal(PROPOSAL_ID, "Cleaning up", "wrong text");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/Confirmation text did not match/);
+    }
+    expect(changeLogInsertMock).not.toHaveBeenCalled();
+    expect(proposalDeleteEqMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the zero-row backstop when the delete matches nothing", async () => {
+    signInAs({ id: OWNER_ID });
+    ownedBy(OWNER_ID);
+    proposalDeleteEqMock.mockResolvedValue({ error: null, count: 0 });
+
+    const result = await deleteProposal(
+      PROPOSAL_ID,
+      "Cleaning up",
+      buildDeleteConfirmationPhrase(PROPOSAL_NAME)
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Proposal not found or you do not have permission to delete it.",
+    });
+  });
+});
+
 // Most of the audit-log integrity is enforced by Postgres triggers and
 // RLS policies (migration 006). These cannot be unit-tested without a
 // live DB; they are tracked here so the gap is visible.

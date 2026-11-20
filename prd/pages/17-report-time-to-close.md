@@ -35,6 +35,7 @@ Constants: **CLOSE_THRESHOLD_DAYS = 30**.
 
 - Uses `fetchReportProposals` + `fetchStatusHistoryMap`.
 - Applies `withinRange` helper on sent date vs selected range.
+- Days to close and the sent-date range use America/Chicago calendar days, and the range is inclusive of both the from and to dates.
 
 ### Export
 

@@ -6,7 +6,7 @@
 
 ## Overview
 
-Authenticated users maintain the shared **customer directory** using the reusable admin-style data table (`AdminDataTable`) configured for the `customers` table — inline spreadsheet editing, create row, delete row.
+Every signed-in user can read and add to the shared **customer directory**; a customer can be edited or deleted only by the user who created it or an admin (deleting also requires that no proposal uses it). The page uses the reusable admin-style data table (`AdminDataTable`) configured for the `customers` table — inline spreadsheet editing, create row, delete row.
 
 ## Layout
 

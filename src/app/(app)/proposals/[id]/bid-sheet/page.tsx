@@ -57,7 +57,6 @@ import {
 } from "@/lib/validation/proposal";
 import { z } from "zod";
 import { toast } from "sonner";
-import { PROPOSAL_EDIT_NOT_PERMITTED } from "@/lib/supabase/affected-rows";
 import { Download } from "lucide-react";
 import {
   INTERNAL_COST_RATE_KEY,
@@ -359,8 +358,9 @@ export default function BidSheetPage() {
     setSavingDiscountPercent(false);
 
     if (!result.ok) {
-      // Nothing was stored (e.g. RLS refused the write): show the persisted
-      // value again so the field and Total never reflect an unsaved discount.
+      // Nothing was stored (e.g. the proposal was deleted or the session
+      // ended): show the persisted value again so the field and Total never
+      // reflect an unsaved discount.
       toast.error(`Failed to save discount %: ${result.error}`);
       setDiscountPercentDraft(String(bidSheet.discount_percent ?? 0));
       return;
@@ -415,12 +415,9 @@ export default function BidSheetPage() {
 
     if (!result.ok) {
       toast.error(`Failed to save notes: ${result.error}`);
-      // Put the stored notes back only when the save was refused. For any
-      // other failure (too long, signed out, a network error) keep the typed
-      // text so it can be fixed or copied and saved again.
-      if (result.error === PROPOSAL_EDIT_NOT_PERMITTED) {
-        setNotesDraft(bidSheet.notes ?? "");
-      }
+      // Keep the typed text on any failure (too long, signed out, the
+      // proposal was deleted, a network error) so it can be fixed or copied
+      // and saved again.
       return;
     }
 

@@ -1,18 +1,20 @@
 import {
   checkAffectedRows,
-  PROPOSAL_EDIT_NOT_PERMITTED,
+  PROPOSAL_CHANGE_NOT_SAVED,
 } from "@/lib/supabase/affected-rows";
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 /**
- * RLS refused a migration write: Supabase reported no error but zero affected
- * rows. Resending the same write cannot succeed, so the controller drops the
- * pending work instead of re-queuing it, and the caller restores the stored
- * values.
+ * A migration write was refused: Supabase reported no error but zero affected
+ * rows. Any signed-in user may edit a proposal's migration tab, so this means
+ * the row (or its proposal) is gone, e.g. deleted in another tab, or the
+ * session ended. Resending the same write cannot succeed, so the controller
+ * drops the pending work instead of re-queuing it, and the caller restores
+ * the stored values.
  */
 export class MigrationSaveRefusedError extends Error {
-  constructor(message: string = PROPOSAL_EDIT_NOT_PERMITTED) {
+  constructor(message: string = PROPOSAL_CHANGE_NOT_SAVED) {
     super(message);
     this.name = "MigrationSaveRefusedError";
   }
@@ -31,7 +33,7 @@ export function assertMigrationWriteSaved(
   if (result.error) {
     throw new Error(`${failurePrefix} ${result.error.message}`);
   }
-  const written = checkAffectedRows(result, PROPOSAL_EDIT_NOT_PERMITTED);
+  const written = checkAffectedRows(result, PROPOSAL_CHANGE_NOT_SAVED);
   if (!written.ok) {
     throw new MigrationSaveRefusedError(written.error);
   }

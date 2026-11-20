@@ -21,7 +21,7 @@ Landing page listing **six reports** as cards with title, description, and **Run
 | Scenario Breakout | `/reports/scenario-breakout` | Single proposal deep breakout |
 | Proposal Hours | `/reports/proposal-hours` | Hours by role across scenarios/scoped/migration |
 | Portfolio Value | `/reports/portfolio-value` | Pipeline by status; defaults to mine; excludes Lost/VOID unless opted in |
-| Stale Proposals | `/reports/stale-proposals` | In-flight aging; red when >21 days |
+| Stale Proposals | `/reports/stale-proposals` | In-flight aging; amber when days in status exceed that status's editable threshold |
 | Time to Close | `/reports/time-to-close` | Sent→close velocity; red when >30 days |
 
 ## Interactions

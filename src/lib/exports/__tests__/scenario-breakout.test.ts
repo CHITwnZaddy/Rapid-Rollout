@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   buildScenarioBreakoutWorkbook,
+  downloadScenarioBreakoutXLSX,
   scenarioBreakoutFileName,
 } from "../scenario-breakout";
 
@@ -32,5 +33,39 @@ describe("buildScenarioBreakoutWorkbook", () => {
     const sheet = workbook.getWorksheet("Scenario Breakout");
     expect(sheet).toBeDefined();
     expect(sheet!.rowCount).toBeGreaterThan(0);
+  });
+});
+
+describe("downloadScenarioBreakoutXLSX", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("revokes the object URL only after the click has been dispatched", async () => {
+    // Fake only the timer APIs under test; full fake timers can hang ExcelJS/JSZip.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const anchor = { href: "", download: "", click: vi.fn() };
+    vi.stubGlobal("window", globalThis);
+    vi.stubGlobal("document", { createElement: vi.fn(() => anchor) });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:breakout");
+    const revoke = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    const workbook = {
+      xlsx: { writeBuffer: vi.fn(async () => new ArrayBuffer(8)) },
+    } as never;
+
+    await downloadScenarioBreakoutXLSX(workbook, "breakout.xlsx");
+
+    expect(anchor.href).toBe("blob:breakout");
+    expect(anchor.download).toBe("breakout.xlsx");
+    expect(anchor.click).toHaveBeenCalledTimes(1);
+    expect(revoke).not.toHaveBeenCalled();
+
+    vi.runAllTimers();
+
+    expect(revoke).toHaveBeenCalledWith("blob:breakout");
   });
 });

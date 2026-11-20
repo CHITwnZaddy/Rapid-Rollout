@@ -20,7 +20,7 @@ export function CountByStageChart({
   if (rows.length === 0) {
     return (
       <div className="flex h-[220px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-        No open proposals in this range.
+        No open proposals.
       </div>
     );
   }

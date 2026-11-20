@@ -8,6 +8,7 @@ import { EditableProposalName } from "@/components/proposals/editable-proposal-n
 import { safeParseSupabaseResult } from "@/lib/validation/parse-supabase";
 import { ProposalHeaderSchema } from "@/lib/validation/proposal";
 import { getProposalEditability } from "@/lib/proposals/editability";
+import { isAdminRole } from "@/lib/auth/roles";
 
 export default async function ProposalLayout({
   children,
@@ -32,8 +33,9 @@ export default async function ProposalLayout({
       .select("code, label")
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
-    // Only drives the read-only notice below, so any auth failure resolves to
-    // null and the notice is simply not shown.
+    // Only drives the backup notice and whether Delete is shown, so any auth
+    // failure resolves to null: the notice is simply not shown and Delete
+    // stays visible (deleteProposal re-checks ownership on the server).
     supabase.auth.getUser().then(
       ({ data, error }) => (error ? null : data.user),
       () => null
@@ -64,8 +66,11 @@ export default async function ProposalLayout({
     scopedBy = profile?.display_name ?? null;
   }
 
-  // Decision D4: every control stays enabled (SEs back each other up), but
-  // tell a non-owner up front that the database will refuse their saves.
+  // Decision D4 (resolved 2026-11-19): SEs back each other up, so any
+  // signed-in user can save changes to any proposal and every control stays
+  // enabled. A non-owner SE gets a quiet note that they are editing someone
+  // else's proposal; admins don't (they act across everyone's proposals).
+  // Delete stays owner-or-admin, so the button is hidden for anyone else.
   const editability = currentUser
     ? getProposalEditability({
         userId: currentUser.id,
@@ -73,7 +78,14 @@ export default async function ProposalLayout({
         createdBy: proposal.created_by,
       })
     : null;
-  const showReadOnlyNotice = editability !== null && !editability.canEditContent;
+  const showBackupNotice =
+    editability !== null &&
+    editability.canEdit &&
+    !editability.isOwner &&
+    !isAdminRole(currentUser?.app_metadata?.role) &&
+    Boolean(proposal.created_by);
+  // Fail open when the user lookup failed: the server action re-checks.
+  const showDeleteButton = editability?.canDelete ?? true;
 
   return (
     <div>
@@ -92,35 +104,25 @@ export default async function ProposalLayout({
             />
           </div>
         </div>
-        <DeleteProposalButton
-          proposalId={id}
-          proposalName={proposal.name}
-          status={proposal.status}
-        />
+        {showDeleteButton && (
+          <DeleteProposalButton
+            proposalId={id}
+            proposalName={proposal.name}
+            status={proposal.status}
+          />
+        )}
       </div>
-      {showReadOnlyNotice && (
+      {showBackupNotice && (
         <div
           role="note"
           className="mb-3 mt-2 flex items-start gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
         >
           <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          {editability.canChangeStatus ? (
-            // Managers may write the proposals row itself (name, status,
-            // closeout figures, scoped complexity factor) but not its tabs.
-            <p>
-              This proposal belongs to {scopedBy ?? "another user"}. Only they
-              or an admin can save changes to its scenarios, bid sheet, scoped
-              service lines and migration details. As a manager, you can still
-              rename it, change its status and closeout figures, and set the
-              scoped complexity factor.
-            </p>
-          ) : (
-            <p>
-              This proposal belongs to {scopedBy ?? "another user"}. Only they
-              or an admin can save changes here; your edits won&apos;t be
-              saved.
-            </p>
-          )}
+          <p>
+            You&apos;re editing {scopedBy ?? "another SE"}&apos;s proposal as
+            their backup. Your changes save to their proposal, and only they
+            or an admin can delete it. Let them know what you changed.
+          </p>
         </div>
       )}
       <ProposalNav proposalId={id} />
